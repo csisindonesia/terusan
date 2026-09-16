@@ -65,9 +65,29 @@ Existing standalone scripts run unmodified through the legacy adapter.
 
 ```bash
 terusan sources list
-terusan sources run bps-inflation --dry-run --limit 5
+terusan sources run worldbank-gdp --dry-run --limit 1
 terusan sources run --workers 8
 ```
+
+Fetching goes through a shared client that retries transient failures — 408,
+429, 5xx, timeouts — with jittered backoff, and never retries a 404 or a 403,
+which would fail identically next time. Landing checks magic bytes: an HTML
+error page served with a 200 and named `TABEL1_1.xls` is refused before it
+reaches RAW, because RAW is permanent.
+
+Three sources are ported from an earlier warehouse:
+
+| Source | Shape |
+|---|---|
+| `worldbank-gdp` | Paginated JSON API, one artifact per page |
+| `bi-seki` | HTML index fanning out to ~108 legacy `.xls` tables |
+| `bi-sdds-real-sector` | One HTML page |
+
+SEKI shows the pattern for a flaky fan-out source: per-table failures are
+collected rather than raised, so one dead link does not discard the other 107 —
+but the run fails below a 90% success ratio, because a site-wide outage looks
+exactly like one flaky table, one table at a time, and a partial month must not
+masquerade as a complete one.
 
 See [docs/adding-a-source.md](docs/adding-a-source.md).
 
@@ -200,5 +220,8 @@ ambiguous or absent values.
 
 Not yet built: curation into Gold, the REST and SQL surfaces, scheduling,
 search, and authentication.
+
+Verified end to end against the live World Bank API: 17,160 observations from
+one page, through RAW and Bronze into typed Silver.
 
 Roadmap in program.md §60–63.

@@ -26,6 +26,7 @@ from ..warehouse import (
 from .base import PARSER_VERSION, ExtractionError, Extractor, Landed
 from .documents import HtmlExtractor, PdfExtractor, TextExtractor
 from .tabular import CsvExtractor, JsonExtractor
+from .worldbank import WorldBankExtractor
 
 if TYPE_CHECKING:
     from ..catalog import Reporter
@@ -35,9 +36,11 @@ log = structlog.get_logger(__name__)
 #: Bumped when the extraction pipeline itself changes shape.
 PIPELINE_VERSION = "1"
 
-#: Order matters: the first extractor claiming an artifact wins, so specific
-#: formats come before the catch-all text reader.
+#: Order matters: the first extractor claiming an artifact wins. Source-specific
+#: readers come first — a source publishing its own envelope is not readable by
+#: a generic one — then formats, then the catch-all text reader.
 DEFAULT_EXTRACTORS: tuple[Extractor, ...] = (
+    WorldBankExtractor(),
     PdfExtractor(),
     HtmlExtractor(),
     JsonExtractor(),

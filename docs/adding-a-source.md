@@ -84,6 +84,55 @@ What you lose until you convert it properly:
 Convert the ones that run most often, or that hit a source you would rather not
 annoy. The rest can sit in the adapter indefinitely.
 
+## When the generic extractor cannot read it
+
+Most sources publish CSV, HTML or plain JSON, and the built-in extractors
+handle them. A source that wraps its payload in an envelope of its own needs a
+reader that knows the shape — the World Bank API answers
+`[metadata, [records...]]`, which a generic JSON reader sees as a two-element
+list and turns into two useless rows.
+
+Such an extractor claims artifacts by source slug and is registered ahead of
+the generic ones in `DEFAULT_EXTRACTORS`:
+
+```python
+class WorldBankExtractor(Extractor):
+    target = "records"
+
+    def handles(self, landed: Landed) -> bool:
+        return landed.source_slug == "worldbank-gdp"
+```
+
+See [extract/worldbank.py](../pipelines/src/terusan_pipelines/extract/worldbank.py).
+
+## Fetching
+
+Use the shared client rather than httpx directly:
+
+```python
+from ..http import fetcher
+
+with fetcher() as http:
+    response = http.get(url)          # retries transient failures, raises otherwise
+    maybe = http.try_get(other_url)   # None instead of raising, for fan-out
+```
+
+It retries 408, 429, 5xx and transport errors with jittered backoff, and never
+retries a 404 or 403 — those mean the source changed or the code is wrong, and
+retrying only hammers someone else's server.
+
+Landing verifies magic bytes, so a binary artifact whose content does not match
+its extension is refused before it reaches RAW. That is the single commonest
+silent failure in scraping, and RAW is permanent.
+
+## Fan-out sources
+
+A source fetching many files needs to distinguish one flaky endpoint from an
+outage. Collect per-file failures rather than raising, then fail the run below a
+success ratio — see [bank_indonesia/seki.py](../pipelines/src/terusan_pipelines/sources/bank_indonesia/seki.py).
+Without the ratio, a site-wide outage arrives as a successful run holding almost
+nothing.
+
 ## Registration
 
 None. Subclassing `Source` inside the package is enough — the registry walks

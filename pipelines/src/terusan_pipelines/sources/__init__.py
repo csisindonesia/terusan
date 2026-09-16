@@ -36,17 +36,27 @@ from .base import (
     SourceType,
     UpdateFrequency,
 )
+from .http import Fetcher, fetcher, is_transient, retrying
 from .landing import Landed, Landing
 from .legacy import LegacySource, directory_artifacts, legacy_source
 from .ratelimit import HostRateLimiter, TokenBucket, host_of
 from .registry import DuplicateSourceSlug, Registry, UnknownSource, registry
 from .runner import Runner, RunResult, RunStatus, summarize
+from .sniff import (
+    ContentMismatch,
+    describe,
+    looks_like_html,
+    matches_extension,
+    verify,
+)
 
 __all__ = [
     "Artifact",
+    "ContentMismatch",
     "Category",
     "CollectionMethod",
     "DuplicateSourceSlug",
+    "Fetcher",
     "HostRateLimiter",
     "Landed",
     "Landing",
@@ -62,9 +72,16 @@ __all__ = [
     "UnknownSource",
     "UpdateFrequency",
     "Registry",
+    "describe",
     "directory_artifacts",
+    "fetcher",
     "host_of",
+    "is_transient",
+    "looks_like_html",
+    "matches_extension",
     "legacy_source",
     "registry",
+    "retrying",
     "summarize",
+    "verify",
 ]

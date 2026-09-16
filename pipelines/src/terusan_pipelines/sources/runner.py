@@ -21,6 +21,7 @@ from ..storage import StorageConfig, StorageResolver
 from .base import ScrapeContext, Source
 from .landing import Landing
 from .ratelimit import HostRateLimiter
+from .sniff import ContentMismatch
 
 if TYPE_CHECKING:
     from ..catalog import Reporter
@@ -48,6 +49,9 @@ class RunResult:
     artifacts_seen: int = 0
     artifacts_landed: int = 0
     artifacts_deduplicated: int = 0
+    #: Fetched but refused at the door: the bytes were not the format claimed,
+    #: usually an error page served with a 200.
+    artifacts_rejected: int = 0
     bytes_written: int = 0
 
     error_message: str | None = None
@@ -116,7 +120,15 @@ class Runner:
                 if context.dry_run:
                     continue
 
-                landed = self._landing.land(source.meta, artifact)
+                try:
+                    landed = self._landing.land(source.meta, artifact)
+                except ContentMismatch as exc:
+                    # One bad file must not discard the other hundred, but it
+                    # must be visible rather than quietly missing.
+                    result.artifacts_rejected += 1
+                    bound.warning("landing.rejected", error=str(exc))
+                    continue
+
                 if landed.deduplicated:
                     result.artifacts_deduplicated += 1
                 else:
@@ -145,6 +157,7 @@ class Runner:
                 seen=result.artifacts_seen,
                 landed=result.artifacts_landed,
                 deduplicated=result.artifacts_deduplicated,
+                rejected=result.artifacts_rejected,
                 seconds=round(result.duration_seconds or 0, 2),
             )
         return result
@@ -198,6 +211,7 @@ def summarize(results: list[RunResult]) -> dict[str, object]:
         "failed": len(failed),
         "artifacts_landed": sum(r.artifacts_landed for r in results),
         "artifacts_deduplicated": sum(r.artifacts_deduplicated for r in results),
+        "artifacts_rejected": sum(r.artifacts_rejected for r in results),
         "bytes_written": sum(r.bytes_written for r in results),
         "failures": {r.source_slug: r.error_message for r in failed},
     }

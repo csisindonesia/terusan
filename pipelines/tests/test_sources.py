@@ -119,7 +119,13 @@ def test_untrusted_titles_are_slugified_into_the_path(resolver):
     """Scraped text carries slashes and em dashes; that is input, not a bug."""
     landed = Landing(resolver).land(
         meta_for(),
-        artifact(dataset="Ekspor Nikel — Q1/2026", filename="Laporan Akhir.PDF"),
+        # Real PDF bytes: landing verifies content against the extension, so a
+        # CSV named .PDF would be refused (see the sniffing tests).
+        artifact(
+            content=b"%PDF-1.4\n1 0 obj\n",
+            dataset="Ekspor Nikel — Q1/2026",
+            filename="Laporan Akhir.PDF",
+        ),
     )
     assert "/ekspor-nikel-q1-2026/" in landed.path
     assert landed.path.endswith("/laporan-akhir.pdf")

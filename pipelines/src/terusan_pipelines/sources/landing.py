@@ -21,6 +21,7 @@ from pathlib import Path
 
 from ..storage import Layer, StorageResolver, slugify
 from .base import Artifact, SourceMeta
+from .sniff import verify
 
 #: Provenance sidecar written next to every landed artifact.
 METADATA_FILENAME = "metadata.json"
@@ -72,7 +73,14 @@ class Landing:
         RAW is immutable (program.md §5), so an existing directory with the
         same content hash is left alone. The path is content-addressed, so a
         collision means the same bytes, not a conflict.
+
+        Raises `ContentMismatch` if the bytes are not the format the filename
+        claims. That check belongs here rather than downstream: RAW is
+        permanent, so an HTML error page landed as `.xls` is a mistake nothing
+        later can undo.
         """
+        verify(artifact.content, artifact.filename)
+
         segments = self.segments_for(meta, artifact)
         directory = self._resolver.resolve(Layer.RAW, *segments)
         target = Path(directory) / _safe_filename(artifact.filename)

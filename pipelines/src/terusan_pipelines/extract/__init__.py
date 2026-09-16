@@ -15,6 +15,7 @@ from .runner import (
     walk_raw,
 )
 from .tabular import CsvExtractor, JsonExtractor, decode
+from .worldbank import WorldBankExtractor
 
 __all__ = [
     "DEFAULT_EXTRACTORS",
@@ -30,6 +31,7 @@ __all__ = [
     "Landed",
     "PdfExtractor",
     "TextExtractor",
+    "WorldBankExtractor",
     "collapse",
     "decode",
     "walk_raw",
