@@ -68,6 +68,11 @@ dev-portal: ## Run the data portal on :3000
 dev-api: ## Run the serving layer on :8080
 	cd services/api && go run ./cmd/api
 
+.PHONY: dev
+dev: ## Run the API and the portal together
+	@echo "API on :8080, portal on :3000 — Ctrl-C stops both"
+	@$(MAKE) -j2 dev-api dev-portal
+
 # ---- pipeline -------------------------------------------------------------
 
 .PHONY: catalog-sync

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/csis/terusan/services/api/internal/storage"
@@ -19,6 +20,11 @@ type Config struct {
 
 	DuckDBMemoryLimit string
 	DuckDBThreads     int
+
+	// Origins allowed to call the API from a browser. An allow-list rather
+	// than a wildcard: restricted datasets should not be readable from any
+	// page a browser happens to load.
+	CORSOrigins []string
 
 	ReadTimeout     time.Duration
 	WriteTimeout    time.Duration
@@ -49,9 +55,12 @@ func Load() (*Config, error) {
 		Database:          os.Getenv("DATABASE_URL"),
 		DuckDBMemoryLimit: envOr("DUCKDB_MEMORY_LIMIT", "4GB"),
 		DuckDBThreads:     threads,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      120 * time.Second, // analytical queries are slow by nature
-		ShutdownTimeout:   20 * time.Second,
+		CORSOrigins: strings.Split(
+			envOr("API_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"), ",",
+		),
+		ReadTimeout:     15 * time.Second,
+		WriteTimeout:    120 * time.Second, // analytical queries are slow by nature
+		ShutdownTimeout: 20 * time.Second,
 	}, nil
 }
 

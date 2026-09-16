@@ -22,6 +22,10 @@ VALUE_TYPE = pa.decimal128(38, 9)
 #: come from" without a join (program.md §17).
 SILVER_PROVENANCE_FIELDS: list[pa.Field] = [
     pa.field("source_id", pa.string(), nullable=False),
+    # The page or endpoint the figure came from. `raw_path` points at the
+    # preserved copy; this points at where it was published, which is what
+    # "where did this number come from" usually means (program.md §2.2).
+    pa.field("source_url", pa.string()),
     pa.field("document_id", pa.string()),
     pa.field("dataset_id", pa.string()),
     pa.field("content_hash", pa.string()),

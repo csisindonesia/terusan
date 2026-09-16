@@ -18,8 +18,8 @@ Sources → Ingestion → RAW → Bronze → Silver → Gold → DuckDB → Serv
 
 | Component | Location | Stack |
 |---|---|---|
-| Data portal | [apps/portal/](apps/portal/) | TanStack Start, React 19, TypeScript |
-| Serving layer | [services/api/](services/api/) | Go 1.26, net/http |
+| Data portal | [apps/portal/](apps/portal/) | TanStack Start, React 19, shadcn/ui, TanStack Table |
+| Serving layer | [services/api/](services/api/) | Go 1.26, net/http, DuckDB |
 | Ingestion pipelines | [pipelines/](pipelines/) | Python 3.12+, uv |
 | Application catalog | [db/migrations/](db/migrations/) | PostgreSQL 18 |
 | Analytical engine | — | DuckDB over Parquet |
@@ -171,6 +171,31 @@ Query any layer through DuckDB, against whichever backend holds the lake:
 ```bash
 terusan warehouse query "SELECT source_id, count(*) FROM read_parquet('...') GROUP BY 1"
 ```
+
+## The portal and the API
+
+```bash
+make dev        # API on :8080, portal on :3000
+```
+
+| Endpoint | What it answers |
+|---|---|
+| `GET /v1/datasets` | what is in the lake, read from storage |
+| `GET /v1/indicators` | each series, its coverage, how many places |
+| `GET /v1/observations` | figures, filtered by indicator, place, period |
+| `GET /v1/geography` | the geography dimension |
+
+Every response uses the envelope from program.md §53 — `data`, plus `meta` or
+`error` — so a consumer writes one parser rather than one per route.
+
+Values come back as **strings**, not JSON numbers. Silver stores `decimal128`
+because published statistics are decimal quantities; serialising through a JSON
+number hands every consumer a float64 and reintroduces exactly the drift the
+decimal storage exists to prevent.
+
+Parameters are validated against patterns and every value reaching SQL is bound.
+`order` cannot be bound, so the caller picks a key and the server supplies the
+clause — nothing from a request is interpolated.
 
 ## Running it
 

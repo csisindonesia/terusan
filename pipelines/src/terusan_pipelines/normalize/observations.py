@@ -217,6 +217,7 @@ class ObservationNormalizer:
             "release_date": _as_date(record.get("published_at")),
             "revision": None,
             "source_id": record.get("source_id") or "unknown",
+            "source_url": record.get("source_url"),
             "document_id": record.get("document_id"),
             "dataset_id": record.get("dataset"),
             "content_hash": record.get("content_hash"),

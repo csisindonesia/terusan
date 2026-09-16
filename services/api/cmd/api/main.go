@@ -12,6 +12,8 @@ import (
 
 	"github.com/csis/terusan/services/api/internal/config"
 	"github.com/csis/terusan/services/api/internal/httpapi"
+	"github.com/csis/terusan/services/api/internal/query"
+	"github.com/csis/terusan/services/api/internal/storage"
 )
 
 func main() {
@@ -29,9 +31,16 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
+	resolver := storage.NewResolver(cfg.Storage)
+	warehouse, err := query.Open(resolver, cfg.DuckDBMemoryLimit, cfg.DuckDBThreads)
+	if err != nil {
+		return err
+	}
+	defer warehouse.Close()
+
 	srv := &http.Server{
 		Addr:         cfg.Addr(),
-		Handler:      httpapi.New(cfg, log).Routes(),
+		Handler:      httpapi.New(cfg, warehouse, log).Routes(),
 		ReadTimeout:  cfg.ReadTimeout,
 		WriteTimeout: cfg.WriteTimeout,
 	}
@@ -45,6 +54,7 @@ func run(log *slog.Logger) error {
 			"addr", cfg.Addr(),
 			"storage_profile", string(cfg.Storage.Profile),
 			"storage_backend", string(cfg.Storage.Backend),
+			"storage_root", resolver.Root(),
 		)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errs <- err
