@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -442,3 +443,70 @@ def test_dry_run_reports_without_writing(resolver, geography):
     assert result.observations == 1
     assert result.files_written == 0
     assert not Path(resolver.resolve(Layer.SILVER, "observations")).exists()
+
+
+# ---- parser versions ------------------------------------------------------
+
+
+@contextmanager
+def parser_version(value: str):
+    """Pretend the extractor's output changed.
+
+    The constant is bound by name at import in each module that uses it, so
+    every binding has to move together — patching only the definition would
+    leave the runners on the old value.
+    """
+    import terusan_pipelines.extract.base as base
+    import terusan_pipelines.extract.runner as extract_runner
+    import terusan_pipelines.normalize.runner as silver_runner
+
+    modules = (base, extract_runner, silver_runner)
+    previous = [m.PARSER_VERSION for m in modules]
+    for module in modules:
+        module.PARSER_VERSION = value
+    try:
+        yield
+    finally:
+        for module, original in zip(modules, previous, strict=True):
+            module.PARSER_VERSION = original
+
+
+def test_silver_reads_only_the_current_parser_version(resolver, geography):
+    """Re-extraction appends rather than replaces, so a read must say which
+    version it wants. Without this, improving a parser doubles every figure."""
+    import terusan_pipelines.extract.base as base
+
+    _land_and_extract(resolver, b"bulan;nilai\n2026-01;5\n2026-02;6\n")
+    original = base.PARSER_VERSION
+
+    with parser_version("9"):
+        # A second extraction, as a changed extractor would produce.
+        ExtractionRunner(resolver).run()
+
+        with Warehouse(resolver) as warehouse:
+            warehouse.view("records", Layer.BRONZE, "records")
+            versions = warehouse.query(
+                "SELECT DISTINCT parser_version FROM records ORDER BY 1"
+            ).fetchall()
+        # Both are kept: a partition stays traceable to the code that made it.
+        assert sorted(v[0] for v in versions) == sorted([original, "9"])
+
+        mapping = ColumnMapping(indicator_id="X", period_column="bulan", value_column="nilai")
+        result = SilverRunner(resolver, geography=geography).normalize(mapping, dataset="inflation")
+        # Two documents, not four.
+        assert result.stats.rows_in == 2
+        assert result.observations == 2
+
+
+def test_bumping_the_parser_version_forces_re_extraction(resolver):
+    """The mechanism that makes an improved parser actually run again."""
+    _land_and_extract(resolver, b"bulan;nilai\n2026-01;5\n")
+
+    unchanged = ExtractionRunner(resolver).run()
+    assert unchanged.documents_extracted == 0
+    assert unchanged.documents_unchanged == 1
+
+    with parser_version("9"):
+        bumped = ExtractionRunner(resolver).run()
+        assert bumped.documents_extracted == 1
+        assert bumped.documents_unchanged == 0

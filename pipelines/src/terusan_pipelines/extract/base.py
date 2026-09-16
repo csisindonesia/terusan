@@ -23,7 +23,16 @@ from typing import Any
 #: Bumped when an extractor's output changes in a way that would alter Bronze.
 #: Recorded per row so a partition can be traced to the code that produced it
 #: and selectively reprocessed (program.md §17).
-PARSER_VERSION = "1"
+#:
+#: Extraction is idempotent on (document_id, parser_version), so bumping this is
+#: what makes an improved parser actually run again. Forgetting to bump it
+#: leaves the old rows in place and the change simply does not take — which is
+#: how the World Bank GDP series kept a `gdp_usd` column after the extractor had
+#: been generalised to emit `value`.
+#:
+#: 2: World Bank value column renamed from `gdp_usd` to `value`, so one
+#:    extractor could serve every series.
+PARSER_VERSION = "2"
 
 
 class ExtractionError(Exception):

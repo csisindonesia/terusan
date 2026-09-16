@@ -45,6 +45,12 @@ Every stage is idempotent. Re-running the first writes nothing if the source is
 unchanged, the second skips documents already extracted, and the fourth rebuilds
 its indicator from scratch. A refresh over a stable archive should move no bytes.
 
+Bumping `PARSER_VERSION` in `extract/base.py` is what makes a changed extractor
+run again — extraction is idempotent on document and parser version, so without
+the bump the improvement simply does not take. Re-extraction appends rather than
+replaces, keeping a partition traceable to the code that produced it, and Silver
+reads only the current version.
+
 Watch the counters rather than the exit code. `unresolved_geo`,
 `ambiguous_values` and `unparseable_values` are how the run tells you something
 needs attention — a name the reference data does not know, or a number that
@@ -85,6 +91,28 @@ API_PORT=9000 PORTAL_PORT=4000 make dev
 
 The portal reads `VITE_API_URL` at build time; with a non-default API port, set
 it in `apps/portal/.env` and add the portal's origin to `API_CORS_ORIGINS`.
+
+### Checking it works
+
+```bash
+make smoke      # against a running `make dev`
+```
+
+It asks the one question the other checks cannot: does the client JavaScript
+load? A portal whose client entry fails renders perfectly server-side and then
+sits there — typecheck passes, the build passes, and the HTML looks complete.
+The last check renders the page in headless Chrome and fails if the table is
+still showing loading skeletons.
+
+### Production
+
+```bash
+cd apps/portal && pnpm build && pnpm start
+```
+
+The build emits a platform-agnostic fetch handler rather than a listening
+server, so `server.mjs` bridges it to Node and serves the static assets. Set
+`PORT` and `HOST` to move it.
 
 ## Seeing the data
 

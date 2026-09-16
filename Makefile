@@ -107,6 +107,10 @@ compact: ## Merge small Parquet files across the analytical layers
 
 # ---- quality --------------------------------------------------------------
 
+.PHONY: smoke
+smoke: ## Check a running stack serves data to a browser (needs `make dev`)
+	@./scripts/smoke.sh
+
 .PHONY: test
 test: test-go test-python ## Run every test suite
 

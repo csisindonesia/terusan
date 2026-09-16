@@ -19,6 +19,7 @@ from pathlib import Path
 import pyarrow as pa
 import structlog
 
+from ..extract.base import PARSER_VERSION
 from ..storage import Layer, StorageResolver, slugify
 from ..warehouse import ParquetWriter, Warehouse, table_from_rows
 from .dimensions import CommodityRegistry, Geography, GeographyRegistry
@@ -162,7 +163,12 @@ class SilverRunner:
 
         pattern = self._resolver.glob(Layer.BRONZE, "records")
         sql = "SELECT * FROM read_parquet(?, union_by_name=true, hive_partitioning=true)"
-        conditions, params = [], [pattern]
+        # Re-extracting under a new parser version appends rows rather than
+        # replacing them, which is what makes a partition traceable to the code
+        # that produced it (program.md §17). The cost is that a read has to say
+        # which version it wants: without this, improving a parser silently
+        # doubles every observation downstream.
+        conditions, params = ["parser_version = ?"], [pattern, PARSER_VERSION]
         if dataset:
             conditions.append("dataset = ?")
             params.append(dataset)
