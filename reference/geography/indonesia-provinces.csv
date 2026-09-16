@@ -1,0 +1,61 @@
+# Indonesian provinces, keyed by BPS code.
+#
+# BPS codes are what Indonesian statistical releases publish against, so they
+# are the join key here rather than ISO 3166-2.
+#
+# `valid_from` carries the law that created a province. Administrative changes
+# must not silently overwrite earlier definitions (program.md §11): resolving a
+# 2015 figure against a 2022 province would file it under an area that did not
+# exist when the figure was collected.
+#
+# VERIFY BEFORE PRODUCTION USE: the BPS codes for the four provinces created in
+# 2022 — Papua Barat Daya, Papua Selatan, Papua Tengah, Papua Pegunungan — are
+# recorded here from secondary knowledge, not from a BPS publication. The names,
+# dates and parent relationships are sound; the numeric codes should be checked
+# against BPS Kode dan Data Wilayah before anything depends on them.
+#
+# aliases are pipe-separated. Nothing is aliased to a bare "Papua": the registry
+# refuses a name two areas both answer to, and that would cost the real one.
+#
+# Indonesia itself is not listed here. It comes from countries.csv as `IDN`, and
+# defining it twice made both definitions unresolvable — which is the duplicate
+# guard working, but it cost the country its own name.
+geo_id,name,geo_type,parent_geo_id,bps_code,valid_from,valid_to,aliases
+ID-11,Aceh,province,IDN,11,,,NAD|Nanggroe Aceh Darussalam|DI Aceh
+ID-12,Sumatera Utara,province,IDN,12,,,Sumut|North Sumatra|Sumatra Utara
+ID-13,Sumatera Barat,province,IDN,13,,,Sumbar|West Sumatra|Sumatra Barat
+ID-14,Riau,province,IDN,14,,,
+ID-15,Jambi,province,IDN,15,,,
+ID-16,Sumatera Selatan,province,IDN,16,,,Sumsel|South Sumatra|Sumatra Selatan
+ID-17,Bengkulu,province,IDN,17,,,
+ID-18,Lampung,province,IDN,18,,,
+ID-19,Kepulauan Bangka Belitung,province,IDN,19,2000-11-21,,Babel|Bangka Belitung|Kep. Bangka Belitung
+ID-21,Kepulauan Riau,province,IDN,21,2002-09-24,,Kepri|Riau Islands|Kep. Riau
+ID-31,DKI Jakarta,province,IDN,31,,,Jakarta|DKI|Daerah Khusus Ibukota Jakarta|Jakarta Raya
+ID-32,Jawa Barat,province,IDN,32,,,Jabar|West Java
+ID-33,Jawa Tengah,province,IDN,33,,,Jateng|Central Java
+ID-34,DI Yogyakarta,province,IDN,34,,,DIY|Yogyakarta|Jogja|Daerah Istimewa Yogyakarta
+ID-35,Jawa Timur,province,IDN,35,,,Jatim|East Java
+ID-36,Banten,province,IDN,36,2000-10-17,,
+ID-51,Bali,province,IDN,51,,,
+ID-52,Nusa Tenggara Barat,province,IDN,52,,,NTB|West Nusa Tenggara
+ID-53,Nusa Tenggara Timur,province,IDN,53,,,NTT|East Nusa Tenggara
+ID-61,Kalimantan Barat,province,IDN,61,,,Kalbar|West Kalimantan
+ID-62,Kalimantan Tengah,province,IDN,62,,,Kalteng|Central Kalimantan
+ID-63,Kalimantan Selatan,province,IDN,63,,,Kalsel|South Kalimantan
+ID-64,Kalimantan Timur,province,IDN,64,,,Kaltim|East Kalimantan
+ID-65,Kalimantan Utara,province,IDN,65,2012-10-25,,Kaltara|North Kalimantan
+ID-71,Sulawesi Utara,province,IDN,71,,,Sulut|North Sulawesi
+ID-72,Sulawesi Tengah,province,IDN,72,,,Sulteng|Central Sulawesi
+ID-73,Sulawesi Selatan,province,IDN,73,,,Sulsel|South Sulawesi
+ID-74,Sulawesi Tenggara,province,IDN,74,,,Sultra|Southeast Sulawesi
+ID-75,Gorontalo,province,IDN,75,2000-12-22,,
+ID-76,Sulawesi Barat,province,IDN,76,2004-10-05,,Sulbar|West Sulawesi
+ID-81,Maluku,province,IDN,81,,,
+ID-82,Maluku Utara,province,IDN,82,1999-10-04,,Malut|North Maluku
+ID-91,Papua Barat,province,IDN,91,1999-10-04,,West Papua|Irian Jaya Barat
+ID-92,Papua Barat Daya,province,IDN,92,2022-12-08,,Southwest Papua
+ID-94,Papua,province,IDN,94,,,Irian Jaya
+ID-95,Papua Selatan,province,IDN,95,2022-07-25,,South Papua
+ID-96,Papua Tengah,province,IDN,96,2022-07-25,,Central Papua
+ID-97,Papua Pegunungan,province,IDN,97,2022-07-25,,Highland Papua|Pegunungan Papua

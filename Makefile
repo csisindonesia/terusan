@@ -86,6 +86,10 @@ ingest: ## Run every scheduled source into RAW
 extract: ## Extract RAW into Bronze
 	cd pipelines && uv run terusan warehouse extract
 
+.PHONY: dimensions
+dimensions: ## Publish geography and commodity dimensions into Silver
+	cd pipelines && uv run terusan silver dimensions
+
 .PHONY: silver
 silver: ## Normalize Bronze into Silver (see `terusan silver normalize --help`)
 	@echo "Silver needs a column mapping per indicator; run:"

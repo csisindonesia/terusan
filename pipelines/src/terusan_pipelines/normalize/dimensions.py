@@ -84,7 +84,7 @@ class Geography:
     name: str
     geo_type: GeoType
     parent_geo_id: str | None = None
-    country_code: str = "ID"
+    country_code: str | None = "ID"
     province_code: str | None = None
     regency_code: str | None = None
     bps_code: str | None = None
@@ -194,7 +194,10 @@ class GeographyRegistry:
     )
 
     def add(self, geography: Geography) -> None:
-        names = [geography.name, *geography.aliases]
+        # The identifier is itself a lookup key: for a country it is the ISO3
+        # code the source publishes, so a dataset keyed on `IDN` resolves
+        # without anyone having to list it as an alias.
+        names = [geography.geo_id, geography.name, *geography.aliases]
         codes = [c for c in (geography.bps_code, geography.iso_code) if c]
         self.registry.add(geography.geo_id, geography, [*names, *codes])
 
@@ -228,7 +231,7 @@ class CommodityRegistry:
     registry: Registry[Commodity] = field(default_factory=Registry[Commodity])
 
     def add(self, commodity: Commodity) -> None:
-        names = [commodity.canonical_name, *commodity.aliases]
+        names = [commodity.commodity_id, commodity.canonical_name, *commodity.aliases]
         if commodity.hs_code:
             names.append(commodity.hs_code)
         self.registry.add(commodity.commodity_id, commodity, names)

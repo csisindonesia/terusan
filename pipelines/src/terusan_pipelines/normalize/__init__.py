@@ -29,6 +29,16 @@ from .observations import (
     observation_id,
 )
 from .periods import Period, Resolution, UnparseablePeriod, parse_period, try_parse_period
+from .reference import (
+    REFERENCE_ROOT,
+    ReferenceDataError,
+    commodity_registry,
+    geography_registry,
+    load_aggregates,
+    load_commodities,
+    load_countries,
+    load_indonesia,
+)
 from .runner import PIPELINE_VERSION, SilverResult, SilverRunner
 from .schema import (
     SILVER_COMMODITIES,
@@ -42,6 +52,7 @@ from .values import NumberFormat, ParsedValue, ValueStatus, parse_value
 
 __all__ = [
     "PIPELINE_VERSION",
+    "REFERENCE_ROOT",
     "SILVER_COMMODITIES",
     "SILVER_DOCUMENTS",
     "SILVER_GEOGRAPHY",
@@ -61,12 +72,19 @@ __all__ = [
     "ObservationNormalizer",
     "ParsedValue",
     "Period",
+    "ReferenceDataError",
     "Registry",
     "Resolution",
     "SilverResult",
     "SilverRunner",
     "UnparseablePeriod",
     "ValueStatus",
+    "commodity_registry",
+    "geography_registry",
+    "load_aggregates",
+    "load_commodities",
+    "load_countries",
+    "load_indonesia",
     "normalize_name",
     "observation_id",
     "parse_period",

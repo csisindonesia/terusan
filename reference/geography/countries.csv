@@ -1,0 +1,223 @@
+# ISO 3166-1 alpha-3 countries.
+# Generated from the World Bank country API, which is the code set the
+# worldbank-gdp source publishes against — so the two agree by construction.
+# Aggregates (World, Euro area, income groups) are excluded: they are sums
+# of the rows beside them, not places.
+iso3,iso2,name,region,capital
+ABW,AW,Aruba,Latin America & Caribbean,Oranjestad
+AFG,AF,Afghanistan,"Middle East, North Africa, Afghanistan & Pakistan",Kabul
+AGO,AO,Angola,Sub-Saharan Africa,Luanda
+ALB,AL,Albania,Europe & Central Asia,Tirane
+AND,AD,Andorra,Europe & Central Asia,Andorra la Vella
+ARE,AE,United Arab Emirates,"Middle East, North Africa, Afghanistan & Pakistan",Abu Dhabi
+ARG,AR,Argentina,Latin America & Caribbean,Buenos Aires
+ARM,AM,Armenia,Europe & Central Asia,Yerevan
+ASM,AS,American Samoa,East Asia & Pacific,Pago Pago
+ATG,AG,Antigua and Barbuda,Latin America & Caribbean,Saint John's
+AUS,AU,Australia,East Asia & Pacific,Canberra
+AUT,AT,Austria,Europe & Central Asia,Vienna
+AZE,AZ,Azerbaijan,Europe & Central Asia,Baku
+BDI,BI,Burundi,Sub-Saharan Africa,Bujumbura
+BEL,BE,Belgium,Europe & Central Asia,Brussels
+BEN,BJ,Benin,Sub-Saharan Africa,Porto-Novo
+BFA,BF,Burkina Faso,Sub-Saharan Africa,Ouagadougou
+BGD,BD,Bangladesh,South Asia,Dhaka
+BGR,BG,Bulgaria,Europe & Central Asia,Sofia
+BHR,BH,Bahrain,"Middle East, North Africa, Afghanistan & Pakistan",Manama
+BHS,BS,"Bahamas, The",Latin America & Caribbean,Nassau
+BIH,BA,Bosnia and Herzegovina,Europe & Central Asia,Sarajevo
+BLR,BY,Belarus,Europe & Central Asia,Minsk
+BLZ,BZ,Belize,Latin America & Caribbean,Belmopan
+BMU,BM,Bermuda,North America,Hamilton
+BOL,BO,Bolivia,Latin America & Caribbean,La Paz
+BRA,BR,Brazil,Latin America & Caribbean,Brasilia
+BRB,BB,Barbados,Latin America & Caribbean,Bridgetown
+BRN,BN,Brunei Darussalam,East Asia & Pacific,Bandar Seri Begawan
+BTN,BT,Bhutan,South Asia,Thimphu
+BWA,BW,Botswana,Sub-Saharan Africa,Gaborone
+CAF,CF,Central African Republic,Sub-Saharan Africa,Bangui
+CAN,CA,Canada,North America,Ottawa
+CHE,CH,Switzerland,Europe & Central Asia,Bern
+CHI,JG,Channel Islands,Europe & Central Asia,
+CHL,CL,Chile,Latin America & Caribbean,Santiago
+CHN,CN,China,East Asia & Pacific,Beijing
+CIV,CI,Cote d'Ivoire,Sub-Saharan Africa,Yamoussoukro
+CMR,CM,Cameroon,Sub-Saharan Africa,Yaounde
+COD,CD,"Congo, Dem. Rep.",Sub-Saharan Africa,Kinshasa
+COG,CG,"Congo, Rep.",Sub-Saharan Africa,Brazzaville
+COL,CO,Colombia,Latin America & Caribbean,Bogota
+COM,KM,Comoros,Sub-Saharan Africa,Moroni
+CPV,CV,Cabo Verde,Sub-Saharan Africa,Praia
+CRI,CR,Costa Rica,Latin America & Caribbean,San Jose
+CUB,CU,Cuba,Latin America & Caribbean,Havana
+CUW,CW,Curacao,Latin America & Caribbean,Willemstad
+CYM,KY,Cayman Islands,Latin America & Caribbean,George Town
+CYP,CY,Cyprus,Europe & Central Asia,Nicosia
+CZE,CZ,Czechia,Europe & Central Asia,Prague
+DEU,DE,Germany,Europe & Central Asia,Berlin
+DJI,DJ,Djibouti,"Middle East, North Africa, Afghanistan & Pakistan",Djibouti
+DMA,DM,Dominica,Latin America & Caribbean,Roseau
+DNK,DK,Denmark,Europe & Central Asia,Copenhagen
+DOM,DO,Dominican Republic,Latin America & Caribbean,Santo Domingo
+DZA,DZ,Algeria,"Middle East, North Africa, Afghanistan & Pakistan",Algiers
+ECU,EC,Ecuador,Latin America & Caribbean,Quito
+EGY,EG,"Egypt, Arab Rep.","Middle East, North Africa, Afghanistan & Pakistan",Cairo
+ERI,ER,Eritrea,Sub-Saharan Africa,Asmara
+ESP,ES,Spain,Europe & Central Asia,Madrid
+EST,EE,Estonia,Europe & Central Asia,Tallinn
+ETH,ET,Ethiopia,Sub-Saharan Africa,Addis Ababa
+FIN,FI,Finland,Europe & Central Asia,Helsinki
+FJI,FJ,Fiji,East Asia & Pacific,Suva
+FRA,FR,France,Europe & Central Asia,Paris
+FRO,FO,Faroe Islands,Europe & Central Asia,Torshavn
+FSM,FM,"Micronesia, Fed. Sts.",East Asia & Pacific,Palikir
+GAB,GA,Gabon,Sub-Saharan Africa,Libreville
+GBR,GB,United Kingdom,Europe & Central Asia,London
+GEO,GE,Georgia,Europe & Central Asia,Tbilisi
+GHA,GH,Ghana,Sub-Saharan Africa,Accra
+GIB,GI,Gibraltar,Europe & Central Asia,
+GIN,GN,Guinea,Sub-Saharan Africa,Conakry
+GMB,GM,"Gambia, The",Sub-Saharan Africa,Banjul
+GNB,GW,Guinea-Bissau,Sub-Saharan Africa,Bissau
+GNQ,GQ,Equatorial Guinea,Sub-Saharan Africa,Malabo
+GRC,GR,Greece,Europe & Central Asia,Athens
+GRD,GD,Grenada,Latin America & Caribbean,Saint George's
+GRL,GL,Greenland,Europe & Central Asia,Nuuk
+GTM,GT,Guatemala,Latin America & Caribbean,Guatemala City
+GUM,GU,Guam,East Asia & Pacific,Agana
+GUY,GY,Guyana,Latin America & Caribbean,Georgetown
+HKG,HK,"Hong Kong SAR, China",East Asia & Pacific,
+HND,HN,Honduras,Latin America & Caribbean,Tegucigalpa
+HRV,HR,Croatia,Europe & Central Asia,Zagreb
+HTI,HT,Haiti,Latin America & Caribbean,Port-au-Prince
+HUN,HU,Hungary,Europe & Central Asia,Budapest
+IDN,ID,Indonesia,East Asia & Pacific,Jakarta
+IMN,IM,Isle of Man,Europe & Central Asia,Douglas
+IND,IN,India,South Asia,New Delhi
+IRL,IE,Ireland,Europe & Central Asia,Dublin
+IRN,IR,"Iran, Islamic Rep.","Middle East, North Africa, Afghanistan & Pakistan",Tehran
+IRQ,IQ,Iraq,"Middle East, North Africa, Afghanistan & Pakistan",Baghdad
+ISL,IS,Iceland,Europe & Central Asia,Reykjavik
+ISR,IL,Israel,"Middle East, North Africa, Afghanistan & Pakistan",
+ITA,IT,Italy,Europe & Central Asia,Rome
+JAM,JM,Jamaica,Latin America & Caribbean,Kingston
+JOR,JO,Jordan,"Middle East, North Africa, Afghanistan & Pakistan",Amman
+JPN,JP,Japan,East Asia & Pacific,Tokyo
+KAZ,KZ,Kazakhstan,Europe & Central Asia,Astana
+KEN,KE,Kenya,Sub-Saharan Africa,Nairobi
+KGZ,KG,Kyrgyz Republic,Europe & Central Asia,Bishkek
+KHM,KH,Cambodia,East Asia & Pacific,Phnom Penh
+KIR,KI,Kiribati,East Asia & Pacific,Tarawa
+KNA,KN,St. Kitts and Nevis,Latin America & Caribbean,Basseterre
+KOR,KR,"Korea, Rep.",East Asia & Pacific,Seoul
+KWT,KW,Kuwait,"Middle East, North Africa, Afghanistan & Pakistan",Kuwait City
+LAO,LA,Lao PDR,East Asia & Pacific,Vientiane
+LBN,LB,Lebanon,"Middle East, North Africa, Afghanistan & Pakistan",Beirut
+LBR,LR,Liberia,Sub-Saharan Africa,Monrovia
+LBY,LY,Libya,"Middle East, North Africa, Afghanistan & Pakistan",Tripoli
+LCA,LC,St. Lucia,Latin America & Caribbean,Castries
+LIE,LI,Liechtenstein,Europe & Central Asia,Vaduz
+LKA,LK,Sri Lanka,South Asia,Colombo
+LSO,LS,Lesotho,Sub-Saharan Africa,Maseru
+LTU,LT,Lithuania,Europe & Central Asia,Vilnius
+LUX,LU,Luxembourg,Europe & Central Asia,Luxembourg
+LVA,LV,Latvia,Europe & Central Asia,Riga
+MAC,MO,"Macao SAR, China",East Asia & Pacific,
+MAF,MF,St. Martin (French part),Latin America & Caribbean,Marigot
+MAR,MA,Morocco,"Middle East, North Africa, Afghanistan & Pakistan",Rabat
+MCO,MC,Monaco,Europe & Central Asia,Monaco
+MDA,MD,Moldova,Europe & Central Asia,Chisinau
+MDG,MG,Madagascar,Sub-Saharan Africa,Antananarivo
+MDV,MV,Maldives,South Asia,Male
+MEX,MX,Mexico,Latin America & Caribbean,Mexico City
+MHL,MH,Marshall Islands,East Asia & Pacific,Majuro
+MKD,MK,North Macedonia,Europe & Central Asia,Skopje
+MLI,ML,Mali,Sub-Saharan Africa,Bamako
+MLT,MT,Malta,"Middle East, North Africa, Afghanistan & Pakistan",Valletta
+MMR,MM,Myanmar,East Asia & Pacific,Naypyidaw
+MNE,ME,Montenegro,Europe & Central Asia,Podgorica
+MNG,MN,Mongolia,East Asia & Pacific,Ulaanbaatar
+MNP,MP,Northern Mariana Islands,East Asia & Pacific,Saipan
+MOZ,MZ,Mozambique,Sub-Saharan Africa,Maputo
+MRT,MR,Mauritania,Sub-Saharan Africa,Nouakchott
+MUS,MU,Mauritius,Sub-Saharan Africa,Port Louis
+MWI,MW,Malawi,Sub-Saharan Africa,Lilongwe
+MYS,MY,Malaysia,East Asia & Pacific,Kuala Lumpur
+NAM,NA,Namibia,Sub-Saharan Africa,Windhoek
+NCL,NC,New Caledonia,East Asia & Pacific,Noum'ea
+NER,NE,Niger,Sub-Saharan Africa,Niamey
+NGA,NG,Nigeria,Sub-Saharan Africa,Abuja
+NIC,NI,Nicaragua,Latin America & Caribbean,Managua
+NLD,NL,Netherlands,Europe & Central Asia,Amsterdam
+NOR,NO,Norway,Europe & Central Asia,Oslo
+NPL,NP,Nepal,South Asia,Kathmandu
+NRU,NR,Naoero,East Asia & Pacific,Yaren District
+NZL,NZ,New Zealand,East Asia & Pacific,Wellington
+OMN,OM,Oman,"Middle East, North Africa, Afghanistan & Pakistan",Muscat
+PAK,PK,Pakistan,"Middle East, North Africa, Afghanistan & Pakistan",Islamabad
+PAN,PA,Panama,Latin America & Caribbean,Panama City
+PER,PE,Peru,Latin America & Caribbean,Lima
+PHL,PH,Philippines,East Asia & Pacific,Manila
+PLW,PW,Palau,East Asia & Pacific,Koror
+PNG,PG,Papua New Guinea,East Asia & Pacific,Port Moresby
+POL,PL,Poland,Europe & Central Asia,Warsaw
+PRI,PR,Puerto Rico (US),Latin America & Caribbean,San Juan
+PRK,KP,"Korea, Dem. People's Rep.",East Asia & Pacific,Pyongyang
+PRT,PT,Portugal,Europe & Central Asia,Lisbon
+PRY,PY,Paraguay,Latin America & Caribbean,Asuncion
+PSE,PS,West Bank and Gaza,"Middle East, North Africa, Afghanistan & Pakistan",
+PYF,PF,French Polynesia,East Asia & Pacific,Papeete
+QAT,QA,Qatar,"Middle East, North Africa, Afghanistan & Pakistan",Doha
+ROU,RO,Romania,Europe & Central Asia,Bucharest
+RUS,RU,Russian Federation,Europe & Central Asia,Moscow
+RWA,RW,Rwanda,Sub-Saharan Africa,Kigali
+SAU,SA,Saudi Arabia,"Middle East, North Africa, Afghanistan & Pakistan",Riyadh
+SDN,SD,Sudan,Sub-Saharan Africa,Khartoum
+SEN,SN,Senegal,Sub-Saharan Africa,Dakar
+SGP,SG,Singapore,East Asia & Pacific,Singapore
+SLB,SB,Solomon Islands,East Asia & Pacific,Honiara
+SLE,SL,Sierra Leone,Sub-Saharan Africa,Freetown
+SLV,SV,El Salvador,Latin America & Caribbean,San Salvador
+SMR,SM,San Marino,Europe & Central Asia,San Marino
+SOM,SO,"Somalia, Fed. Rep.",Sub-Saharan Africa,Mogadishu
+SRB,RS,Serbia,Europe & Central Asia,Belgrade
+SSD,SS,South Sudan,Sub-Saharan Africa,Juba
+STP,ST,Sao Tome and Principe,Sub-Saharan Africa,Sao Tome
+SUR,SR,Suriname,Latin America & Caribbean,Paramaribo
+SVK,SK,Slovak Republic,Europe & Central Asia,Bratislava
+SVN,SI,Slovenia,Europe & Central Asia,Ljubljana
+SWE,SE,Sweden,Europe & Central Asia,Stockholm
+SWZ,SZ,Eswatini,Sub-Saharan Africa,Mbabane
+SXM,SX,Sint Maarten (Dutch part),Latin America & Caribbean,Philipsburg
+SYC,SC,Seychelles,Sub-Saharan Africa,Victoria
+SYR,SY,Syrian Arab Republic,"Middle East, North Africa, Afghanistan & Pakistan",Damascus
+TCA,TC,Turks and Caicos Islands,Latin America & Caribbean,Grand Turk
+TCD,TD,Chad,Sub-Saharan Africa,N'Djamena
+TGO,TG,Togo,Sub-Saharan Africa,Lome
+THA,TH,Thailand,East Asia & Pacific,Bangkok
+TJK,TJ,Tajikistan,Europe & Central Asia,Dushanbe
+TKM,TM,Turkmenistan,Europe & Central Asia,Ashgabat
+TLS,TL,Timor-Leste,East Asia & Pacific,Dili
+TON,TO,Tonga,East Asia & Pacific,Nuku'alofa
+TTO,TT,Trinidad and Tobago,Latin America & Caribbean,Port-of-Spain
+TUN,TN,Tunisia,"Middle East, North Africa, Afghanistan & Pakistan",Tunis
+TUR,TR,Turkiye,Europe & Central Asia,Ankara
+TUV,TV,Tuvalu,East Asia & Pacific,Funafuti
+TZA,TZ,Tanzania,Sub-Saharan Africa,Dodoma
+UGA,UG,Uganda,Sub-Saharan Africa,Kampala
+UKR,UA,Ukraine,Europe & Central Asia,Kiev
+URY,UY,Uruguay,Latin America & Caribbean,Montevideo
+USA,US,United States,North America,Washington D.C.
+UZB,UZ,Uzbekistan,Europe & Central Asia,Tashkent
+VCT,VC,St. Vincent and the Grenadines,Latin America & Caribbean,Kingstown
+VEN,VE,"Venezuela, RB",Latin America & Caribbean,Caracas
+VGB,VG,British Virgin Islands,Latin America & Caribbean,Road Town
+VIR,VI,Virgin Islands (U.S.),Latin America & Caribbean,Charlotte Amalie
+VNM,VN,Viet Nam,East Asia & Pacific,Hanoi
+VUT,VU,Vanuatu,East Asia & Pacific,Port-Vila
+WSM,WS,Samoa,East Asia & Pacific,Apia
+XKX,XK,Kosovo,Europe & Central Asia,Pristina
+YEM,YE,"Yemen, Rep.","Middle East, North Africa, Afghanistan & Pakistan",Sana'a
+ZAF,ZA,South Africa,Sub-Saharan Africa,Pretoria
+ZMB,ZM,Zambia,Sub-Saharan Africa,Lusaka
+ZWE,ZW,Zimbabwe,Sub-Saharan Africa,Harare

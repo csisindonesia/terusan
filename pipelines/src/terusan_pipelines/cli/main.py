@@ -21,6 +21,12 @@ from terusan_pipelines.normalize import (
     ColumnMapping,
     NumberFormat,
     SilverRunner,
+    commodity_registry,
+    geography_registry,
+    load_aggregates,
+    load_commodities,
+    load_countries,
+    load_indonesia,
     parse_value,
 )
 from terusan_pipelines.sources import Registry, Runner, ScrapeContext, registry, summarize
@@ -443,9 +449,12 @@ def silver_normalize(
         exclude_where=exclusions,
     )
 
-    result = SilverRunner(_resolver()).normalize(
-        mapping, dataset=dataset, source_id=source, dry_run=dry_run
+    runner = SilverRunner(
+        _resolver(),
+        geography=geography_registry(),
+        commodities=commodity_registry(),
     )
+    result = runner.normalize(mapping, dataset=dataset, source_id=source, dry_run=dry_run)
     stats = result.stats
     typer.echo(
         json.dumps(
@@ -504,6 +513,62 @@ def silver_check(
                     "status": str(value.status),
                     "unambiguous": value.unambiguous,
                 },
+            },
+            indent=2,
+        )
+    )
+
+
+@silver_app.command("dimensions")
+def silver_dimensions() -> None:
+    """Publish the geography and commodity dimensions into Silver.
+
+    Reference data under `reference/` is the authority; this copies it into the
+    lake so a query can join on it (program.md §11, §12). Nothing writes back
+    the other way.
+    """
+    runner = SilverRunner(_resolver())
+    geographies = [*load_countries(), *load_aggregates(), *load_indonesia()]
+    commodities = load_commodities()
+
+    typer.echo(
+        json.dumps(
+            {
+                "geography": runner.write_geography(geographies),
+                "commodities": runner.write_commodities(commodities),
+            },
+            indent=2,
+        )
+    )
+
+
+@silver_app.command("resolve")
+def silver_resolve(
+    name: Annotated[str, typer.Argument(help="A place name, as a source writes it.")],
+) -> None:
+    """Show what a place name resolves to, and how.
+
+    For working out whether a source's naming needs an alias adding to the
+    reference data before a normalization run files everything under nothing.
+    """
+    result = geography_registry().resolve(name)
+    if not result.resolved:
+        typer.echo(f"{name!r} resolves to nothing")
+        raise typer.Exit(code=1)
+
+    geography = geography_registry().get(result.identifier or "")
+    typer.echo(
+        json.dumps(
+            {
+                "geo_id": result.identifier,
+                "matched_by": result.method,
+                "name": geography.name if geography else None,
+                "geo_type": str(geography.geo_type) if geography else None,
+                "parent": geography.parent_geo_id if geography else None,
+                "bps_code": geography.bps_code if geography else None,
+                "valid_from": (
+                    geography.valid_from.isoformat() if geography and geography.valid_from else None
+                ),
             },
             indent=2,
         )

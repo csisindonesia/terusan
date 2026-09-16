@@ -143,6 +143,18 @@ Three things it refuses to do quietly:
 - **Guess a place.** An unresolved name stays unresolved and keeps its raw
   text. A figure filed under the wrong province is worse than one filed under
   none, because the second is visible.
+
+  Names resolve against committed reference data in [reference/](reference/):
+  217 countries, 78 World Bank aggregates, and Indonesia's 38 provinces with
+  their BPS codes and the aliases sources actually publish — `Jabar`,
+  `West Java`, `32`, `Prov. Jawa Barat` all reach `ID-32`. Provinces created in
+  2022 carry the date of the law that created them, so a 2015 figure cannot be
+  filed under an area that did not exist when it was collected.
+
+  ```bash
+  terusan silver resolve Sultra        # what does this name reach, and how?
+  terusan silver dimensions            # publish the dimensions into Silver
+  ```
 - **Flatten a gap.** `-`, `x` and `...` mean missing, suppressed and not-yet —
   different facts, and treating any of them as zero is a fabrication.
 
@@ -222,6 +234,14 @@ Not yet built: curation into Gold, the REST and SQL surfaces, scheduling,
 search, and authentication.
 
 Verified end to end against the live World Bank API: 17,160 observations from
-one page, through RAW and Bronze into typed Silver.
+one page, through RAW and Bronze into typed Silver, every one of them resolving
+to a geography.
+
+Aggregates are recorded as `geo_type = 'region'` rather than dropped. They are
+real published figures, but every country sits inside several overlapping
+groupings, so summing the whole dataset gives about seven times the truth —
+106 trillion USD across countries in 2023, against 671 trillion across the
+aggregates. Recording the distinction lets a consumer filter; deleting the rows
+would not, because nobody can filter what is absent.
 
 Roadmap in program.md §60–63.
