@@ -69,6 +69,8 @@ function RootComponent() {
             {
               "--sidebar-width": "21rem",
               "--sidebar-rail-width": "3.5rem",
+              // Collapsing leaves exactly the rail.
+              "--sidebar-width-icon": "3.5rem",
             } as CSSProperties
           }
         >

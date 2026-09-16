@@ -52,9 +52,16 @@ export function AppSidebar() {
     groups.find((group) => group.label === activeLabel) ?? defaultGroup();
 
   return (
+    // `collapsible="icon"` rather than `"none"`: it is the only variant with a
+    // mobile branch, and without it the two panels stayed at their full 21rem
+    // on a phone. It also gives the toggle something to do — collapsing to
+    // `--sidebar-width-icon`, set to the rail's width, leaves the rail behind.
+    //
+    // The row lives on the inner wrapper this variant renders, which is what
+    // `*:data-[sidebar=sidebar]` targets.
     <Sidebar
-      collapsible="none"
-      className="overflow-hidden border-r *:data-[sidebar=sidebar]:flex-row"
+      collapsible="icon"
+      className="overflow-hidden *:data-[sidebar=sidebar]:flex-row"
     >
       <GroupRail
         groups={groups}
@@ -153,7 +160,7 @@ function ItemPanel({
   }
 
   return (
-    <Sidebar collapsible="none" className="flex min-w-0 flex-1 bg-sidebar">
+    <Sidebar collapsible="none" className="min-w-0 flex-1 bg-sidebar">
       <SidebarHeader className="gap-0.5 border-b md:h-14 md:justify-center">
         {group.sectionLabel ? (
           <span className="text-[0.7rem] font-medium tracking-wide text-muted-foreground uppercase">
