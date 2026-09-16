@@ -44,7 +44,9 @@ export function TablePagination({
     >
       <span className="text-muted-foreground">{summary}</span>
 
-      <div className="flex items-center gap-1">
+      {/* One page needs no controls, but the summary beside them is still
+          worth having — so the nav stays and only the buttons go. */}
+      <div className="flex items-center gap-1" hidden={pageCount <= 1}>
         <Button
           variant="ghost"
           size="icon-sm"

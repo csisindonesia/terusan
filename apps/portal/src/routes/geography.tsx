@@ -1,21 +1,48 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
+import { IconDownload, IconWorld } from "@tabler/icons-react";
+import { useState } from "react";
+import { z } from "zod";
 
-import { DataTable } from "~/components/data-table";
+import { DataTable, StackedCell } from "~/components/data-table";
+import { FilterChip } from "~/components/filter-chip";
+import { PageHeader } from "~/components/page-header";
+import { TablePagination } from "~/components/table-pagination";
 import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
 import { api, type Geography } from "~/lib/api";
+import { downloadCsv, toCsv } from "~/lib/csv";
 import { formatCount } from "~/lib/format";
 
-export const Route = createFileRoute("/geography")({ component: GeographyPage });
+const PAGE_SIZE = 50;
+
+const searchSchema = z.object({
+  geo_type: z.string().optional(),
+  page: z.number().int().min(0).optional(),
+});
+
+export const Route = createFileRoute("/geography")({
+  validateSearch: searchSchema,
+  component: GeographyPage,
+});
+
+const PLACE_TYPES = [
+  { value: "country", label: "Countries" },
+  { value: "province", label: "Provinces" },
+  // Aggregates are sums of the countries beside them, so a total over
+  // everything counts most places more than once.
+  { value: "region", label: "Aggregates" },
+];
 
 const columns: ColumnDef<Geography>[] = [
   {
     accessorKey: "name",
     header: "Name",
-    cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
+    cell: ({ row }) => (
+      <StackedCell primary={row.original.name} secondary={row.original.geo_id} />
+    ),
   },
-  { accessorKey: "geo_id", header: "Identifier" },
   {
     accessorKey: "geo_type",
     header: "Type",
@@ -26,42 +53,149 @@ const columns: ColumnDef<Geography>[] = [
     ),
   },
   {
+    accessorKey: "parent_geo_id",
+    header: "Within",
+    cell: ({ row }) => row.original.parent_geo_id ?? "—",
+  },
+  {
     accessorKey: "bps_code",
-    header: "BPS",
-    cell: ({ row }) => row.original.bps_code ?? "—",
+    header: "Codes",
+    cell: ({ row }) => (
+      <StackedCell
+        primary={row.original.bps_code ? `BPS ${row.original.bps_code}` : "—"}
+        secondary={row.original.iso_code ? `ISO ${row.original.iso_code}` : undefined}
+      />
+    ),
   },
   {
     accessorKey: "valid_from",
     header: "Valid from",
+    meta: { align: "right" },
+    // Administrative changes must not silently overwrite earlier definitions
+    // (program.md §11), so when a place came into being is worth a column.
     cell: ({ row }) => row.original.valid_from ?? "—",
   },
 ];
 
+const EXPORT_COLUMNS = [
+  { key: "geo_id" as const, header: "geo_id" },
+  { key: "name" as const, header: "name" },
+  { key: "geo_type" as const, header: "geo_type" },
+  { key: "parent_geo_id" as const, header: "parent_geo_id" },
+  { key: "bps_code" as const, header: "bps_code" },
+  { key: "iso_code" as const, header: "iso_code" },
+  { key: "valid_from" as const, header: "valid_from" },
+];
+
 function GeographyPage() {
+  const search = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
+  const [selected, setSelected] = useState<Geography[]>([]);
+
+  const page = search.page ?? 0;
   const query = useQuery({
-    queryKey: ["geography"],
-    queryFn: () => api.geography({ limit: 500 }),
+    queryKey: ["geography", search],
+    queryFn: () =>
+      api.geography({
+        geo_type: search.geo_type,
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
+      }),
   });
 
+  const rows = query.data?.data ?? [];
+  const total = query.data?.meta?.total ?? 0;
+  const placeType = PLACE_TYPES.find((type) => type.value === search.geo_type);
+
+  function exportRows(chosen: Geography[], suffix: string) {
+    downloadCsv(
+      `geography-${suffix}.csv`,
+      toCsv(chosen as unknown as Record<string, unknown>[], EXPORT_COLUMNS),
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      <div className="space-y-1">
-        <h1 className="font-heading text-2xl font-semibold tracking-tight">Geography</h1>
-        <p className="max-w-2xl text-sm text-muted-foreground">
-          {query.data?.meta?.total
-            ? `${formatCount(query.data.meta.total)} places. `
-            : null}
-          Aggregates are marked as regions: they are real published figures, but
-          every country sits inside several of them, so a total over everything
-          counts most places more than once.
-        </p>
+    <div className="space-y-5">
+      <PageHeader
+        title="Geography"
+        count={total}
+        isLoading={query.isLoading}
+        description="The places the figures refer to, plus Indonesia's provinces. Aggregates are marked as regions: they are real published figures, but every country sits inside several of them, so a total over everything counts most places more than once."
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!rows.length}
+            onClick={() => exportRows(rows, `page-${page + 1}`)}
+          >
+            <IconDownload className="size-4" />
+            Export page
+          </Button>
+        }
+      />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <FilterChip
+          icon={IconWorld}
+          label="Type"
+          value={placeType?.label}
+          onClear={() => navigate({ search: {} })}
+        >
+          <div className="grid gap-0.5">
+            {PLACE_TYPES.map((type) => (
+              <button
+                key={type.value}
+                type="button"
+                onClick={() =>
+                  navigate({ search: { geo_type: type.value, page: 0 } })
+                }
+                className={`rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted ${
+                  type.value === search.geo_type ? "bg-muted font-medium" : ""
+                }`}
+              >
+                {type.label}
+              </button>
+            ))}
+          </div>
+        </FilterChip>
       </div>
 
       <DataTable
         columns={columns}
-        data={query.data?.data ?? []}
+        data={rows}
         isLoading={query.isLoading}
+        loadingRows={10}
         emptyMessage="The geography dimension has not been published yet."
+        selectable
+        getRowId={(row) => row.geo_id}
+        onSelectionChange={setSelected}
+        renderSelectionActions={(chosen) => (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => exportRows(chosen, "selection")}
+          >
+            <IconDownload className="size-4" />
+            Export {formatCount(chosen.length)}
+          </Button>
+        )}
+      />
+
+      <TablePagination
+        page={page}
+        total={total}
+        pageSize={PAGE_SIZE}
+        onPage={(next) => navigate({ search: (prev) => ({ ...prev, page: next }) })}
+        summary={
+          total > 0 ? (
+            <>
+              {formatCount(page * PAGE_SIZE + 1)}–
+              {formatCount(Math.min((page + 1) * PAGE_SIZE, total))} of{" "}
+              {formatCount(total)}
+              {selected.length ? ` · ${formatCount(selected.length)} selected` : null}
+            </>
+          ) : null
+        }
       />
     </div>
   );

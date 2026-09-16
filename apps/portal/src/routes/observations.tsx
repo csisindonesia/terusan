@@ -6,6 +6,7 @@ import { useState } from "react";
 import { z } from "zod";
 
 import { DataTable, StackedCell } from "~/components/data-table";
+import { PageHeader } from "~/components/page-header";
 import { TablePagination } from "~/components/table-pagination";
 import {
   ObservationFilterBar,
@@ -173,33 +174,23 @@ function Observations() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <h1 className="font-heading text-2xl font-semibold tracking-tight">
-              Observations
-            </h1>
-            {/* The count beside the title rather than under it: it is the
-                first thing anyone checks after applying a filter. */}
-            <Badge variant="secondary" className="tabular-nums">
-              {query.isLoading ? "…" : formatCount(total)}
-            </Badge>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Statistical figures with bounded periods and resolved geography.
-          </p>
-        </div>
-
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={!rows.length}
-          onClick={() => exportRows(rows, `page-${page + 1}`)}
-        >
-          <IconDownload className="size-4" />
-          Export page
-        </Button>
-      </div>
+      <PageHeader
+        title="Observations"
+        count={total}
+        isLoading={query.isLoading}
+        description="Statistical figures with bounded periods and resolved geography."
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!rows.length}
+            onClick={() => exportRows(rows, `page-${page + 1}`)}
+          >
+            <IconDownload className="size-4" />
+            Export page
+          </Button>
+        }
+      />
 
       <ObservationFilterBar
         value={{
