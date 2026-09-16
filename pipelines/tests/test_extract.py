@@ -368,3 +368,68 @@ def test_reprocess_forces_re_extraction(resolver, meta):
     forced = ExtractionRunner(resolver).run(reprocess=True)
     assert forced.documents_extracted == 1
     assert forced.documents_unchanged == 0
+
+
+# ---- delimiter detection --------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("a,b,c\n1,2,3\n", ","),
+        ("a;b;c\n1;2;3\n", ";"),
+        ("a\tb\tc\n1\t2\t3\n", "\t"),
+        ("a|b|c\n1|2|3\n", "|"),
+    ],
+)
+def test_delimiter_detection_across_formats(text, expected):
+    from terusan_pipelines.extract.tabular import detect_delimiter
+
+    assert detect_delimiter(text) == expected
+
+
+def test_ragged_rows_do_not_collapse_to_one_column(resolver, meta):
+    """Why csv.Sniffer is not used.
+
+    It raises on ragged input, and published CSVs are routinely ragged — a
+    trailing note row, a badly exported merged cell. Falling back to a comma
+    there would read a semicolon file as a single column and make every value
+    unparseable.
+    """
+    import csv as stdlib_csv
+
+    from terusan_pipelines.extract.tabular import detect_delimiter
+
+    text = "bulan;provinsi;nilai\nJanuari 2026;Jawa Barat\nFebruari 2026;Bali;2.345,67\n"
+
+    with pytest.raises(stdlib_csv.Error):
+        stdlib_csv.Sniffer().sniff(text, delimiters=",;\t|")
+    assert detect_delimiter(text) == ";"
+
+    landed = landed_for(resolver, meta, text.encode(), "cpi.csv")
+    rows = list(CsvExtractor().extract(landed))
+    assert rows[-1]["columns"]["nilai"] == "2.345,67"
+
+
+def test_comma_decimals_survive_a_semicolon_file(resolver, meta):
+    """The shape Indonesian sources publish: semicolons because commas are decimals."""
+    from terusan_pipelines.extract.tabular import detect_delimiter
+
+    text = "bulan;provinsi;nilai\nJanuari 2026;Jawa Barat;1.234,56\n"
+    assert detect_delimiter(text) == ";"
+
+    landed = landed_for(resolver, meta, text.encode(), "cpi.csv")
+    row = next(iter(CsvExtractor().extract(landed)))
+    assert row["columns"]["nilai"] == "1.234,56"
+
+
+def test_a_single_column_file_still_reads():
+    from terusan_pipelines.extract.tabular import detect_delimiter
+
+    assert detect_delimiter("value\n1\n2\n") == ","
+
+
+def test_delimiter_detection_on_empty_input():
+    from terusan_pipelines.extract.tabular import detect_delimiter
+
+    assert detect_delimiter("") == ","

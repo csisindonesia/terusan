@@ -24,6 +24,12 @@ ENCODINGS = ("utf-8-sig", "utf-8", "latin-1", "cp1252")
 CSV_SUFFIXES = {".csv", ".tsv", ".txt"}
 JSON_SUFFIXES = {".json", ".jsonl", ".ndjson"}
 
+#: Candidate field separators, in the order ties are broken.
+DELIMITERS = (";", "\t", "|", ",")
+
+#: Rows sampled when deciding which delimiter a file uses.
+_SNIFF_ROWS = 20
+
 
 def decode(data: bytes) -> str:
     """Decode bytes, trying the usual suspects in order."""
@@ -52,15 +58,7 @@ class CsvExtractor(Extractor):
         if not text.strip():
             return
 
-        sample = text[:8192]
-        try:
-            dialect: Any = csv.Sniffer().sniff(sample, delimiters=",;\t|")
-        except csv.Error:
-            # Sniffing fails on single-column files and on ragged headers.
-            # Comma is the right guess far more often than it is wrong.
-            dialect = csv.excel
-
-        reader = csv.DictReader(io.StringIO(text), dialect=dialect)
+        reader = csv.DictReader(io.StringIO(text), delimiter=detect_delimiter(text))
         for number, row in enumerate(reader, start=1):
             yield {
                 "dataset": landed.dataset or landed.path.stem,
@@ -120,6 +118,41 @@ class JsonExtractor(Extractor):
             yield from lists[0] if len(lists) == 1 else [document]
         else:
             yield {"value": document}
+
+
+def detect_delimiter(text: str) -> str:
+    """Work out which character separates a file's fields.
+
+    `csv.Sniffer` handles clean files well but raises on ragged ones, and
+    ragged files are ordinary here: published CSVs carry trailing note rows,
+    blank lines and badly exported merged cells. Falling back to a comma when
+    it raises turns a ragged semicolon file into a single column, and every
+    value in it becomes unparseable.
+
+    Chosen on structure instead, which degrades rather than raising: the right
+    delimiter is the one that splits the header into more than one field and
+    gives the most rows that same count. Ties go to the candidate finding more
+    columns, then to the earlier entry in `DELIMITERS`.
+    """
+    lines = [line for line in text.splitlines()[: _SNIFF_ROWS + 1] if line.strip()]
+    if not lines:
+        return ","
+
+    best, best_score = ",", -1.0
+    for delimiter in DELIMITERS:
+        rows = list(csv.reader(lines, delimiter=delimiter))
+        if not rows or len(rows[0]) < 2:
+            continue
+        expected = len(rows[0])
+        consistent = sum(1 for row in rows[1:] if len(row) == expected)
+        # Field count breaks ties: with two delimiters both perfectly
+        # consistent, the one finding more columns is reading the real
+        # structure rather than splitting on an incidental character.
+        score = (consistent / max(1, len(rows) - 1)) + expected / 1000
+        if score > best_score:
+            best, best_score = delimiter, score
+
+    return best
 
 
 def _flatten(value: Any, prefix: str = "") -> dict[str, Any]:

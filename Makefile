@@ -86,6 +86,11 @@ ingest: ## Run every scheduled source into RAW
 extract: ## Extract RAW into Bronze
 	cd pipelines && uv run terusan warehouse extract
 
+.PHONY: silver
+silver: ## Normalize Bronze into Silver (see `terusan silver normalize --help`)
+	@echo "Silver needs a column mapping per indicator; run:"
+	@echo "  cd pipelines && uv run terusan silver normalize --help"
+
 .PHONY: compact
 compact: ## Merge small Parquet files across the analytical layers
 	cd pipelines && uv run terusan warehouse compact bronze

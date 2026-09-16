@@ -77,6 +77,7 @@ See [docs/adding-a-source.md](docs/adding-a-source.md).
 make catalog-sync   # source registry → PostgreSQL
 make ingest         # sources  → RAW      original bytes, immutable, hashed
 make extract        # RAW      → Bronze   machine-readable rows, provenance attached
+#                     Bronze   → Silver   typed values, bounded periods, resolved dimensions
 make compact        # merge small Parquet files (program.md §47)
 make runs           # what ran, when, and what it produced
 ```
@@ -95,6 +96,43 @@ The catalog is optional. Without `DATABASE_URL` the pipeline runs and records
 nothing: the lake is the system of record for data, the catalog records what
 happened to it. Scheduled runs should pass `--require-catalog`, where losing
 history silently is worse than failing loudly.
+
+## Silver
+
+Bronze keeps everything as text so a value cannot change type between
+partitions. Silver is where that is decided, once, with the whole column in
+view — and where the domain judgement lives:
+
+```bash
+terusan silver check "Triwulan I 2026"    # how would this be read?
+terusan silver check "1.234,56"
+
+terusan silver normalize NICKEL_PRODUCTION \
+  --dataset produksi --value-columns "2024,2025,2026" \
+  --geo-column provinsi --unit ton --number-format id \
+  --exclude "provinsi=Jumlah"
+```
+
+Three things it refuses to do quietly:
+
+- **Guess a number.** `1.234` is one thousand two hundred, or one point two
+  three four, and reading it wrong is off by a factor of a thousand while
+  looking entirely plausible. Where both separators appear the data settles it;
+  where only one does, `--number-format id|en` settles it and `auto` marks the
+  value as assumed so it can be excluded.
+- **Guess a place.** An unresolved name stays unresolved and keeps its raw
+  text. A figure filed under the wrong province is worse than one filed under
+  none, because the second is visible.
+- **Flatten a gap.** `-`, `x` and `...` mean missing, suppressed and not-yet —
+  different facts, and treating any of them as zero is a fabrication.
+
+Values are `decimal128`, not float: published statistics are decimal
+quantities, and summing a million float-parsed figures drifts in a way nobody
+can explain to whoever defends the total.
+
+The column mapping is declared, not inferred. A column headed `2026` is a
+period in a wide table and a value in a long one, and nothing in the data says
+which.
 
 Query any layer through DuckDB, against whichever backend holds the lake:
 
@@ -156,7 +194,11 @@ an API skeleton with health and readiness, and a portal shell.
 Also working: the PostgreSQL catalog is wired in — source registry sync,
 pipeline run history, dataset registration and versioning.
 
-Not yet built: normalization into Silver, curation into Gold, the REST and SQL
-surfaces, scheduling, search, and authentication.
+Also working: normalization into Silver — typed observations with bounded
+periods, resolved geography and commodity dimensions, and explicit handling of
+ambiguous or absent values.
+
+Not yet built: curation into Gold, the REST and SQL surfaces, scheduling,
+search, and authentication.
 
 Roadmap in program.md §60–63.

@@ -17,6 +17,12 @@ from terusan_pipelines.catalog import (
     sync_sources,
 )
 from terusan_pipelines.extract import ExtractionRunner
+from terusan_pipelines.normalize import (
+    ColumnMapping,
+    NumberFormat,
+    SilverRunner,
+    parse_value,
+)
 from terusan_pipelines.sources import Registry, Runner, ScrapeContext, registry, summarize
 from terusan_pipelines.storage import Layer, StorageConfig, StorageResolver, slugify
 from terusan_pipelines.warehouse import Warehouse, compact_layer
@@ -26,10 +32,12 @@ storage_app = typer.Typer(help="Inspect and prepare data-lake storage.", no_args
 sources_app = typer.Typer(help="List and run data sources.", no_args_is_help=True)
 warehouse_app = typer.Typer(help="Extract, compact and query the lake.", no_args_is_help=True)
 catalog_app = typer.Typer(help="Inspect and sync the PostgreSQL catalog.", no_args_is_help=True)
+silver_app = typer.Typer(help="Normalize Bronze into Silver.", no_args_is_help=True)
 app.add_typer(storage_app, name="storage")
 app.add_typer(sources_app, name="sources")
 app.add_typer(warehouse_app, name="warehouse")
 app.add_typer(catalog_app, name="catalog")
+app.add_typer(silver_app, name="silver")
 
 
 def _resolver() -> StorageResolver:
@@ -377,6 +385,129 @@ def catalog_datasets(
             f"{row['slug']:<28} {row['layer']:<8} {row['access_level']:<10} "
             f"rows={row['row_count'] or 0:<10} {row['storage_path']}"
         )
+
+
+# ---------------------------------------------------------------------------
+# silver
+# ---------------------------------------------------------------------------
+
+
+@silver_app.command("normalize")
+def silver_normalize(
+    indicator: Annotated[str, typer.Argument(help="Indicator id to produce.")],
+    dataset: Annotated[
+        str | None, typer.Option("--dataset", help="Bronze dataset to read.")
+    ] = None,
+    source: Annotated[
+        str | None, typer.Option("--source", help="Only this source's records.")
+    ] = None,
+    period_column: Annotated[str | None, typer.Option("--period-column")] = None,
+    value_column: Annotated[str | None, typer.Option("--value-column")] = None,
+    value_columns: Annotated[
+        str | None,
+        typer.Option("--value-columns", help="Comma-separated period columns (wide tables)."),
+    ] = None,
+    geo_column: Annotated[str | None, typer.Option("--geo-column")] = None,
+    commodity_column: Annotated[str | None, typer.Option("--commodity-column")] = None,
+    unit: Annotated[str | None, typer.Option("--unit")] = None,
+    number_format: Annotated[
+        NumberFormat,
+        typer.Option("--number-format", help="id | en | auto. Explicit removes ambiguity."),
+    ] = NumberFormat.AUTO,
+    exclude: Annotated[
+        str | None,
+        typer.Option("--exclude", help="column=value,value — drops totals and subtotals."),
+    ] = None,
+    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
+) -> None:
+    """Normalize a Bronze dataset into Silver observations.
+
+    The column mapping is declared rather than inferred: a column headed `2026`
+    is a period in a wide table and a value in a long one, and nothing in the
+    data settles which (program.md §7).
+    """
+    exclusions: dict[str, tuple[str, ...]] = {}
+    if exclude:
+        column, _, values = exclude.partition("=")
+        exclusions[column] = tuple(v.strip() for v in values.split(",") if v.strip())
+
+    mapping = ColumnMapping(
+        indicator_id=indicator,
+        period_column=period_column,
+        value_column=value_column,
+        value_columns=tuple(c.strip() for c in value_columns.split(",")) if value_columns else (),
+        geo_column=geo_column,
+        commodity_column=commodity_column,
+        unit=unit,
+        number_format=number_format,
+        exclude_where=exclusions,
+    )
+
+    result = SilverRunner(_resolver()).normalize(
+        mapping, dataset=dataset, source_id=source, dry_run=dry_run
+    )
+    stats = result.stats
+    typer.echo(
+        json.dumps(
+            {
+                "indicator": result.indicator_id,
+                "rows_in": stats.rows_in,
+                "observations": stats.observations,
+                "skipped_excluded": stats.skipped_excluded,
+                "skipped_no_period": stats.skipped_no_period,
+                "unresolved_geo": stats.unresolved_geo,
+                "unresolved_commodity": stats.unresolved_commodity,
+                "ambiguous_values": stats.ambiguous_values,
+                "unparseable_values": stats.unparseable_values,
+                "files": result.files_written,
+            },
+            indent=2,
+        )
+    )
+    if stats.ambiguous_values:
+        typer.echo(
+            f"\n{stats.ambiguous_values} value(s) read under an assumption that could "
+            "have gone the other way. Pass --number-format id or en to settle them.",
+            err=True,
+        )
+
+
+@silver_app.command("check")
+def silver_check(
+    text: Annotated[str, typer.Argument(help="A period label or a value, as published.")],
+    number_format: Annotated[NumberFormat, typer.Option("--number-format")] = NumberFormat.AUTO,
+) -> None:
+    """Show how one published cell would be read.
+
+    For working out a mapping against a real table before running it.
+    """
+    from terusan_pipelines.normalize import try_parse_period
+
+    period = try_parse_period(text)
+    value = parse_value(text, number_format)
+    typer.echo(
+        json.dumps(
+            {
+                "as_period": (
+                    {
+                        "label": period.label,
+                        "start": period.start.isoformat(),
+                        "end": period.end.isoformat(),
+                        "resolution": str(period.resolution),
+                    }
+                    if period
+                    else None
+                ),
+                "as_value": {
+                    "value": str(value.value) if value.value is not None else None,
+                    "unit": value.unit,
+                    "status": str(value.status),
+                    "unambiguous": value.unambiguous,
+                },
+            },
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":
