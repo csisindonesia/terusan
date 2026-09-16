@@ -8,6 +8,7 @@ import { z } from "zod";
 import { DataTable, StackedCell } from "~/components/data-table";
 import { PageHeader } from "~/components/page-header";
 import { SearchInput } from "~/components/search-input";
+import { TableToolbar } from "~/components/table-toolbar";
 import { RowActions, copyToClipboard } from "~/components/row-actions";
 import { TablePagination } from "~/components/table-pagination";
 import {
@@ -229,30 +230,36 @@ function Observations() {
         }
       />
 
-      <SearchInput
-        value={search.q}
-        placeholder="Search places and indicators"
-        className="max-w-sm"
-        onSearch={(q) => navigate({ search: (prev) => ({ ...prev, q, page: 0 }) })}
-      />
-
-      <ObservationFilterBar
-        value={{
-          indicator: asList(search.indicator),
-          geo: asText(search.geo),
-          geo_type: asList(search.geo_type),
-          period_start: asText(search.period_start),
-          period_end: asText(search.period_end),
-        }}
-        onChange={setSearch}
-        onClear={() => navigate({ search: {} })}
-      />
-
       {query.isError ? (
         <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
           {(query.error as Error).message}
         </p>
       ) : null}
+
+      <TableToolbar
+        filters={
+          <>
+            <ObservationFilterBar
+              value={{
+                indicator: asList(search.indicator),
+                geo: asText(search.geo),
+                geo_type: asList(search.geo_type),
+                period_start: asText(search.period_start),
+                period_end: asText(search.period_end),
+              }}
+              onChange={setSearch}
+              onClear={() => navigate({ search: {} })}
+            />
+          </>
+        }
+        search={
+          <SearchInput
+            value={search.q}
+            placeholder="Search places and indicators"
+            onSearch={(q) => navigate({ search: (prev) => ({ ...prev, q, page: 0 }) })}
+          />
+        }
+      />
 
       <DataTable
         columns={columns}
@@ -293,7 +300,6 @@ function Observations() {
           ) : null
         }
       />
-
     </div>
   );
 }

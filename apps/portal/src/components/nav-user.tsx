@@ -1,4 +1,9 @@
-import { IconLogout, IconSettings, IconUser, IconUserCircle } from "@tabler/icons-react";
+import {
+  IconLogout,
+  IconSettings,
+  IconUser,
+  IconUserCircle,
+} from "@tabler/icons-react";
 
 import {
   DropdownMenu,

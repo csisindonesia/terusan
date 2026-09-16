@@ -65,7 +65,6 @@ export function statusLabel(status: string): string {
   return STATUS_LABELS[status] ?? status;
 }
 
-
 /**
  * A timestamp as a date, in the reader's locale.
  *

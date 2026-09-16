@@ -152,8 +152,7 @@ export const api = {
     q?: string;
     limit?: number;
     offset?: number;
-  }) =>
-    request<Geography[]>("/v1/geography", params),
+  }) => request<Geography[]>("/v1/geography", params),
   observations: (params?: ObservationQuery) =>
     request<Observation[]>("/v1/observations", params),
 };

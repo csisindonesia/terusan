@@ -49,8 +49,7 @@ export function AppSidebar() {
     if (match) setActiveLabel(match.label);
   }, [pathname]);
 
-  const active =
-    groups.find((group) => group.label === activeLabel) ?? defaultGroup();
+  const active = groups.find((group) => group.label === activeLabel) ?? defaultGroup();
 
   return (
     // `collapsible="icon"` rather than `"none"`: it is the only variant with a
@@ -64,11 +63,7 @@ export function AppSidebar() {
       collapsible="icon"
       className="overflow-hidden *:data-[sidebar=sidebar]:flex-row"
     >
-      <GroupRail
-        groups={groups}
-        activeLabel={active.label}
-        onSelect={setActiveLabel}
-      />
+      <GroupRail groups={groups} activeLabel={active.label} onSelect={setActiveLabel} />
       <ItemPanel group={active} pathname={pathname} coverage={coverage} />
     </Sidebar>
   );
@@ -216,8 +211,8 @@ function ItemPanel({
 
       <SidebarFooter>
         <p className="px-2 pb-1 text-xs text-muted-foreground">
-          {coverage.built} of {coverage.total} pages built. The rest are listed
-          so the shape is visible.
+          {coverage.built} of {coverage.total} pages built. The rest are listed so the
+          shape is visible.
         </p>
       </SidebarFooter>
     </Sidebar>

@@ -10,11 +10,7 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { AppSidebar } from "~/components/app-sidebar";
 import { Separator } from "~/components/ui/separator";
-import {
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from "~/components/ui/sidebar";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "~/components/ui/sidebar";
 import { TooltipProvider } from "~/components/ui/tooltip";
 import { NAVIGATION } from "~/lib/navigation";
 import appCss from "~/styles/app.css?url";
@@ -46,7 +42,10 @@ function useTrail(pathname: string): string[] {
   for (const section of NAVIGATION) {
     for (const group of section.groups) {
       for (const item of group.items) {
-        if (item.to && (item.exact ? pathname === item.to : pathname.startsWith(item.to))) {
+        if (
+          item.to &&
+          (item.exact ? pathname === item.to : pathname.startsWith(item.to))
+        ) {
           return [section.label, group.label, item.label].filter(Boolean) as string[];
         }
       }
@@ -79,7 +78,10 @@ function RootComponent() {
             <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
               <SidebarTrigger className="-ml-1" />
               <Separator orientation="vertical" className="mr-1 h-4" />
-              <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-sm">
+              <nav
+                aria-label="Breadcrumb"
+                className="flex items-center gap-1.5 text-sm"
+              >
                 {trail.length ? (
                   trail.map((crumb, index) => (
                     <span key={crumb} className="flex items-center gap-1.5">

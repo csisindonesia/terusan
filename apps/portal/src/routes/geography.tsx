@@ -9,6 +9,7 @@ import { DataTable, StackedCell } from "~/components/data-table";
 import { ChoiceList, FilterChip, summarise } from "~/components/filter-chip";
 import { PageHeader } from "~/components/page-header";
 import { SearchInput } from "~/components/search-input";
+import { TableToolbar } from "~/components/table-toolbar";
 import { RowActions, copyToClipboard } from "~/components/row-actions";
 import { TablePagination } from "~/components/table-pagination";
 import { Badge } from "~/components/ui/badge";
@@ -162,39 +163,61 @@ function GeographyPage() {
         }
       />
 
-      <SearchInput
-        value={search.q}
-        placeholder="Search places and codes"
-        className="max-w-sm"
-        onSearch={(q) => navigate({ search: (prev) => ({ ...prev, q, page: 0 }) })}
-      />
+      <TableToolbar
+        filters={
+          <>
+            <FilterChip
+              label="Type"
+              value={summarise(
+                chosen,
+                (v) => PLACE_TYPES.find((t) => t.value === v)?.label ?? v,
+              )}
+              onClear={() =>
+                navigate({
+                  search: (prev) => ({ ...prev, geo_type: undefined, page: 0 }),
+                })
+              }
+            >
+              <ChoiceList
+                options={PLACE_TYPES}
+                selected={chosen}
+                onToggle={(type) =>
+                  navigate({
+                    search: (prev) => ({
+                      ...prev,
+                      geo_type: toggle(chosen, type),
+                      page: 0,
+                    }),
+                  })
+                }
+                onClear={() =>
+                  navigate({
+                    search: (prev) => ({ ...prev, geo_type: undefined, page: 0 }),
+                  })
+                }
+              />
+            </FilterChip>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <FilterChip
-          label="Type"
-          value={summarise(chosen, (v) => PLACE_TYPES.find((t) => t.value === v)?.label ?? v)}
-          onClear={() => navigate({ search: (prev) => ({ ...prev, geo_type: undefined, page: 0 }) })}
-        >
-          <ChoiceList
-            options={PLACE_TYPES}
-            selected={chosen}
-            onToggle={(type) =>
-              navigate({
-                search: (prev) => ({ ...prev, geo_type: toggle(chosen, type), page: 0 }),
-              })
-            }
-            onClear={() =>
-              navigate({ search: (prev) => ({ ...prev, geo_type: undefined, page: 0 }) })
-            }
+            {chosen.length || search.q ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8"
+                onClick={() => navigate({ search: {} })}
+              >
+                Clear all
+              </Button>
+            ) : null}
+          </>
+        }
+        search={
+          <SearchInput
+            value={search.q}
+            placeholder="Search places and codes"
+            onSearch={(q) => navigate({ search: (prev) => ({ ...prev, q, page: 0 }) })}
           />
-        </FilterChip>
-
-        {chosen.length || search.q ? (
-          <Button variant="ghost" size="sm" className="h-8" onClick={() => navigate({ search: {} })}>
-            Clear all
-          </Button>
-        ) : null}
-      </div>
+        }
+      />
 
       <DataTable
         columns={columns}

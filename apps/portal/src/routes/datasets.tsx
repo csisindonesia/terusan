@@ -9,6 +9,7 @@ import { DataTable, StackedCell } from "~/components/data-table";
 import { ChoiceList, FilterChip, summarise } from "~/components/filter-chip";
 import { PageHeader } from "~/components/page-header";
 import { SearchInput } from "~/components/search-input";
+import { TableToolbar } from "~/components/table-toolbar";
 import { RowActions, copyToClipboard } from "~/components/row-actions";
 import { TablePagination } from "~/components/table-pagination";
 import { Badge } from "~/components/ui/badge";
@@ -124,36 +125,51 @@ function Datasets() {
         }
       />
 
-      <SearchInput
-        value={search.q}
-        placeholder="Search datasets"
-        className="max-w-sm"
-        onSearch={(q) => navigate({ search: (prev) => ({ ...prev, q }) })}
-      />
+      <TableToolbar
+        filters={
+          <>
+            <FilterChip
+              label="Layer"
+              value={summarise(chosen)}
+              onClear={() =>
+                navigate({ search: (prev) => ({ ...prev, layer: undefined }) })
+              }
+            >
+              <ChoiceList
+                options={layers.map((layer) => ({ value: layer, label: layer }))}
+                selected={chosen}
+                onToggle={(layer) =>
+                  navigate({
+                    search: (prev) => ({ ...prev, layer: toggle(chosen, layer) }),
+                  })
+                }
+                onClear={() =>
+                  navigate({ search: (prev) => ({ ...prev, layer: undefined }) })
+                }
+                empty="Nothing in the lake yet."
+              />
+            </FilterChip>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <FilterChip
-          label="Layer"
-          value={summarise(chosen)}
-          onClear={() => navigate({ search: (prev) => ({ ...prev, layer: undefined }) })}
-        >
-          <ChoiceList
-            options={layers.map((layer) => ({ value: layer, label: layer }))}
-            selected={chosen}
-            onToggle={(layer) =>
-              navigate({ search: (prev) => ({ ...prev, layer: toggle(chosen, layer) }) })
-            }
-            onClear={() => navigate({ search: (prev) => ({ ...prev, layer: undefined }) })}
-            empty="Nothing in the lake yet."
+            {chosen.length || search.q ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8"
+                onClick={() => navigate({ search: {} })}
+              >
+                Clear all
+              </Button>
+            ) : null}
+          </>
+        }
+        search={
+          <SearchInput
+            value={search.q}
+            placeholder="Search datasets"
+            onSearch={(q) => navigate({ search: (prev) => ({ ...prev, q }) })}
           />
-        </FilterChip>
-
-        {chosen.length || search.q ? (
-          <Button variant="ghost" size="sm" className="h-8" onClick={() => navigate({ search: {} })}>
-            Clear all
-          </Button>
-        ) : null}
-      </div>
+        }
+      />
 
       <DataTable
         columns={columns}

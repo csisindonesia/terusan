@@ -81,9 +81,7 @@ export function DataTable<TData>({
     <div className="space-y-2">
       {selectable && selectedRows.length > 0 ? (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/40 px-3 py-2 text-sm">
-          <span className="font-medium">
-            {selectedRows.length} selected
-          </span>
+          <span className="font-medium">{selectedRows.length} selected</span>
           <button
             type="button"
             onClick={() => table.resetRowSelection()}
@@ -147,7 +145,10 @@ export function DataTable<TData>({
                       >
                         {header.isPlaceholder
                           ? null
-                          : flexRender(header.column.columnDef.header, header.getContext())}
+                          : flexRender(
+                              header.column.columnDef.header,
+                              header.getContext(),
+                            )}
 
                         {sortable ? (
                           <button
@@ -186,7 +187,10 @@ export function DataTable<TData>({
               ))
             ) : table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id} data-state={row.getIsSelected() ? "selected" : undefined}>
+                <TableRow
+                  key={row.id}
+                  data-state={row.getIsSelected() ? "selected" : undefined}
+                >
                   {selectable ? (
                     <TableCell className="pl-3">
                       <Checkbox

@@ -9,6 +9,7 @@ import { DataTable, StackedCell } from "~/components/data-table";
 import { ChoiceList, FilterChip, summarise } from "~/components/filter-chip";
 import { PageHeader } from "~/components/page-header";
 import { SearchInput } from "~/components/search-input";
+import { TableToolbar } from "~/components/table-toolbar";
 import { RowActions, copyToClipboard } from "~/components/row-actions";
 import { TablePagination } from "~/components/table-pagination";
 import { Badge } from "~/components/ui/badge";
@@ -159,7 +160,9 @@ function Indicators() {
   );
 
   const allFrequencies = [...new Set(all.map((i) => i.temporal_resolution))].sort();
-  const allUnits = [...new Set(all.map((i) => i.unit).filter(Boolean))].sort() as string[];
+  const allUnits = [
+    ...new Set(all.map((i) => i.unit).filter(Boolean)),
+  ].sort() as string[];
   const allSources = [...new Set(all.flatMap((i) => i.sources))].sort();
 
   function exportRows(chosen: Indicator[], suffix: string) {
@@ -189,65 +192,95 @@ function Indicators() {
         }
       />
 
-      <SearchInput
-        value={search.q}
-        placeholder="Search indicators and sources"
-        className="max-w-sm"
-        onSearch={(q) => navigate({ search: (prev) => ({ ...prev, q }) })}
+      <TableToolbar
+        filters={
+          <>
+            <FilterChip
+              label="Frequency"
+              value={summarise(frequencies)}
+              onClear={() =>
+                navigate({ search: (prev) => ({ ...prev, frequency: undefined }) })
+              }
+            >
+              <ChoiceList
+                options={allFrequencies.map((value) => ({ value, label: value }))}
+                selected={frequencies}
+                onToggle={(value) =>
+                  navigate({
+                    search: (prev) => ({
+                      ...prev,
+                      frequency: toggle(frequencies, value),
+                    }),
+                  })
+                }
+                onClear={() =>
+                  navigate({ search: (prev) => ({ ...prev, frequency: undefined }) })
+                }
+              />
+            </FilterChip>
+
+            <FilterChip
+              label="Unit"
+              value={summarise(units)}
+              onClear={() =>
+                navigate({ search: (prev) => ({ ...prev, unit: undefined }) })
+              }
+            >
+              <ChoiceList
+                options={allUnits.map((value) => ({ value, label: value }))}
+                selected={units}
+                onToggle={(value) =>
+                  navigate({
+                    search: (prev) => ({ ...prev, unit: toggle(units, value) }),
+                  })
+                }
+                onClear={() =>
+                  navigate({ search: (prev) => ({ ...prev, unit: undefined }) })
+                }
+              />
+            </FilterChip>
+
+            <FilterChip
+              label="Source"
+              value={summarise(sources)}
+              onClear={() =>
+                navigate({ search: (prev) => ({ ...prev, source: undefined }) })
+              }
+            >
+              <ChoiceList
+                options={allSources.map((value) => ({ value, label: value }))}
+                selected={sources}
+                onToggle={(value) =>
+                  navigate({
+                    search: (prev) => ({ ...prev, source: toggle(sources, value) }),
+                  })
+                }
+                onClear={() =>
+                  navigate({ search: (prev) => ({ ...prev, source: undefined }) })
+                }
+              />
+            </FilterChip>
+
+            {frequencies.length || units.length || sources.length || search.q ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8"
+                onClick={() => navigate({ search: {} })}
+              >
+                Clear all
+              </Button>
+            ) : null}
+          </>
+        }
+        search={
+          <SearchInput
+            value={search.q}
+            placeholder="Search indicators and sources"
+            onSearch={(q) => navigate({ search: (prev) => ({ ...prev, q }) })}
+          />
+        }
       />
-
-      <div className="flex flex-wrap items-center gap-2">
-        <FilterChip
-          label="Frequency"
-          value={summarise(frequencies)}
-          onClear={() => navigate({ search: (prev) => ({ ...prev, frequency: undefined }) })}
-        >
-          <ChoiceList
-            options={allFrequencies.map((value) => ({ value, label: value }))}
-            selected={frequencies}
-            onToggle={(value) =>
-              navigate({ search: (prev) => ({ ...prev, frequency: toggle(frequencies, value) }) })
-            }
-            onClear={() => navigate({ search: (prev) => ({ ...prev, frequency: undefined }) })}
-          />
-        </FilterChip>
-
-        <FilterChip
-          label="Unit"
-          value={summarise(units)}
-          onClear={() => navigate({ search: (prev) => ({ ...prev, unit: undefined }) })}
-        >
-          <ChoiceList
-            options={allUnits.map((value) => ({ value, label: value }))}
-            selected={units}
-            onToggle={(value) =>
-              navigate({ search: (prev) => ({ ...prev, unit: toggle(units, value) }) })
-            }
-            onClear={() => navigate({ search: (prev) => ({ ...prev, unit: undefined }) })}
-          />
-        </FilterChip>
-
-        <FilterChip
-          label="Source"
-          value={summarise(sources)}
-          onClear={() => navigate({ search: (prev) => ({ ...prev, source: undefined }) })}
-        >
-          <ChoiceList
-            options={allSources.map((value) => ({ value, label: value }))}
-            selected={sources}
-            onToggle={(value) =>
-              navigate({ search: (prev) => ({ ...prev, source: toggle(sources, value) }) })
-            }
-            onClear={() => navigate({ search: (prev) => ({ ...prev, source: undefined }) })}
-          />
-        </FilterChip>
-
-        {frequencies.length || units.length || sources.length || search.q ? (
-          <Button variant="ghost" size="sm" className="h-8" onClick={() => navigate({ search: {} })}>
-            Clear all
-          </Button>
-        ) : null}
-      </div>
 
       <DataTable
         columns={columns}

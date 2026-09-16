@@ -132,7 +132,9 @@ export function ChoiceList({
             <span
               className={cn(
                 "flex size-4 shrink-0 items-center justify-center rounded-[4px] border",
-                isOn ? "border-primary bg-primary text-primary-foreground" : "border-input",
+                isOn
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-input",
               )}
             >
               {isOn ? <IconCheck className="size-3" /> : null}
@@ -164,7 +166,10 @@ export function ChoiceList({
 }
 
 /** How a multi-value filter reads on its chip. */
-export function summarise(selected: string[], labelFor?: (value: string) => string): string | undefined {
+export function summarise(
+  selected: string[],
+  labelFor?: (value: string) => string,
+): string | undefined {
   if (!selected.length) return undefined;
   const first = selected[0] as string;
   const label = labelFor ? labelFor(first) : first;

@@ -1,9 +1,4 @@
-import {
-  IconCopy,
-  IconDotsVertical,
-  IconPencil,
-  IconTrash,
-} from "@tabler/icons-react";
+import { IconCopy, IconDotsVertical, IconPencil, IconTrash } from "@tabler/icons-react";
 import type { Icon } from "@tabler/icons-react";
 
 import {

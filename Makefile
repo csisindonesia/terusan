@@ -127,11 +127,13 @@ lint: ## Run every linter
 	cd services/api && gofmt -l . && go vet ./...
 	cd pipelines && uv run ruff check . && uv run ruff format --check .
 	$(PNPM) -r typecheck
+	$(PNPM) --filter @terusan/portal format:check
 
 .PHONY: fmt
 fmt: ## Format every language
 	cd services/api && gofmt -w .
 	cd pipelines && uv run ruff format . && uv run ruff check --fix .
+	$(PNPM) --filter @terusan/portal format
 
 .PHONY: build
 build: ## Build every deployable artifact

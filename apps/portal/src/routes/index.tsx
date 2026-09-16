@@ -11,7 +11,10 @@ export const Route = createFileRoute("/")({ component: Overview });
 
 function Overview() {
   const datasets = useQuery({ queryKey: ["datasets"], queryFn: () => api.datasets() });
-  const indicators = useQuery({ queryKey: ["indicators"], queryFn: () => api.indicators() });
+  const indicators = useQuery({
+    queryKey: ["indicators"],
+    queryFn: () => api.indicators(),
+  });
 
   const rows = datasets.data?.data.reduce((total, d) => total + d.rows, 0) ?? 0;
 
@@ -22,8 +25,8 @@ function Overview() {
           Research data warehouse
         </h1>
         <p className="max-w-2xl text-muted-foreground">
-          Source-traceable statistics, documents and regulations. Every figure
-          carries the document it came from and the run that produced it.
+          Source-traceable statistics, documents and regulations. Every figure carries
+          the document it came from and the run that produced it.
         </p>
       </div>
 

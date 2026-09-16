@@ -129,8 +129,8 @@ export function ObservationFilterBar({ value, onChange, onClear }: Props) {
 
       <AddFilterChip>
         <p className="px-2 py-3 text-sm text-muted-foreground">
-          Every filter the API supports is already shown. Source and status
-          filters arrive with the datasets that need them.
+          Every filter the API supports is already shown. Source and status filters
+          arrive with the datasets that need them.
         </p>
       </AddFilterChip>
 
@@ -221,9 +221,10 @@ function PeriodFilter({
           aria-invalid={invalid}
         />
       </div>
-      <p className={`text-xs ${invalid ? "text-destructive" : "text-muted-foreground"}`}>
-        A year, or a year with a month, quarter, half or day — 2026, 2026-01,
-        2026-Q1.
+      <p
+        className={`text-xs ${invalid ? "text-destructive" : "text-muted-foreground"}`}
+      >
+        A year, or a year with a month, quarter, half or day — 2026, 2026-01, 2026-Q1.
       </p>
       <Button type="submit" size="sm" disabled={invalid}>
         Apply
