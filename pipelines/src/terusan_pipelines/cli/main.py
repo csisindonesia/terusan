@@ -7,6 +7,15 @@ from typing import Annotated
 
 import typer
 
+from terusan_pipelines.catalog import (
+    CatalogUnavailable,
+    connect,
+    list_datasets,
+    recent_runs,
+    reporter,
+    stale_runs,
+    sync_sources,
+)
 from terusan_pipelines.extract import ExtractionRunner
 from terusan_pipelines.sources import Registry, Runner, ScrapeContext, registry, summarize
 from terusan_pipelines.storage import Layer, StorageConfig, StorageResolver, slugify
@@ -16,9 +25,11 @@ app = typer.Typer(help="Terusan research data warehouse pipelines.", no_args_is_
 storage_app = typer.Typer(help="Inspect and prepare data-lake storage.", no_args_is_help=True)
 sources_app = typer.Typer(help="List and run data sources.", no_args_is_help=True)
 warehouse_app = typer.Typer(help="Extract, compact and query the lake.", no_args_is_help=True)
+catalog_app = typer.Typer(help="Inspect and sync the PostgreSQL catalog.", no_args_is_help=True)
 app.add_typer(storage_app, name="storage")
 app.add_typer(sources_app, name="sources")
 app.add_typer(warehouse_app, name="warehouse")
+app.add_typer(catalog_app, name="catalog")
 
 
 def _resolver() -> StorageResolver:
@@ -150,6 +161,11 @@ def sources_run(
     rate: Annotated[
         float, typer.Option("--rate", help="Default requests per second, per host.")
     ] = 1.0,
+    trigger: Annotated[str, typer.Option("--trigger", help="How this run was started.")] = "manual",
+    require_catalog: Annotated[
+        bool,
+        typer.Option("--require-catalog", help="Fail if run history cannot be recorded."),
+    ] = False,
 ) -> None:
     """Run sources and land what they yield in RAW."""
     reg = _registry()
@@ -158,10 +174,17 @@ def sources_run(
         typer.echo("no sources selected")
         raise typer.Exit(code=1)
 
-    runner = Runner(_resolver(), max_workers=workers, default_rate=rate)
-    results = runner.run_many(
-        [cls() for cls in selected], ScrapeContext(dry_run=dry_run, limit=limit)
-    )
+    with reporter(required=require_catalog) as catalog:
+        runner = Runner(
+            _resolver(),
+            max_workers=workers,
+            default_rate=rate,
+            reporter=catalog,
+            trigger=trigger,
+        )
+        results = runner.run_many(
+            [cls() for cls in selected], ScrapeContext(dry_run=dry_run, limit=limit)
+        )
     summary = summarize(results)
     typer.echo(json.dumps(summary, indent=2))
     if summary["failed"]:
@@ -195,9 +218,10 @@ def warehouse_extract(
     Idempotent: documents already extracted at the current parser version are
     left alone. Use --reprocess after improving a parser.
     """
-    result = ExtractionRunner(_resolver()).run(
-        *(segments or []), dry_run=dry_run, limit=limit, reprocess=reprocess
-    )
+    with reporter() as catalog:
+        result = ExtractionRunner(_resolver(), reporter=catalog).run(
+            *(segments or []), dry_run=dry_run, limit=limit, reprocess=reprocess
+        )
     typer.echo(
         json.dumps(
             {
@@ -256,6 +280,103 @@ def warehouse_query(
     """
     with Warehouse(_resolver()) as wh:
         wh.query(sql).show()
+
+
+# ---------------------------------------------------------------------------
+# catalog
+# ---------------------------------------------------------------------------
+
+
+def _catalog_or_exit():
+    try:
+        return connect()
+    except CatalogUnavailable as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@catalog_app.command("sync")
+def catalog_sync() -> None:
+    """Push the source registry into the `sources` table.
+
+    The code is the authority: a source's registry record lives beside the
+    scraper that uses it (program.md §16).
+    """
+    with _catalog_or_exit() as connection:
+        result = sync_sources(connection, list(_registry().metas()))
+    typer.echo(
+        json.dumps(
+            {
+                "inserted": result.inserted,
+                "updated": result.updated,
+                "orphaned": result.orphaned,
+            },
+            indent=2,
+        )
+    )
+    if result.orphaned:
+        typer.echo(
+            f"\n{len(result.orphaned)} source(s) in the catalog have no code. "
+            "Left in place: datasets and runs reference them.",
+            err=True,
+        )
+
+
+@catalog_app.command("runs")
+def catalog_runs(
+    slug: Annotated[
+        str | None, typer.Option("--pipeline", help="Only this pipeline's runs.")
+    ] = None,
+    limit: Annotated[int, typer.Option("--limit")] = 20,
+) -> None:
+    """Show recent pipeline runs, newest first."""
+    with _catalog_or_exit() as connection:
+        runs = recent_runs(connection, limit=limit, slug=slug)
+    if not runs:
+        typer.echo("no runs recorded")
+        raise typer.Exit()
+    for run in runs:
+        started = run["started_at"].isoformat(timespec="seconds") if run["started_at"] else "-"
+        line = f"{started}  {run['status']:<10} {run['slug']:<32} out={run['records_out'] or 0}"
+        if run["error_message"]:
+            line += f"  {run['error_message'][:60]}"
+        typer.echo(line)
+
+
+@catalog_app.command("stale")
+def catalog_stale(
+    hours: Annotated[int, typer.Option("--hours", help="Age past which a run is stale.")] = 6,
+) -> None:
+    """Show runs still marked running long past any plausible duration.
+
+    These are processes that died without closing their row. The alternative to
+    noticing is an ingestion that stopped weeks ago.
+    """
+    with _catalog_or_exit() as connection:
+        runs = stale_runs(connection, hours=hours)
+    if not runs:
+        typer.echo("no stale runs")
+        raise typer.Exit()
+    for run in runs:
+        typer.echo(f"{run['started_at'].isoformat(timespec='seconds')}  {run['slug']}")
+    raise typer.Exit(code=1)
+
+
+@catalog_app.command("datasets")
+def catalog_datasets(
+    layer: Annotated[Layer | None, typer.Option("--layer")] = None,
+) -> None:
+    """List registered datasets."""
+    with _catalog_or_exit() as connection:
+        rows = list_datasets(connection, layer=layer)
+    if not rows:
+        typer.echo("no datasets registered")
+        raise typer.Exit()
+    for row in rows:
+        typer.echo(
+            f"{row['slug']:<28} {row['layer']:<8} {row['access_level']:<10} "
+            f"rows={row['row_count'] or 0:<10} {row['storage_path']}"
+        )
 
 
 if __name__ == "__main__":

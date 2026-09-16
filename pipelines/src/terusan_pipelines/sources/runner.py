@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 import structlog
 
@@ -20,6 +21,9 @@ from ..storage import StorageConfig, StorageResolver
 from .base import ScrapeContext, Source
 from .landing import Landing
 from .ratelimit import HostRateLimiter
+
+if TYPE_CHECKING:
+    from ..catalog import Reporter
 
 log = structlog.get_logger(__name__)
 
@@ -74,11 +78,16 @@ class Runner:
         max_workers: int = 4,
         default_rate: float = 1.0,
         keep_paths: bool = False,
+        reporter: Reporter | None = None,
+        trigger: str = "manual",
     ) -> None:
         self._resolver = resolver or StorageResolver(StorageConfig())
         self._landing = Landing(self._resolver)
         self._limiter = HostRateLimiter(default_rate=default_rate)
         self._max_workers = max_workers
+        # Defaults to recording nothing, so a run works with no database.
+        self._reporter = reporter
+        self._trigger = trigger
         # A full crawl can land hundreds of thousands of files; holding every
         # path is useful for tests and untenable in production.
         self._keep_paths = keep_paths
@@ -128,6 +137,8 @@ class Runner:
         finally:
             result.finished_at = datetime.now(UTC)
 
+        self._report(source, result)
+
         if result.succeeded:
             bound.info(
                 "run.finished",
@@ -137,6 +148,20 @@ class Runner:
                 seconds=round(result.duration_seconds or 0, 2),
             )
         return result
+
+    def _report(self, source: Source, result: RunResult) -> None:
+        """Record the run, never letting the catalog break the ingestion.
+
+        The lake already has the data by this point. A catalog that is down,
+        slow or mid-migration must not turn a successful acquisition into a
+        failed one.
+        """
+        if self._reporter is None:
+            return
+        try:
+            self._reporter.source_run(source.meta, result, self._trigger)
+        except Exception as exc:  # noqa: BLE001 - history is not worth the data
+            log.warning("catalog.report_failed", source=source.meta.slug, error=str(exc))
 
     def run_many(self, sources: list[Source], ctx: ScrapeContext | None = None) -> list[RunResult]:
         """Run sources concurrently, respecting each one's safety.

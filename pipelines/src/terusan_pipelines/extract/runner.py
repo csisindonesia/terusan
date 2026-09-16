@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import structlog
 
@@ -25,6 +26,9 @@ from ..warehouse import (
 from .base import PARSER_VERSION, ExtractionError, Extractor, Landed
 from .documents import HtmlExtractor, PdfExtractor, TextExtractor
 from .tabular import CsvExtractor, JsonExtractor
+
+if TYPE_CHECKING:
+    from ..catalog import Reporter
 
 log = structlog.get_logger(__name__)
 
@@ -88,10 +92,14 @@ class ExtractionRunner:
         extractors: tuple[Extractor, ...] = DEFAULT_EXTRACTORS,
         *,
         writer: ParquetWriter | None = None,
+        reporter: Reporter | None = None,
+        trigger: str = "manual",
     ) -> None:
         self._resolver = resolver
         self._extractors = extractors
         self._writer = writer or ParquetWriter(resolver)
+        self._reporter = reporter
+        self._trigger = trigger
 
     def run(
         self,
@@ -161,6 +169,12 @@ class ExtractionRunner:
                     continue
                 written = self._write(target, rows, run_id)
                 result.files_written += written
+
+        if not dry_run and self._reporter is not None:
+            try:
+                self._reporter.extraction_run(result, self._trigger)
+            except Exception as exc:  # noqa: BLE001 - Bronze is already written
+                log.warning("catalog.report_failed", error=str(exc))
 
         log.info(
             "extract.finished",

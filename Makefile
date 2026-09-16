@@ -70,6 +70,14 @@ dev-api: ## Run the serving layer on :8080
 
 # ---- pipeline -------------------------------------------------------------
 
+.PHONY: catalog-sync
+catalog-sync: ## Push the source registry into PostgreSQL
+	cd pipelines && uv run terusan catalog sync
+
+.PHONY: runs
+runs: ## Show recent pipeline runs
+	cd pipelines && uv run terusan catalog runs
+
 .PHONY: ingest
 ingest: ## Run every scheduled source into RAW
 	cd pipelines && uv run terusan sources run

@@ -74,15 +74,27 @@ See [docs/adding-a-source.md](docs/adding-a-source.md).
 ## The pipeline
 
 ```bash
-make ingest     # sources  → RAW      original bytes, immutable, hashed
-make extract    # RAW      → Bronze   machine-readable rows, provenance attached
-make compact    # merge small Parquet files (program.md §47)
+make catalog-sync   # source registry → PostgreSQL
+make ingest         # sources  → RAW      original bytes, immutable, hashed
+make extract        # RAW      → Bronze   machine-readable rows, provenance attached
+make compact        # merge small Parquet files (program.md §47)
+make runs           # what ran, when, and what it produced
 ```
 
 Both stages are idempotent. Landing is content-addressed, so re-fetching
 unchanged material writes nothing; extraction skips documents already in Bronze
 at the current parser version. A refresh over a stable archive should move no
 bytes — if it does, something upstream changed.
+
+Every run is recorded in `pipeline_runs` — opened before the work starts, so a
+process killed mid-run still leaves a trace. `terusan catalog stale` surfaces
+runs that died without closing their row, which is how an ingestion that
+stopped three weeks ago gets noticed.
+
+The catalog is optional. Without `DATABASE_URL` the pipeline runs and records
+nothing: the lake is the system of record for data, the catalog records what
+happened to it. Scheduled runs should pass `--require-catalog`, where losing
+history silently is worse than failing loudly.
 
 Query any layer through DuckDB, against whichever backend holds the lake:
 
@@ -139,11 +151,12 @@ docs/               additional documentation
 Early scaffold. Working end to end: source acquisition into RAW with
 provenance and deduplication, extraction into Bronze Parquet, partitioning and
 compaction, and DuckDB queries across all three storage backends. Also present:
-the PostgreSQL catalog schema, an API skeleton with health and readiness, and a
-portal shell.
+an API skeleton with health and readiness, and a portal shell.
 
-Not yet built: normalization into Silver, curation into Gold, writing pipeline
-runs to the catalog, the REST and SQL surfaces, scheduling, search, and
-authentication.
+Also working: the PostgreSQL catalog is wired in — source registry sync,
+pipeline run history, dataset registration and versioning.
+
+Not yet built: normalization into Silver, curation into Gold, the REST and SQL
+surfaces, scheduling, search, and authentication.
 
 Roadmap in program.md §60–63.
