@@ -98,8 +98,8 @@ function GroupRail({
               className="justify-center md:h-14"
               render={<Link to="/" />}
             >
-              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <IconDatabaseSearch className="size-4" />
+              <div className="flex aspect-square size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <IconDatabaseSearch className="size-5" />
               </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -176,7 +176,7 @@ function ItemPanel({
           </span>
         ) : null}
         <span className="flex items-center gap-2 font-heading font-semibold">
-          <group.icon className="size-4 shrink-0" />
+          <group.icon className="size-5 shrink-0" />
           {group.label}
         </span>
       </SidebarHeader>

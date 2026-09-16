@@ -71,11 +71,11 @@ export function DataTable<TData>({
                       >
                         {flexRender(header.column.columnDef.header, header.getContext())}
                         {direction === "asc" ? (
-                          <IconArrowUp className="size-3.5" />
+                          <IconArrowUp className="size-4" />
                         ) : direction === "desc" ? (
-                          <IconArrowDown className="size-3.5" />
+                          <IconArrowDown className="size-4" />
                         ) : (
-                          <IconArrowsSort className="size-3.5 opacity-40" />
+                          <IconArrowsSort className="size-4 opacity-40" />
                         )}
                       </button>
                     ) : (
