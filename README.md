@@ -71,6 +71,25 @@ terusan sources run --workers 8
 
 See [docs/adding-a-source.md](docs/adding-a-source.md).
 
+## The pipeline
+
+```bash
+make ingest     # sources  → RAW      original bytes, immutable, hashed
+make extract    # RAW      → Bronze   machine-readable rows, provenance attached
+make compact    # merge small Parquet files (program.md §47)
+```
+
+Both stages are idempotent. Landing is content-addressed, so re-fetching
+unchanged material writes nothing; extraction skips documents already in Bronze
+at the current parser version. A refresh over a stable archive should move no
+bytes — if it does, something upstream changed.
+
+Query any layer through DuckDB, against whichever backend holds the lake:
+
+```bash
+terusan warehouse query "SELECT source_id, count(*) FROM read_parquet('...') GROUP BY 1"
+```
+
 ## Setup
 
 Requires Go 1.26+, Python 3.12+ with [uv](https://docs.astral.sh/uv/),
@@ -117,10 +136,14 @@ docs/               additional documentation
 
 ## Status
 
-Early scaffold. Working: storage addressing across all three backends, source
-acquisition into RAW with provenance and deduplication, the PostgreSQL catalog
-schema, an API skeleton with health and readiness, and a portal shell. Not yet
-built: extraction into Bronze, normalization into Silver, the DuckDB query
-layer, the REST and SQL surfaces, scheduling, search, and authentication.
+Early scaffold. Working end to end: source acquisition into RAW with
+provenance and deduplication, extraction into Bronze Parquet, partitioning and
+compaction, and DuckDB queries across all three storage backends. Also present:
+the PostgreSQL catalog schema, an API skeleton with health and readiness, and a
+portal shell.
+
+Not yet built: normalization into Silver, curation into Gold, writing pipeline
+runs to the catalog, the REST and SQL surfaces, scheduling, search, and
+authentication.
 
 Roadmap in program.md §60–63.

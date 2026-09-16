@@ -61,6 +61,11 @@ class StorageConfig(BaseSettings):
     #: a developer shell inheriting production credentials.
     allow_shared_writes: bool = Field(default=False, alias="STORAGE_ALLOW_SHARED_WRITES")
 
+    # DuckDB reads the lake, so its resource limits travel with the storage
+    # settings rather than living in a second configuration object.
+    duckdb_memory_limit: str = Field(default="4GB", alias="DUCKDB_MEMORY_LIMIT")
+    duckdb_threads: int = Field(default=4, alias="DUCKDB_THREADS")
+
     @model_validator(mode="after")
     def _check_coherent(self) -> StorageConfig:
         if self.backend is Backend.S3:

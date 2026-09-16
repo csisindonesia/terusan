@@ -7,14 +7,18 @@ from typing import Annotated
 
 import typer
 
+from terusan_pipelines.extract import ExtractionRunner
 from terusan_pipelines.sources import Registry, Runner, ScrapeContext, registry, summarize
 from terusan_pipelines.storage import Layer, StorageConfig, StorageResolver, slugify
+from terusan_pipelines.warehouse import Warehouse, compact_layer
 
 app = typer.Typer(help="Terusan research data warehouse pipelines.", no_args_is_help=True)
 storage_app = typer.Typer(help="Inspect and prepare data-lake storage.", no_args_is_help=True)
 sources_app = typer.Typer(help="List and run data sources.", no_args_is_help=True)
+warehouse_app = typer.Typer(help="Extract, compact and query the lake.", no_args_is_help=True)
 app.add_typer(storage_app, name="storage")
 app.add_typer(sources_app, name="sources")
+app.add_typer(warehouse_app, name="warehouse")
 
 
 def _resolver() -> StorageResolver:
@@ -162,6 +166,96 @@ def sources_run(
     typer.echo(json.dumps(summary, indent=2))
     if summary["failed"]:
         raise typer.Exit(code=1)
+
+
+# ---------------------------------------------------------------------------
+# warehouse
+# ---------------------------------------------------------------------------
+
+
+@warehouse_app.command("extract")
+def warehouse_extract(
+    segments: Annotated[
+        list[str] | None,
+        typer.Argument(help="RAW subtree to extract, e.g. statistics bps. Omit for all."),
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Extract but do not write Bronze.")
+    ] = False,
+    limit: Annotated[
+        int | None, typer.Option("--limit", help="Stop after this many documents.")
+    ] = None,
+    reprocess: Annotated[
+        bool,
+        typer.Option("--reprocess", help="Re-extract documents already in Bronze."),
+    ] = False,
+) -> None:
+    """Extract RAW into Bronze.
+
+    Idempotent: documents already extracted at the current parser version are
+    left alone. Use --reprocess after improving a parser.
+    """
+    result = ExtractionRunner(_resolver()).run(
+        *(segments or []), dry_run=dry_run, limit=limit, reprocess=reprocess
+    )
+    typer.echo(
+        json.dumps(
+            {
+                "seen": result.documents_seen,
+                "extracted": result.documents_extracted,
+                "unchanged": result.documents_unchanged,
+                "skipped": result.documents_skipped,
+                "failed": result.documents_failed,
+                "rows": result.rows_written,
+                "files": result.files_written,
+                "unhandled": result.unhandled,
+                "failures": result.failures,
+            },
+            indent=2,
+        )
+    )
+    if result.documents_failed:
+        raise typer.Exit(code=1)
+
+
+@warehouse_app.command("compact")
+def warehouse_compact(
+    layer: Annotated[Layer, typer.Argument(help="Layer to compact.")],
+    dataset: Annotated[
+        str | None, typer.Argument(help="Dataset within the layer. Omit for all.")
+    ] = None,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Report without rewriting.")] = False,
+) -> None:
+    """Merge small Parquet files (program.md §47)."""
+    results = compact_layer(_resolver(), layer, dataset, dry_run=dry_run)
+    if not results:
+        typer.echo("nothing to compact")
+        raise typer.Exit()
+    typer.echo(
+        json.dumps(
+            {
+                "partitions": len(results),
+                "files_removed": sum(r.files_removed for r in results),
+                "rows": sum(r.rows for r in results),
+                "bytes_before": sum(r.bytes_before for r in results),
+                "bytes_after": sum(r.bytes_after for r in results),
+            },
+            indent=2,
+        )
+    )
+
+
+@warehouse_app.command("query")
+def warehouse_query(
+    sql: Annotated[str, typer.Argument(help="SQL to run against the lake.")],
+) -> None:
+    """Run a DuckDB query against the lake.
+
+    Layers are exposed as `read_parquet` over the configured backend, so the
+    same query works against local disk, NAS or a bucket.
+    """
+    with Warehouse(_resolver()) as wh:
+        wh.query(sql).show()
 
 
 if __name__ == "__main__":

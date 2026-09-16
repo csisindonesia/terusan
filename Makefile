@@ -68,6 +68,22 @@ dev-portal: ## Run the data portal on :3000
 dev-api: ## Run the serving layer on :8080
 	cd services/api && go run ./cmd/api
 
+# ---- pipeline -------------------------------------------------------------
+
+.PHONY: ingest
+ingest: ## Run every scheduled source into RAW
+	cd pipelines && uv run terusan sources run
+
+.PHONY: extract
+extract: ## Extract RAW into Bronze
+	cd pipelines && uv run terusan warehouse extract
+
+.PHONY: compact
+compact: ## Merge small Parquet files across the analytical layers
+	cd pipelines && uv run terusan warehouse compact bronze
+	cd pipelines && uv run terusan warehouse compact silver
+	cd pipelines && uv run terusan warehouse compact gold
+
 # ---- quality --------------------------------------------------------------
 
 .PHONY: test
