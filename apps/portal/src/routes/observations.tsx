@@ -19,7 +19,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { api, type Observation } from "~/lib/api";
 import { downloadCsv, toCsv } from "~/lib/csv";
-import { asList } from "~/lib/multi";
+import { asText, asTextList, listParam, textParam } from "~/lib/search-params";
 import { formatCount, formatDecimal, statusLabel } from "~/lib/format";
 
 // Filters live in the URL so a filtered view is a link someone can send —
@@ -33,22 +33,15 @@ import { formatCount, formatDecimal, statusLabel } from "~/lib/format";
 // conversion happens where a string is actually needed.
 const period = z.union([z.string(), z.number()]).optional();
 
-const list = z.union([z.string(), z.array(z.string())]).optional();
-
 const searchSchema = z.object({
-  indicator: list,
+  indicator: listParam,
   geo: z.union([z.string(), z.number()]).optional(),
-  geo_type: list,
-  q: z.string().optional(),
+  geo_type: listParam,
+  q: textParam,
   period_start: period,
   period_end: period,
   page: z.number().int().min(0).optional(),
 });
-
-/** A search value as text, for the API and for form fields. */
-function asText(value: string | number | undefined): string | undefined {
-  return value === undefined ? undefined : String(value);
-}
 
 const PAGE_SIZE = 50;
 
@@ -178,10 +171,10 @@ function Observations() {
     queryKey: ["observations", search],
     queryFn: () =>
       api.observations({
-        indicator: asList(search.indicator),
+        indicator: asTextList(search.indicator),
         geo: asText(search.geo),
-        geo_type: asList(search.geo_type),
-        q: search.q,
+        geo_type: asTextList(search.geo_type),
+        q: asText(search.q),
         period_start: asText(search.period_start),
         period_end: asText(search.period_end),
         limit: PAGE_SIZE,
@@ -241,9 +234,9 @@ function Observations() {
           <>
             <ObservationFilterBar
               value={{
-                indicator: asList(search.indicator),
+                indicator: asTextList(search.indicator),
                 geo: asText(search.geo),
-                geo_type: asList(search.geo_type),
+                geo_type: asTextList(search.geo_type),
                 period_start: asText(search.period_start),
                 period_end: asText(search.period_end),
               }}
@@ -254,7 +247,7 @@ function Observations() {
         }
         search={
           <SearchInput
-            value={search.q}
+            value={asText(search.q)}
             placeholder="Search places and indicators"
             onSearch={(q) => navigate({ search: (prev) => ({ ...prev, q, page: 0 }) })}
           />

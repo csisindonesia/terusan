@@ -17,15 +17,14 @@ import { Button } from "~/components/ui/button";
 import { api, type Indicator } from "~/lib/api";
 import { downloadCsv, toCsv } from "~/lib/csv";
 import { formatCount, formatDate, formatRelative } from "~/lib/format";
-import { asList, toggle } from "~/lib/multi";
-
-const list = z.union([z.string(), z.array(z.string())]).optional();
+import { toggle } from "~/lib/multi";
+import { asText, asTextList, listParam, textParam } from "~/lib/search-params";
 
 const searchSchema = z.object({
-  frequency: list,
-  unit: list,
-  source: list,
-  q: z.string().optional(),
+  frequency: listParam,
+  unit: listParam,
+  source: listParam,
+  q: textParam,
 });
 
 export const Route = createFileRoute("/indicators/")({
@@ -144,10 +143,10 @@ function Indicators() {
   // Filtered here rather than by the API, which returns the whole list: there
   // are a handful of indicators, and a round trip to narrow five rows is worse
   // than narrowing them in place. It moves server-side when the list does.
-  const frequencies = asList(search.frequency);
-  const units = asList(search.unit);
-  const sources = asList(search.source);
-  const needle = (search.q ?? "").toLowerCase();
+  const frequencies = asTextList(search.frequency);
+  const units = asTextList(search.unit);
+  const sources = asTextList(search.source);
+  const needle = asText(search.q)?.toLowerCase() ?? "";
 
   const rows = all.filter(
     (indicator) =>
@@ -275,7 +274,7 @@ function Indicators() {
         }
         search={
           <SearchInput
-            value={search.q}
+            value={asText(search.q)}
             placeholder="Search indicators and sources"
             onSearch={(q) => navigate({ search: (prev) => ({ ...prev, q }) })}
           />

@@ -1,15 +1,26 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { IconArrowLeft, IconDownload, IconExternalLink } from "@tabler/icons-react";
+import { z } from "zod";
 
 import { DataTable, StackedCell } from "~/components/data-table";
+import {
+  ChoiceList,
+  FilterChip,
+  summarise as summariseChip,
+} from "~/components/filter-chip";
+import { SearchInput } from "~/components/search-input";
+import { TablePagination } from "~/components/table-pagination";
+import { TableToolbar } from "~/components/table-toolbar";
 import { TimeSeriesChart } from "~/components/time-series-chart";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 import { summarise, gapsByStatus, type Figure } from "~/lib/analytics";
+import { toggle } from "~/lib/multi";
+import { asText, asTextList, listParam, textParam } from "~/lib/search-params";
 import { api, type Observation } from "~/lib/api";
 import { downloadCsv, toCsv } from "~/lib/csv";
 import {
@@ -21,9 +32,19 @@ import {
   statusLabel,
 } from "~/lib/format";
 
+const searchSchema = z.object({
+  status: listParam,
+  q: textParam,
+  page: z.number().int().min(0).optional(),
+});
+
 export const Route = createFileRoute("/indicators/$indicatorId")({
+  validateSearch: searchSchema,
   component: IndicatorDetail,
 });
+
+/** Rows per page in the figures table. The chart always shows the whole series. */
+const PAGE_SIZE = 25;
 
 /** Enough to hold a long annual series in one request; paging a chart is worse. */
 const MAX_FIGURES = 5000;
@@ -92,6 +113,8 @@ const EXPORT_COLUMNS = [
 
 function IndicatorDetail() {
   const { indicatorId } = Route.useParams();
+  const search = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
 
   const indicator = useQuery({
     queryKey: ["indicator", indicatorId],
@@ -118,6 +141,22 @@ function IndicatorDetail() {
   }));
   const stats = summarise(figures);
   const gaps = gapsByStatus(figures);
+
+  // The table narrows and pages; the chart always plots the whole series, since
+  // a chart of page two of a time series is not a time series.
+  const chosenStatuses = asTextList(search.status);
+  const needle = asText(search.q)?.toLowerCase() ?? "";
+  const filtered = rows.filter(
+    (row) =>
+      (!chosenStatuses.length || chosenStatuses.includes(row.status)) &&
+      (!needle ||
+        row.period.toLowerCase().includes(needle) ||
+        (row.geo_name ?? "").toLowerCase().includes(needle)),
+  );
+
+  const statuses = [...new Set(rows.map((row) => row.status))].sort();
+  const page = search.page ?? 0;
+  const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   if (indicator.isError) {
     return (
@@ -158,139 +197,246 @@ function IndicatorDetail() {
         </p>
       </div>
 
-      <Section title="Metadata">
-        <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
-          <Fact label="Frequency" value={meta?.temporal_resolution} />
-          <Fact label="Unit" value={meta?.unit} />
-          <Fact
-            label="Coverage"
-            value={meta ? `${meta.period_start} – ${meta.period_end}` : undefined}
-          />
-          <Fact
-            label="Places"
-            value={meta ? formatCount(meta.geographies) : undefined}
-          />
-          <Fact
-            label="Figures"
-            value={meta ? formatCount(meta.observations) : undefined}
-          />
-          <Fact label="Sources" value={meta?.sources.join(", ")} />
-          <Fact
-            label="Last updated"
-            value={meta ? formatDate(meta.last_updated) : undefined}
-            hint={meta ? formatRelative(meta.last_updated) : undefined}
-          />
-          <Fact label="Layer" value="silver" hint="Normalized, typed observations" />
-          <Fact
-            label="Access"
-            value="Internal"
-            hint="Widening access is a decision, not a default"
-          />
-        </dl>
-      </Section>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_17rem]">
+        <div className="min-w-0 space-y-6">
+          <Section title="Analytics">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <Stat
+                label="Latest"
+                value={
+                  stats.latest ? formatDecimal(String(stats.latest.value)) : undefined
+                }
+                hint={stats.latest?.period}
+                loading={observations.isLoading}
+              />
+              <Stat
+                label="Change over the series"
+                value={formatPercent(stats.totalChange)}
+                hint={
+                  stats.first && stats.latest
+                    ? `${stats.first.period} → ${stats.latest.period}`
+                    : undefined
+                }
+                loading={observations.isLoading}
+              />
+              <Stat
+                label="Compound annual growth"
+                value={formatPercent(stats.cagr, 2)}
+                // Meaningless where the base is zero or negative, and left
+                // unstated rather than rendered as a number nobody can act on.
+                hint={
+                  stats.cagr === null ? "not meaningful for this series" : "per year"
+                }
+                loading={observations.isLoading}
+              />
+              <Stat
+                label="Recorded"
+                value={`${formatCount(stats.present)} of ${formatCount(stats.count)}`}
+                hint={
+                  gaps.length
+                    ? gaps
+                        .map(
+                          (gap) =>
+                            `${gap.count} ${statusLabel(gap.status).toLowerCase()}`,
+                        )
+                        .join(", ")
+                    : "no gaps"
+                }
+                loading={observations.isLoading}
+              />
+              <Stat
+                label="Highest"
+                value={stats.max ? formatDecimal(String(stats.max.value)) : undefined}
+                hint={stats.max?.period}
+                loading={observations.isLoading}
+              />
+              <Stat
+                label="Lowest"
+                value={stats.min ? formatDecimal(String(stats.min.value)) : undefined}
+                hint={stats.min?.period}
+                loading={observations.isLoading}
+              />
+            </div>
+          </Section>
 
-      <Section title="Analytics">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Stat
-            label="Latest"
-            value={stats.latest ? formatDecimal(String(stats.latest.value)) : undefined}
-            hint={stats.latest?.period}
-            loading={observations.isLoading}
-          />
-          <Stat
-            label="Change over the series"
-            value={formatPercent(stats.totalChange)}
-            hint={
-              stats.first && stats.latest
-                ? `${stats.first.period} → ${stats.latest.period}`
-                : undefined
-            }
-            loading={observations.isLoading}
-          />
-          <Stat
-            label="Compound annual growth"
-            value={formatPercent(stats.cagr, 2)}
-            // Meaningless where the base is zero or negative, and left unstated
-            // rather than rendered as a number nobody can act on.
-            hint={stats.cagr === null ? "not meaningful for this series" : "per year"}
-            loading={observations.isLoading}
-          />
-          <Stat
-            label="Recorded"
-            value={`${formatCount(stats.present)} of ${formatCount(stats.count)}`}
-            hint={
-              gaps.length
-                ? gaps
-                    .map(
-                      (gap) => `${gap.count} ${statusLabel(gap.status).toLowerCase()}`,
-                    )
-                    .join(", ")
-                : "no gaps"
-            }
-            loading={observations.isLoading}
-          />
-          <Stat
-            label="Highest"
-            value={stats.max ? formatDecimal(String(stats.max.value)) : undefined}
-            hint={stats.max?.period}
-            loading={observations.isLoading}
-          />
-          <Stat
-            label="Lowest"
-            value={stats.min ? formatDecimal(String(stats.min.value)) : undefined}
-            hint={stats.min?.period}
-            loading={observations.isLoading}
-          />
-        </div>
-      </Section>
+          <Section title="Over time">
+            {observations.isLoading ? (
+              <Skeleton className="h-[300px] w-full rounded-lg" />
+            ) : (
+              <TimeSeriesChart
+                points={figures.map((figure) => ({
+                  label: figure.period,
+                  value: figure.value,
+                  status: statusLabel(figure.status),
+                }))}
+                unit={meta?.unit}
+                caption={
+                  gaps.length
+                    ? `The line breaks where a figure is absent — joining across a gap would assert a value nobody recorded. ${formatCount(stats.missing)} of ${formatCount(stats.count)} periods have none.`
+                    : undefined
+                }
+              />
+            )}
+          </Section>
 
-      <Section title="Over time">
-        {observations.isLoading ? (
-          <Skeleton className="h-[300px] w-full rounded-lg" />
-        ) : (
-          <TimeSeriesChart
-            points={figures.map((figure) => ({
-              label: figure.period,
-              value: figure.value,
-              status: statusLabel(figure.status),
-            }))}
-            unit={meta?.unit}
-            caption={
-              gaps.length
-                ? `The line breaks where a figure is absent — joining across a gap would assert a value nobody recorded. ${formatCount(stats.missing)} of ${formatCount(stats.count)} periods have none.`
-                : undefined
-            }
-          />
-        )}
-      </Section>
-
-      <Section
-        title="The figures"
-        action={
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!rows.length}
-            onClick={() =>
-              downloadCsv(
-                `${indicatorId}.csv`,
-                toCsv(rows as unknown as Record<string, unknown>[], EXPORT_COLUMNS),
-              )
+          <Section
+            title="The figures"
+            action={
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!filtered.length}
+                onClick={() =>
+                  downloadCsv(
+                    `${indicatorId}.csv`,
+                    toCsv(
+                      filtered as unknown as Record<string, unknown>[],
+                      EXPORT_COLUMNS,
+                    ),
+                  )
+                }
+              >
+                <IconDownload className="size-4" />
+                Export {filtered.length === rows.length ? "series" : "filtered"}
+              </Button>
             }
           >
-            <IconDownload className="size-4" />
-            Export series
-          </Button>
-        }
-      >
-        <DataTable
-          columns={columns}
-          data={rows}
-          isLoading={observations.isLoading}
-          loadingRows={8}
-          emptyMessage="This indicator has no figures."
-        />
-      </Section>
+            <div className="space-y-4">
+              <TableToolbar
+                filters={
+                  <>
+                    <FilterChip
+                      label="Status"
+                      value={summariseChip(chosenStatuses, statusLabel)}
+                      onClear={() =>
+                        navigate({
+                          search: (prev) => ({ ...prev, status: undefined, page: 0 }),
+                        })
+                      }
+                    >
+                      <ChoiceList
+                        options={statuses.map((value) => ({
+                          value,
+                          label: statusLabel(value),
+                        }))}
+                        selected={chosenStatuses}
+                        onToggle={(value) =>
+                          navigate({
+                            search: (prev) => ({
+                              ...prev,
+                              status: toggle(chosenStatuses, value),
+                              page: 0,
+                            }),
+                          })
+                        }
+                        onClear={() =>
+                          navigate({
+                            search: (prev) => ({ ...prev, status: undefined, page: 0 }),
+                          })
+                        }
+                      />
+                    </FilterChip>
+
+                    {chosenStatuses.length || search.q ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => navigate({ search: {} })}
+                      >
+                        Clear all
+                      </Button>
+                    ) : null}
+                  </>
+                }
+                search={
+                  <SearchInput
+                    value={asText(search.q)}
+                    placeholder="Search periods"
+                    onSearch={(q) =>
+                      navigate({ search: (prev) => ({ ...prev, q, page: 0 }) })
+                    }
+                  />
+                }
+              />
+
+              <DataTable
+                columns={columns}
+                data={paged}
+                isLoading={observations.isLoading}
+                loadingRows={8}
+                emptyMessage="No figures match these filters."
+              />
+
+              <TablePagination
+                page={page}
+                total={filtered.length}
+                pageSize={PAGE_SIZE}
+                onPage={(next) =>
+                  navigate({ search: (prev) => ({ ...prev, page: next }) })
+                }
+                summary={
+                  filtered.length ? (
+                    <>
+                      {formatCount(page * PAGE_SIZE + 1)}–
+                      {formatCount(Math.min((page + 1) * PAGE_SIZE, filtered.length))}{" "}
+                      of {formatCount(filtered.length)}
+                      {filtered.length !== rows.length
+                        ? ` filtered from ${formatCount(rows.length)}`
+                        : null}
+                    </>
+                  ) : null
+                }
+              />
+            </div>
+          </Section>
+        </div>
+
+        {/* Metadata sits beside the data rather than above it: it is what the
+            reader checks *while* reading a figure, not before. Sticky, so it
+            stays there down a long table. */}
+        <aside className="lg:sticky lg:top-20 lg:self-start">
+          <Card>
+            <CardContent className="py-4">
+              <h2 className="font-heading text-sm font-semibold tracking-tight">
+                Metadata
+              </h2>
+              <dl className="mt-3 space-y-3">
+                <Fact label="Frequency" value={meta?.temporal_resolution} />
+                <Fact label="Unit" value={meta?.unit} />
+                <Fact
+                  label="Coverage"
+                  value={meta ? `${meta.period_start} – ${meta.period_end}` : undefined}
+                />
+                <Fact
+                  label="Places"
+                  value={meta ? formatCount(meta.geographies) : undefined}
+                />
+                <Fact
+                  label="Figures"
+                  value={meta ? formatCount(meta.observations) : undefined}
+                />
+                <Fact label="Sources" value={meta?.sources.join(", ")} />
+                <Fact
+                  label="Last updated"
+                  value={meta ? formatDate(meta.last_updated) : undefined}
+                  hint={meta ? formatRelative(meta.last_updated) : undefined}
+                />
+                <Fact
+                  label="Layer"
+                  value="silver"
+                  hint="Normalized, typed observations"
+                />
+                <Fact
+                  label="Access"
+                  value="Internal"
+                  hint="Widening access is a decision, not a default"
+                />
+              </dl>
+            </CardContent>
+          </Card>
+        </aside>
+      </div>
 
       {rows[0]?.source_url ? (
         <Card>

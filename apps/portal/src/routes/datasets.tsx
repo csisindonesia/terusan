@@ -17,11 +17,12 @@ import { Button } from "~/components/ui/button";
 import { api, type Dataset } from "~/lib/api";
 import { downloadCsv, toCsv } from "~/lib/csv";
 import { formatCount } from "~/lib/format";
-import { asList, toggle } from "~/lib/multi";
+import { toggle } from "~/lib/multi";
+import { asText, asTextList, listParam, textParam } from "~/lib/search-params";
 
 const searchSchema = z.object({
-  layer: z.union([z.string(), z.array(z.string())]).optional(),
-  q: z.string().optional(),
+  layer: listParam,
+  q: textParam,
 });
 
 export const Route = createFileRoute("/datasets")({
@@ -87,8 +88,8 @@ function Datasets() {
   // Filtered in place: the endpoint returns every dataset in the lake, which
   // is a handful, and a round trip to narrow them is worse than not.
   const layers = [...new Set(all.map((dataset) => dataset.layer))].sort();
-  const chosen = asList(search.layer);
-  const needle = (search.q ?? "").toLowerCase();
+  const chosen = asTextList(search.layer);
+  const needle = asText(search.q)?.toLowerCase() ?? "";
 
   const rows = all.filter(
     (dataset) =>
@@ -164,7 +165,7 @@ function Datasets() {
         }
         search={
           <SearchInput
-            value={search.q}
+            value={asText(search.q)}
             placeholder="Search datasets"
             onSearch={(q) => navigate({ search: (prev) => ({ ...prev, q }) })}
           />

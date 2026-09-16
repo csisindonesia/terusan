@@ -17,13 +17,14 @@ import { Button } from "~/components/ui/button";
 import { api, type Geography } from "~/lib/api";
 import { downloadCsv, toCsv } from "~/lib/csv";
 import { formatCount } from "~/lib/format";
-import { asList, toggle } from "~/lib/multi";
+import { toggle } from "~/lib/multi";
+import { asText, asTextList, listParam, textParam } from "~/lib/search-params";
 
 const PAGE_SIZE = 50;
 
 const searchSchema = z.object({
-  geo_type: z.union([z.string(), z.array(z.string())]).optional(),
-  q: z.string().optional(),
+  geo_type: listParam,
+  q: textParam,
   page: z.number().int().min(0).optional(),
 });
 
@@ -125,8 +126,8 @@ function GeographyPage() {
     queryKey: ["geography", search],
     queryFn: () =>
       api.geography({
-        geo_type: asList(search.geo_type),
-        q: search.q,
+        geo_type: asTextList(search.geo_type),
+        q: asText(search.q),
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       }),
@@ -134,7 +135,7 @@ function GeographyPage() {
 
   const rows = query.data?.data ?? [];
   const total = query.data?.meta?.total ?? 0;
-  const chosen = asList(search.geo_type);
+  const chosen = asTextList(search.geo_type);
 
   function exportRows(chosen: Geography[], suffix: string) {
     downloadCsv(
@@ -212,7 +213,7 @@ function GeographyPage() {
         }
         search={
           <SearchInput
-            value={search.q}
+            value={asText(search.q)}
             placeholder="Search places and codes"
             onSearch={(q) => navigate({ search: (prev) => ({ ...prev, q, page: 0 }) })}
           />
