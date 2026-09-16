@@ -2,6 +2,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { IconDatabaseSearch } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 
+import { NavUser } from "~/components/nav-user";
 import {
   Sidebar,
   SidebarContent,
@@ -140,6 +141,13 @@ function GroupRail({
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+
+      {/* At the foot of the rail rather than the panel: these belong to the
+          person rather than to whichever section happens to be open, and they
+          stay reachable when the panel is collapsed away. */}
+      <SidebarFooter className="gap-0 border-t px-1.5 py-2">
+        <NavUser />
+      </SidebarFooter>
     </Sidebar>
   );
 }
