@@ -117,6 +117,16 @@ func NewResolver(cfg *Config) *Resolver { return &Resolver{cfg: cfg} }
 // Config exposes the settings this Resolver was built with.
 func (r *Resolver) Config() *Config { return r.cfg }
 
+// Root is the lake root: absolute for a filesystem, a URI for a bucket.
+// Everything below resolves from here, so a relative STORAGE_ROOT cannot mean
+// two different directories depending on where the process was started.
+func (r *Resolver) Root() string {
+	if r.cfg.IsObjectStorage() {
+		return r.cfg.Root
+	}
+	return ResolvePath(r.cfg.Root)
+}
+
 // Resolve returns the physical location of a logical address.
 //
 // Segments are validated, not rewritten: a path that silently differs from
@@ -128,7 +138,7 @@ func (r *Resolver) Resolve(layer Layer, segments ...string) (string, error) {
 			return "", err
 		}
 	}
-	return join(append([]string{r.cfg.Root, layer.String()}, segments...)...), nil
+	return join(append([]string{r.Root(), layer.String()}, segments...)...), nil
 }
 
 // Glob returns a recursive pattern suitable for DuckDB read_parquet.
@@ -149,7 +159,7 @@ func (r *Resolver) Scratch(segments ...string) (string, error) {
 			return "", err
 		}
 	}
-	path := filepath.Join(append([]string{r.cfg.ScratchDir}, segments...)...)
+	path := filepath.Join(append([]string{ResolvePath(r.cfg.ScratchDir)}, segments...)...)
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return "", fmt.Errorf("create scratch dir: %w", err)
 	}
@@ -189,7 +199,7 @@ func (r *Resolver) EnsureLayout() ([]string, error) {
 	}
 	created := make([]string, 0, len(AllLayers))
 	for _, layer := range AllLayers {
-		path := join(r.cfg.Root, layer.String())
+		path := join(r.Root(), layer.String())
 		if err := os.MkdirAll(path, 0o755); err != nil {
 			return nil, fmt.Errorf("create %s: %w", path, err)
 		}

@@ -38,9 +38,9 @@ func TestResolveAcrossBackends(t *testing.T) {
 			want: "s3://terusan-warehouse/silver/observations/year=2026",
 		},
 		{
-			name: "local",
-			cfg:  &Config{Backend: BackendLocal, Root: "./.data"},
-			want: "./.data/silver/observations/year=2026",
+			name: "local, absolute",
+			cfg:  &Config{Backend: BackendLocal, Root: "/srv/terusan"},
+			want: "/srv/terusan/silver/observations/year=2026",
 		},
 	}
 	for _, tc := range cases {
@@ -242,5 +242,69 @@ func TestEnsureLayoutSkipsObjectStorage(t *testing.T) {
 	}
 	if len(created) != 0 {
 		t.Errorf("EnsureLayout created %v for object storage, want none", created)
+	}
+}
+
+// ---- anchoring relative roots ---------------------------------------------
+
+func TestRelativeRootAnchorsToTheProject(t *testing.T) {
+	// Without this, a process started in a subdirectory writes a second lake
+	// beside itself and the first one looks empty.
+	root := t.TempDir()
+	for _, marker := range rootMarkers {
+		if err := os.MkdirAll(filepath.Join(root, marker), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv(RootEnvVar, root)
+	resetRootCache()
+
+	cfg := &Config{Backend: BackendLocal, Root: "./.data"}
+	got, err := NewResolver(cfg).Resolve(LayerSilver, "observations")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	want := filepath.Join(root, ".data", "silver", "observations")
+	if got != want {
+		t.Errorf("Resolve = %q, want %q", got, want)
+	}
+}
+
+func TestAbsoluteRootsArePassedThrough(t *testing.T) {
+	t.Setenv(RootEnvVar, t.TempDir())
+	resetRootCache()
+
+	cfg := &Config{Backend: BackendNAS, Root: "/Volumes/research/terusan"}
+	got, err := NewResolver(cfg).Resolve(LayerGold)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got != "/Volumes/research/terusan/gold" {
+		t.Errorf("Resolve = %q, want the NAS path unchanged", got)
+	}
+}
+
+func TestObjectStorageRootsAreNotTreatedAsPaths(t *testing.T) {
+	t.Setenv(RootEnvVar, t.TempDir())
+	resetRootCache()
+
+	cfg := &Config{Backend: BackendS3, Root: "s3://terusan-warehouse"}
+	if got := NewResolver(cfg).Root(); got != "s3://terusan-warehouse" {
+		t.Errorf("Root = %q, want the URI unchanged", got)
+	}
+}
+
+func TestScratchAnchorsToo(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(RootEnvVar, root)
+	resetRootCache()
+
+	cfg := &Config{Backend: BackendLocal, Root: "./.data", ScratchDir: "./.cache"}
+	got, err := NewResolver(cfg).Scratch("compaction")
+	if err != nil {
+		t.Fatalf("Scratch: %v", err)
+	}
+	if !strings.HasPrefix(got, root) {
+		t.Errorf("Scratch = %q, want it under %q", got, root)
 	}
 }

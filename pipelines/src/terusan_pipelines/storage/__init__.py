@@ -13,6 +13,7 @@ from .layers import (
 )
 from .paths import UnsafePathSegment, slugify
 from .resolver import StorageResolver, StorageWriteRefused
+from .root import project_root, resolve_path
 
 __all__ = [
     "ANALYTICAL_LAYERS",
@@ -25,5 +26,7 @@ __all__ = [
     "StorageResolver",
     "StorageWriteRefused",
     "UnsafePathSegment",
+    "project_root",
+    "resolve_path",
     "slugify",
 ]

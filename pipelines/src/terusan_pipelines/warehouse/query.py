@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 import duckdb
@@ -74,6 +75,43 @@ class Warehouse:
         """Register a dataset as a named view on this connection."""
         expression = self.source(layer, dataset, *partition)
         self._connection.execute(f"CREATE OR REPLACE VIEW {name} AS SELECT * FROM {expression}")
+
+    def datasets(self) -> dict[str, tuple[Layer, str]]:
+        """Every dataset present in the lake, by view name.
+
+        Found by looking rather than by asking the catalog, so the lake can be
+        explored on a machine that has no database — which is the common case
+        when someone is trying to see what is in it.
+        """
+        found: dict[str, tuple[Layer, str]] = {}
+        if self._resolver.config.is_object_storage:
+            # Listing a bucket needs a round trip per prefix; callers wanting
+            # views there should register them by name.
+            return found
+
+        for layer in Layer:
+            root = Path(self._resolver.resolve(layer))
+            if not root.is_dir():
+                continue
+            for directory in sorted(root.iterdir()):
+                if directory.is_dir() and any(directory.rglob("*.parquet")):
+                    found[f"{layer}_{directory.name}".replace("-", "_")] = (
+                        layer,
+                        directory.name,
+                    )
+        return found
+
+    def register_all(self) -> list[str]:
+        """Register a view for every dataset in the lake.
+
+        Turns exploration into `SELECT * FROM silver_observations` rather than a
+        read_parquet call with a path in it.
+        """
+        registered = []
+        for name, (layer, dataset) in self.datasets().items():
+            self.view(name, layer, dataset)
+            registered.append(name)
+        return registered
 
     def query(self, sql: str, params: list[Any] | None = None) -> duckdb.DuckDBPyRelation:
         return self._connection.sql(sql, params=params) if params else self._connection.sql(sql)

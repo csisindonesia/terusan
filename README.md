@@ -172,6 +172,23 @@ Query any layer through DuckDB, against whichever backend holds the lake:
 terusan warehouse query "SELECT source_id, count(*) FROM read_parquet('...') GROUP BY 1"
 ```
 
+## Running it
+
+See [docs/running-it.md](docs/running-it.md) for the full walkthrough. The short
+version:
+
+```bash
+cp .env.example .env
+make setup
+
+cd pipelines
+uv run terusan sources run worldbank-gdp --limit 1   # → RAW
+uv run terusan warehouse extract                     # → Bronze
+uv run terusan silver dimensions                     # → Silver dimensions
+uv run terusan warehouse tables                      # what is in the lake
+uv run terusan warehouse query "SELECT * FROM silver_observations LIMIT 5"
+```
+
 ## Setup
 
 Requires Go 1.26+, Python 3.12+ with [uv](https://docs.astral.sh/uv/),

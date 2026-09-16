@@ -216,3 +216,72 @@ def test_ensure_layout_is_a_noop_for_object_storage():
         S3_SECRET_ACCESS_KEY="secret",
     )
     assert StorageResolver(config).ensure_layout() == []
+
+
+# ---- anchoring relative roots ---------------------------------------------
+
+
+def test_a_relative_root_anchors_to_the_project(tmp_path, monkeypatch):
+    """Without this, a command run from a subdirectory writes a second lake
+    beside itself and the first one looks empty."""
+    from terusan_pipelines.storage import project_root
+
+    root = tmp_path / "project"
+    for marker in ("pipelines", "reference"):
+        (root / marker).mkdir(parents=True)
+    (root / "Makefile").write_text("")
+
+    monkeypatch.setenv("TERUSAN_ROOT", str(root))
+    project_root.cache_clear()
+
+    resolver = StorageResolver(StorageConfig(STORAGE_BACKEND="local", STORAGE_ROOT="./.data"))
+    assert resolver.resolve(Layer.SILVER, "observations") == str(
+        root / ".data" / "silver" / "observations"
+    )
+    project_root.cache_clear()
+
+
+def test_the_same_relative_root_resolves_alike_from_anywhere(tmp_path, monkeypatch):
+    from terusan_pipelines.storage import project_root
+
+    root = tmp_path / "project"
+    for marker in ("pipelines", "reference"):
+        (root / marker).mkdir(parents=True)
+    (root / "Makefile").write_text("")
+    monkeypatch.setenv("TERUSAN_ROOT", str(root))
+    project_root.cache_clear()
+
+    config = StorageConfig(STORAGE_BACKEND="local", STORAGE_ROOT="./.data")
+
+    monkeypatch.chdir(root)
+    from_root = StorageResolver(config).resolve(Layer.BRONZE)
+    monkeypatch.chdir(root / "pipelines")
+    from_subdirectory = StorageResolver(config).resolve(Layer.BRONZE)
+
+    assert from_root == from_subdirectory
+    project_root.cache_clear()
+
+
+def test_absolute_roots_are_left_alone(tmp_path, monkeypatch):
+    from terusan_pipelines.storage import project_root
+
+    monkeypatch.setenv("TERUSAN_ROOT", str(tmp_path))
+    project_root.cache_clear()
+
+    resolver = StorageResolver(
+        StorageConfig(STORAGE_BACKEND="nas", STORAGE_ROOT="/Volumes/research/terusan")
+    )
+    assert resolver.resolve(Layer.GOLD) == "/Volumes/research/terusan/gold"
+    project_root.cache_clear()
+
+
+def test_an_object_storage_root_is_not_treated_as_a_path():
+    config = StorageConfig(
+        STORAGE_BACKEND="s3",
+        STORAGE_ROOT="s3://terusan-warehouse",
+        S3_ACCESS_KEY_ID="key",
+        S3_SECRET_ACCESS_KEY="secret",
+    )
+    assert StorageResolver(config).root == "s3://terusan-warehouse"
+    with pytest.raises(ValueError, match="no filesystem path"):
+        _ = config.root_path

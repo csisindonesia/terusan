@@ -30,7 +30,14 @@ from terusan_pipelines.normalize import (
     parse_value,
 )
 from terusan_pipelines.sources import Registry, Runner, ScrapeContext, registry, summarize
-from terusan_pipelines.storage import Layer, StorageConfig, StorageResolver, slugify
+from terusan_pipelines.storage import (
+    Layer,
+    StorageConfig,
+    StorageResolver,
+    project_root,
+    resolve_path,
+    slugify,
+)
 from terusan_pipelines.warehouse import Warehouse, compact_layer
 
 app = typer.Typer(help="Terusan research data warehouse pipelines.", no_args_is_help=True)
@@ -58,14 +65,19 @@ def _registry() -> Registry:
 @storage_app.command("info")
 def storage_info() -> None:
     """Show which physical backend STORAGE_ROOT currently points at."""
-    config = _resolver().config
+    resolver = _resolver()
+    config = resolver.config
     typer.echo(
         json.dumps(
             {
                 "profile": str(config.profile),
                 "backend": str(config.backend),
-                "root": config.root,
-                "scratch_dir": str(config.scratch_dir),
+                "project_root": str(project_root()),
+                "configured_root": config.root,
+                # What the configured value actually resolves to. A relative
+                # root anchors to the project, not the working directory.
+                "resolved_root": resolver.root,
+                "scratch_dir": str(resolve_path(config.scratch_dir)),
                 "writes_allowed": config.writes_allowed,
             },
             indent=2,
@@ -286,14 +298,37 @@ def warehouse_compact(
 @warehouse_app.command("query")
 def warehouse_query(
     sql: Annotated[str, typer.Argument(help="SQL to run against the lake.")],
+    limit: Annotated[
+        int, typer.Option("--limit", help="Rows to display. 0 shows everything.")
+    ] = 40,
 ) -> None:
     """Run a DuckDB query against the lake.
 
-    Layers are exposed as `read_parquet` over the configured backend, so the
-    same query works against local disk, NAS or a bucket.
+    Every dataset is registered as a view named `<layer>_<dataset>`, so a query
+    reads `silver_observations` rather than a read_parquet call with a path in
+    it. `terusan warehouse tables` lists them.
+
+    The same query works against local disk, NAS or a bucket.
     """
     with Warehouse(_resolver()) as wh:
-        wh.query(sql).show()
+        wh.register_all()
+        relation = wh.query(sql)
+        relation.limit(limit).show() if limit else relation.show()
+
+
+@warehouse_app.command("tables")
+def warehouse_tables() -> None:
+    """List the datasets in the lake, and how many rows each holds."""
+    with Warehouse(_resolver()) as wh:
+        datasets = wh.datasets()
+        if not datasets:
+            typer.echo("the lake is empty; run `terusan sources run` first")
+            raise typer.Exit()
+
+        wh.register_all()
+        for name in datasets:
+            rows = wh.query(f"SELECT count(*) FROM {name}").fetchone()[0]
+            typer.echo(f"{name:<28} {rows:>12,} rows")
 
 
 # ---------------------------------------------------------------------------

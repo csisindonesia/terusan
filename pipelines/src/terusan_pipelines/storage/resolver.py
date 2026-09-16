@@ -33,6 +33,17 @@ class StorageResolver:
     def config(self) -> StorageConfig:
         return self._config
 
+    @property
+    def root(self) -> str:
+        """The lake root, absolute for a filesystem and a URI for a bucket.
+
+        Everything below resolves from here, so `./.data` cannot mean two
+        different directories depending on where a command was run.
+        """
+        if self._config.is_object_storage:
+            return self._config.root
+        return str(self._config.root_path)
+
     # ---- reading -------------------------------------------------------
 
     def resolve(self, layer: Layer, *segments: str) -> str:
@@ -44,7 +55,7 @@ class StorageResolver:
         should pass it through `paths.slugify` first.
         """
         checked = [check_segment(s) for s in segments]
-        return self._join(self._config.root, str(layer), *checked)
+        return self._join(self.root, str(layer), *checked)
 
     def glob(self, layer: Layer, *segments: str, pattern: str = "**/*.parquet") -> str:
         """Return a recursive glob suitable for DuckDB `read_parquet`."""
@@ -56,7 +67,10 @@ class StorageResolver:
         Never resolves against `STORAGE_ROOT`: spill and staging stay on local
         SSD regardless of where the lake lives.
         """
-        path = self._config.scratch_dir.joinpath(*(check_segment(s) for s in segments))
+        from .root import resolve_path
+
+        base = resolve_path(self._config.scratch_dir)
+        path = base.joinpath(*(check_segment(s) for s in segments))
         path.mkdir(parents=True, exist_ok=True)
         return path
 
@@ -97,7 +111,7 @@ class StorageResolver:
         if self._config.is_object_storage:
             return created
         for layer in Layer:
-            path = Path(self._join(self._config.root, str(layer)))
+            path = Path(self._join(self.root, str(layer)))
             path.mkdir(parents=True, exist_ok=True)
             created.append(str(path))
         return created

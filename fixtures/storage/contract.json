@@ -1,25 +1,35 @@
 {
-  "$comment": "Cross-language storage contract (program.md §45.4). The Python and Go resolvers both read this file. A dataset written by the pipelines must resolve to the same physical path when the API reads it back, so divergence here is silent data loss rather than a compile error.",
+  "$comment": "Cross-language storage contract (program.md \u00a745.4). The Python and Go resolvers both read this file. A dataset written by the pipelines must resolve to the same physical path when the API reads it back, so divergence here is silent data loss rather than a compile error. Roots are absolute or s3:// URIs: a relative root anchors to the project directory, which differs per checkout, so it is covered by each language's own tests instead.",
   "resolve": [
     {
       "backend": "local",
-      "root": "./.data",
+      "root": "/srv/terusan",
       "layer": "silver",
-      "segments": ["observations", "year=2026"],
-      "expected": "./.data/silver/observations/year=2026"
+      "segments": [
+        "observations",
+        "year=2026"
+      ],
+      "expected": "/srv/terusan/silver/observations/year=2026",
+      "$comment": "A local filesystem root. Given absolute here because a relative one resolves against the project directory."
     },
     {
       "backend": "nas",
       "root": "/Volumes/research/terusan",
       "layer": "silver",
-      "segments": ["observations", "year=2026"],
+      "segments": [
+        "observations",
+        "year=2026"
+      ],
       "expected": "/Volumes/research/terusan/silver/observations/year=2026"
     },
     {
       "backend": "s3",
       "root": "s3://terusan-warehouse",
       "layer": "silver",
-      "segments": ["observations", "year=2026"],
+      "segments": [
+        "observations",
+        "year=2026"
+      ],
       "expected": "s3://terusan-warehouse/silver/observations/year=2026"
     },
     {
@@ -34,21 +44,64 @@
       "backend": "s3",
       "root": "s3://terusan-warehouse",
       "layer": "raw",
-      "segments": ["regulations", "bpk", "year=2026"],
+      "segments": [
+        "regulations",
+        "bpk",
+        "year=2026"
+      ],
       "expected": "s3://terusan-warehouse/raw/regulations/bpk/year=2026"
     }
   ],
   "slugify": [
-    { "input": "Peraturan Menteri ESDM", "expected": "peraturan-menteri-esdm" },
-    { "input": "PP No. 12/2026", "expected": "pp-no.-12-2026" },
-    { "input": "Ekspor Nikel — Q1", "expected": "ekspor-nikel-q1" },
-    { "input": "year=2026", "expected": "year=2026" },
-    { "input": "a:b:c", "expected": "a-b-c" },
-    { "input": "Badan   Pusat    Statistik", "expected": "badan-pusat-statistik" },
-    { "input": "  leading and trailing  ", "expected": "leading-and-trailing" },
-    { "input": "Ringkasan (2026).pdf", "expected": "ringkasan-2026-.pdf" },
-    { "input": "UPPER_snake_Case", "expected": "upper_snake_case" },
-    { "input": "tab\tand\nnewline", "expected": "tab-and-newline" }
+    {
+      "input": "Peraturan Menteri ESDM",
+      "expected": "peraturan-menteri-esdm"
+    },
+    {
+      "input": "PP No. 12/2026",
+      "expected": "pp-no.-12-2026"
+    },
+    {
+      "input": "Ekspor Nikel \u2014 Q1",
+      "expected": "ekspor-nikel-q1"
+    },
+    {
+      "input": "year=2026",
+      "expected": "year=2026"
+    },
+    {
+      "input": "a:b:c",
+      "expected": "a-b-c"
+    },
+    {
+      "input": "Badan   Pusat    Statistik",
+      "expected": "badan-pusat-statistik"
+    },
+    {
+      "input": "  leading and trailing  ",
+      "expected": "leading-and-trailing"
+    },
+    {
+      "input": "Ringkasan (2026).pdf",
+      "expected": "ringkasan-2026-.pdf"
+    },
+    {
+      "input": "UPPER_snake_Case",
+      "expected": "upper_snake_case"
+    },
+    {
+      "input": "tab\tand\nnewline",
+      "expected": "tab-and-newline"
+    }
   ],
-  "unsafe_segments": ["", ".", "..", "a/b", "a\\b", "Uppercase", "with space", "///"]
+  "unsafe_segments": [
+    "",
+    ".",
+    "..",
+    "a/b",
+    "a\\b",
+    "Uppercase",
+    "with space",
+    "///"
+  ]
 }

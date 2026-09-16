@@ -12,6 +12,8 @@ from pathlib import Path
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .root import env_file, resolve_path
+
 
 class Profile(StrEnum):
     LOCAL = "local"
@@ -36,7 +38,9 @@ class StorageConfig(BaseSettings):
     """Resolved storage settings for one process."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Read from the project root rather than the working directory, so a
+        # command run from a subdirectory sees the same configuration.
+        env_file=env_file(),
         env_file_encoding="utf-8",
         extra="ignore",
         frozen=True,
@@ -65,6 +69,18 @@ class StorageConfig(BaseSettings):
     # settings rather than living in a second configuration object.
     duckdb_memory_limit: str = Field(default="4GB", alias="DUCKDB_MEMORY_LIMIT")
     duckdb_threads: int = Field(default=4, alias="DUCKDB_THREADS")
+
+    @property
+    def root_path(self) -> Path:
+        """The lake root as an absolute path.
+
+        Relative values anchor to the project root, so `./.data` names one
+        directory rather than one per working directory. Meaningless for object
+        storage, where `root` is a URI.
+        """
+        if self.is_object_storage:
+            raise ValueError("object storage has no filesystem path; use `root`")
+        return resolve_path(self.root)
 
     @model_validator(mode="after")
     def _check_coherent(self) -> StorageConfig:
