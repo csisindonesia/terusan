@@ -1,5 +1,6 @@
 import {
   type ColumnDef,
+  type RowSelectionState,
   type SortingState,
   flexRender,
   getCoreRowModel,
@@ -7,8 +8,10 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import { IconArrowDown, IconArrowUp, IconArrowsSort } from "@tabler/icons-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import { Checkbox } from "~/components/ui/checkbox";
+import { Skeleton } from "~/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -17,15 +20,22 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
-import { Skeleton } from "~/components/ui/skeleton";
+import { cn } from "~/lib/utils";
 
 type DataTableProps<TData> = {
   columns: ColumnDef<TData, any>[];
   data: TData[];
   isLoading?: boolean;
   emptyMessage?: string;
-  /** Rows of skeleton to show while loading, matching the expected page size. */
+  /** Rows of skeleton while loading, matching the expected page size. */
   loadingRows?: number;
+  /** Adds a checkbox column and reports what is ticked. */
+  selectable?: boolean;
+  /** Stable identity per row, so a selection survives a re-fetch. */
+  getRowId?: (row: TData, index: number) => string;
+  onSelectionChange?: (rows: TData[]) => void;
+  /** Rendered above the table when something is selected. */
+  renderSelectionActions?: (rows: TData[]) => React.ReactNode;
 };
 
 export function DataTable<TData>({
@@ -34,14 +44,22 @@ export function DataTable<TData>({
   isLoading = false,
   emptyMessage = "No rows.",
   loadingRows = 8,
+  selectable = false,
+  getRowId,
+  onSelectionChange,
+  renderSelectionActions,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [selection, setSelection] = useState<RowSelectionState>({});
 
   const table = useReactTable({
     data,
     columns,
-    state: { sorting },
+    state: { sorting, rowSelection: selection },
     onSortingChange: setSorting,
+    onRowSelectionChange: setSelection,
+    enableRowSelection: selectable,
+    getRowId,
     getCoreRowModel: getCoreRowModel(),
     // Sorting is client-side over the page already fetched. Server-side
     // ordering is a separate concern, handled by the `order` parameter, and
@@ -49,85 +67,180 @@ export function DataTable<TData>({
     getSortedRowModel: getSortedRowModel(),
   });
 
-  return (
-    <div className="overflow-x-auto rounded-lg border">
-      <Table>
-        <TableHeader>
-          {table.getHeaderGroups().map((group) => (
-            <TableRow key={group.id}>
-              {group.headers.map((header) => {
-                const sortable = header.column.getCanSort();
-                const direction = header.column.getIsSorted();
-                return (
-                  <TableHead
-                    key={header.id}
-                    className={header.column.columnDef.meta?.align === "right" ? "text-right" : ""}
-                  >
-                    {header.isPlaceholder ? null : sortable ? (
-                      <button
-                        type="button"
-                        onClick={header.column.getToggleSortingHandler()}
-                        className="inline-flex items-center gap-1 hover:text-foreground"
-                      >
-                        {flexRender(header.column.columnDef.header, header.getContext())}
-                        {direction === "asc" ? (
-                          <IconArrowUp className="size-4" />
-                        ) : direction === "desc" ? (
-                          <IconArrowDown className="size-4" />
-                        ) : (
-                          <IconArrowsSort className="size-4 opacity-40" />
-                        )}
-                      </button>
-                    ) : (
-                      flexRender(header.column.columnDef.header, header.getContext())
-                    )}
-                  </TableHead>
-                );
-              })}
-            </TableRow>
-          ))}
-        </TableHeader>
+  const selectedRows = table.getSelectedRowModel().rows.map((row) => row.original);
 
-        <TableBody>
-          {isLoading ? (
-            Array.from({ length: loadingRows }).map((_, row) => (
-              <TableRow key={`skeleton-${row}`}>
-                {columns.map((_column, cell) => (
-                  <TableCell key={`skeleton-${row}-${cell}`}>
-                    <Skeleton className="h-4 w-full" />
-                  </TableCell>
-                ))}
+  useEffect(() => {
+    onSelectionChange?.(selectedRows);
+    // Comparing by count rather than by the array, which is rebuilt each render
+    // and would loop.
+  }, [selection]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const columnCount = columns.length + (selectable ? 1 : 0);
+
+  return (
+    <div className="space-y-2">
+      {selectable && selectedRows.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/40 px-3 py-2 text-sm">
+          <span className="font-medium">
+            {selectedRows.length} selected
+          </span>
+          <button
+            type="button"
+            onClick={() => table.resetRowSelection()}
+            className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            Clear
+          </button>
+          {renderSelectionActions ? (
+            <div className="ml-auto flex items-center gap-2">
+              {renderSelectionActions(selectedRows)}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="overflow-x-auto rounded-lg border">
+        <Table>
+          <TableHeader className="bg-muted/40">
+            {table.getHeaderGroups().map((group) => (
+              <TableRow key={group.id} className="hover:bg-transparent">
+                {selectable ? (
+                  <TableHead className="w-10 pl-3">
+                    <Checkbox
+                      checked={table.getIsAllPageRowsSelected()}
+                      // base-ui carries the partial state in its own prop
+                      // rather than as a third value of `checked`.
+                      indeterminate={
+                        table.getIsSomePageRowsSelected() &&
+                        !table.getIsAllPageRowsSelected()
+                      }
+                      onCheckedChange={(checked) =>
+                        table.toggleAllPageRowsSelected(checked)
+                      }
+                      aria-label="Select all rows on this page"
+                    />
+                  </TableHead>
+                ) : null}
+
+                {group.headers.map((header) => {
+                  const meta = header.column.columnDef.meta;
+                  const sortable = header.column.getCanSort();
+                  const direction = header.column.getIsSorted();
+
+                  return (
+                    <TableHead
+                      key={header.id}
+                      className={meta?.align === "right" ? "text-right" : ""}
+                    >
+                      <span
+                        className={cn(
+                          "flex items-center gap-1.5",
+                          meta?.align === "right" && "justify-end",
+                        )}
+                      >
+                        {/* The column's own icon, which makes a wide table
+                            scannable sideways rather than only by reading. */}
+                        {meta?.icon ? (
+                          <meta.icon className="size-4 shrink-0 text-muted-foreground" />
+                        ) : null}
+
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(header.column.columnDef.header, header.getContext())}
+
+                        {sortable ? (
+                          <button
+                            type="button"
+                            onClick={header.column.getToggleSortingHandler()}
+                            aria-label={`Sort by ${String(header.column.id)}`}
+                            className="ml-auto rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
+                          >
+                            {direction === "asc" ? (
+                              <IconArrowUp className="size-4" />
+                            ) : direction === "desc" ? (
+                              <IconArrowDown className="size-4" />
+                            ) : (
+                              <IconArrowsSort className="size-4 opacity-50" />
+                            )}
+                          </button>
+                        ) : null}
+                      </span>
+                    </TableHead>
+                  );
+                })}
               </TableRow>
-            ))
-          ) : table.getRowModel().rows.length ? (
-            table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id}>
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell
-                    key={cell.id}
-                    className={
-                      cell.column.columnDef.meta?.align === "right"
-                        ? "text-right tabular-nums"
-                        : ""
-                    }
-                  >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
-                ))}
+            ))}
+          </TableHeader>
+
+          <TableBody>
+            {isLoading ? (
+              Array.from({ length: loadingRows }).map((_, row) => (
+                <TableRow key={`skeleton-${row}`}>
+                  {Array.from({ length: columnCount }).map((_cell, cell) => (
+                    <TableCell key={`skeleton-${row}-${cell}`}>
+                      <Skeleton className="h-4 w-full" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : table.getRowModel().rows.length ? (
+              table.getRowModel().rows.map((row) => (
+                <TableRow key={row.id} data-state={row.getIsSelected() ? "selected" : undefined}>
+                  {selectable ? (
+                    <TableCell className="pl-3">
+                      <Checkbox
+                        checked={row.getIsSelected()}
+                        onCheckedChange={(checked) => row.toggleSelected(checked)}
+                        aria-label="Select row"
+                      />
+                    </TableCell>
+                  ) : null}
+
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell
+                      key={cell.id}
+                      className={
+                        cell.column.columnDef.meta?.align === "right"
+                          ? "text-right tabular-nums"
+                          : ""
+                      }
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell
+                  colSpan={columnCount}
+                  className="h-24 text-center text-muted-foreground"
+                >
+                  {emptyMessage}
+                </TableCell>
               </TableRow>
-            ))
-          ) : (
-            <TableRow>
-              <TableCell
-                colSpan={columns.length}
-                className="h-24 text-center text-muted-foreground"
-              >
-                {emptyMessage}
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
+/** A two-line cell: the value, and what qualifies it. */
+export function StackedCell({
+  primary,
+  secondary,
+}: {
+  primary: React.ReactNode;
+  secondary?: React.ReactNode;
+}) {
+  return (
+    <div className="leading-tight">
+      <div className="font-medium">{primary}</div>
+      {secondary ? (
+        <div className="text-xs text-muted-foreground">{secondary}</div>
+      ) : null}
     </div>
   );
 }

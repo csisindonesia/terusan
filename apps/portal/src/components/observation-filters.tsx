@@ -1,22 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
-import { IconX } from "@tabler/icons-react";
+import {
+  IconCalendar,
+  IconChartArea,
+  IconMapPin,
+  IconWorld,
+} from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 
+import { AddFilterChip, FilterChip } from "~/components/filter-chip";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "~/components/ui/select";
 import { api } from "~/lib/api";
 
-/**
- * What the observations page can narrow by. Mirrors the API's parameters, and
- * the route's search schema, so a filtered view is a link someone can send.
- */
 export type ObservationFilters = {
   indicator?: string;
   geo?: string;
@@ -31,14 +26,6 @@ export type ObservationFilters = {
  * after a round trip.
  */
 const PERIOD_PATTERN = /^\d{4}(-(\d{2}|Q[1-4]|S[12])(-\d{2})?)?$/;
-
-/**
- * The value of the "no filter" option. A Select item cannot hold an empty
- * string, but an empty *trigger* value is what makes the placeholder show —
- * including server-rendered, before hydration resolves the item's label. So the
- * item carries this and the trigger is given "" when nothing is chosen.
- */
-const ANY = "__any__";
 
 const PLACE_TYPES = [
   { value: "country", label: "Countries" },
@@ -60,159 +47,214 @@ export function ObservationFilterBar({ value, onChange, onClear }: Props) {
     queryFn: () => api.indicators(),
   });
 
-  // Text fields hold their own value while being typed and commit on submit;
-  // navigating on every keystroke would put a history entry behind each letter.
-  const [geo, setGeo] = useState(value.geo ?? "");
-  const [from, setFrom] = useState(value.period_start ?? "");
-  const [until, setUntil] = useState(value.period_end ?? "");
-
-  // Keep the fields in step when the URL changes from outside — a back button,
-  // or a link someone opened with filters already in it.
-  useEffect(() => setGeo(value.geo ?? ""), [value.geo]);
-  useEffect(() => setFrom(value.period_start ?? ""), [value.period_start]);
-  useEffect(() => setUntil(value.period_end ?? ""), [value.period_end]);
-
-  const fromInvalid = from !== "" && !PERIOD_PATTERN.test(from);
-  const untilInvalid = until !== "" && !PERIOD_PATTERN.test(until);
-  const active = Object.values(value).some(Boolean);
-
-  function submit(event: React.FormEvent) {
-    event.preventDefault();
-    if (fromInvalid || untilInvalid) return;
-    onChange({
-      geo: geo.trim() || undefined,
-      period_start: from.trim() || undefined,
-      period_end: until.trim() || undefined,
-    });
-  }
-
-  const selected = indicators.data?.data.find((i) => i.indicator_id === value.indicator);
+  const active = Object.values(value).filter(Boolean).length;
+  const placeType = PLACE_TYPES.find((type) => type.value === value.geo_type);
+  const periodLabel =
+    value.period_start && value.period_end
+      ? `${value.period_start}–${value.period_end}`
+      : (value.period_start ?? value.period_end);
 
   return (
-    <div className="space-y-3">
-      <form onSubmit={submit} className="flex flex-wrap items-end gap-2">
-        <Field label="Indicator">
-          <Select
-            value={value.indicator ?? ""}
-            onValueChange={(next) =>
-              onChange({ indicator: !next || next === ANY ? undefined : next })
-            }
-            disabled={indicators.isLoading}
-          >
-            <SelectTrigger className="w-64">
-              <SelectValue placeholder="All indicators" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ANY}>All indicators</SelectItem>
-              {indicators.data?.data.map((indicator) => (
-                <SelectItem key={indicator.indicator_id} value={indicator.indicator_id}>
-                  {indicator.indicator_id}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
+    <div className="flex flex-wrap items-center gap-2">
+      <FilterChip
+        icon={IconChartArea}
+        label="Indicator"
+        value={value.indicator}
+        onClear={() => onChange({ indicator: undefined })}
+      >
+        <ChoiceList
+          options={(indicators.data?.data ?? []).map((indicator) => ({
+            value: indicator.indicator_id,
+            label: indicator.indicator_id,
+            hint: `${indicator.period_start}–${indicator.period_end}`,
+          }))}
+          selected={value.indicator}
+          onSelect={(indicator) => onChange({ indicator })}
+          empty="No indicators yet."
+        />
+      </FilterChip>
 
-        <Field label="Place">
-          <Input
-            value={geo}
-            onChange={(event) => setGeo(event.target.value)}
-            placeholder="IDN, ID-32, WLD"
-            className="w-44"
-          />
-        </Field>
+      <FilterChip
+        icon={IconWorld}
+        label="Place type"
+        value={placeType?.label}
+        onClear={() => onChange({ geo_type: undefined })}
+      >
+        <ChoiceList
+          options={PLACE_TYPES.map((type) => ({ value: type.value, label: type.label }))}
+          selected={value.geo_type}
+          onSelect={(geo_type) => onChange({ geo_type })}
+        />
+      </FilterChip>
 
-        <Field label="Place type">
-          <Select
-            value={value.geo_type ?? ""}
-            onValueChange={(next) =>
-              onChange({ geo_type: !next || next === ANY ? undefined : next })
-            }
-          >
-            <SelectTrigger className="w-40">
-              <SelectValue placeholder="All places" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ANY}>All places</SelectItem>
-              {PLACE_TYPES.map((type) => (
-                <SelectItem key={type.value} value={type.value}>
-                  {type.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
+      <FilterChip
+        icon={IconMapPin}
+        label="Place"
+        value={value.geo}
+        onClear={() => onChange({ geo: undefined })}
+      >
+        <TextFilter
+          initial={value.geo ?? ""}
+          placeholder="IDN, ID-32, WLD"
+          hint="A geography identifier, as the table shows it."
+          onApply={(geo) => onChange({ geo: geo || undefined })}
+        />
+      </FilterChip>
 
-        <Field label="From" error={fromInvalid}>
-          <Input
-            value={from}
-            onChange={(event) => setFrom(event.target.value)}
-            placeholder="2020"
-            className="w-28"
-            aria-invalid={fromInvalid}
-          />
-        </Field>
+      <FilterChip
+        icon={IconCalendar}
+        label="Period"
+        value={periodLabel}
+        onClear={() => onChange({ period_start: undefined, period_end: undefined })}
+      >
+        <PeriodFilter
+          from={value.period_start ?? ""}
+          until={value.period_end ?? ""}
+          onApply={(period_start, period_end) =>
+            onChange({ period_start: period_start || undefined, period_end: period_end || undefined })
+          }
+        />
+      </FilterChip>
 
-        <Field label="To" error={untilInvalid}>
-          <Input
-            value={until}
-            onChange={(event) => setUntil(event.target.value)}
-            placeholder="2024"
-            className="w-28"
-            aria-invalid={untilInvalid}
-          />
-        </Field>
+      <AddFilterChip>
+        <p className="px-2 py-3 text-sm text-muted-foreground">
+          Every filter the API supports is already shown. Source and status
+          filters arrive with the datasets that need them.
+        </p>
+      </AddFilterChip>
 
-        <Button type="submit" variant="secondary" disabled={fromInvalid || untilInvalid}>
-          Apply
+      {active > 0 ? (
+        <Button variant="ghost" size="sm" className="h-8" onClick={onClear}>
+          Clear all
         </Button>
-
-        {active ? (
-          <Button type="button" variant="ghost" onClick={onClear}>
-            <IconX className="size-4" />
-            Clear
-          </Button>
-        ) : null}
-      </form>
-
-      {fromInvalid || untilInvalid ? (
-        <p className="text-sm text-destructive">
-          A period is a year, or a year with a month, quarter, half or day —
-          <code className="mx-1 rounded bg-muted px-1 py-0.5">2026</code>
-          <code className="mx-1 rounded bg-muted px-1 py-0.5">2026-01</code>
-          <code className="mx-1 rounded bg-muted px-1 py-0.5">2026-Q1</code>
-        </p>
-      ) : null}
-
-      {selected ? (
-        <p className="text-sm text-muted-foreground">
-          {selected.indicator_id} covers {selected.period_start} to{" "}
-          {selected.period_end}, {selected.temporal_resolution}, across{" "}
-          {selected.geographies.toLocaleString("en-US")} places
-          {selected.unit ? `, in ${selected.unit}` : ""}.
-        </p>
       ) : null}
     </div>
   );
 }
 
-function Field({
-  label,
-  error,
-  children,
+function ChoiceList({
+  options,
+  selected,
+  onSelect,
+  empty = "Nothing to choose from.",
 }: {
-  label: string;
-  error?: boolean;
-  children: React.ReactNode;
+  options: { value: string; label: string; hint?: string }[];
+  selected?: string;
+  onSelect: (value: string) => void;
+  empty?: string;
 }) {
+  if (!options.length) {
+    return <p className="px-2 py-3 text-sm text-muted-foreground">{empty}</p>;
+  }
+
   return (
-    <label className="flex flex-col gap-1.5">
-      <span
-        className={`text-xs font-medium ${error ? "text-destructive" : "text-muted-foreground"}`}
-      >
-        {label}
-      </span>
-      {children}
-    </label>
+    <div className="grid gap-0.5">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onSelect(option.value)}
+          className={`flex items-baseline gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted ${
+            option.value === selected ? "bg-muted font-medium" : ""
+          }`}
+        >
+          <span className="truncate">{option.label}</span>
+          {option.hint ? (
+            <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+              {option.hint}
+            </span>
+          ) : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function TextFilter({
+  initial,
+  placeholder,
+  hint,
+  onApply,
+}: {
+  initial: string;
+  placeholder: string;
+  hint: string;
+  onApply: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(initial);
+  useEffect(() => setDraft(initial), [initial]);
+
+  return (
+    <form
+      className="grid gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onApply(draft.trim());
+      }}
+    >
+      <Input
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        placeholder={placeholder}
+        autoFocus
+      />
+      <p className="text-xs text-muted-foreground">{hint}</p>
+      <Button type="submit" size="sm">
+        Apply
+      </Button>
+    </form>
+  );
+}
+
+function PeriodFilter({
+  from,
+  until,
+  onApply,
+}: {
+  from: string;
+  until: string;
+  onApply: (from: string, until: string) => void;
+}) {
+  const [start, setStart] = useState(from);
+  const [end, setEnd] = useState(until);
+
+  useEffect(() => setStart(from), [from]);
+  useEffect(() => setEnd(until), [until]);
+
+  const invalid =
+    (start !== "" && !PERIOD_PATTERN.test(start)) ||
+    (end !== "" && !PERIOD_PATTERN.test(end));
+
+  return (
+    <form
+      className="grid gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!invalid) onApply(start.trim(), end.trim());
+      }}
+    >
+      <div className="grid grid-cols-2 gap-2">
+        <Input
+          value={start}
+          onChange={(event) => setStart(event.target.value)}
+          placeholder="From"
+          aria-invalid={invalid}
+          autoFocus
+        />
+        <Input
+          value={end}
+          onChange={(event) => setEnd(event.target.value)}
+          placeholder="To"
+          aria-invalid={invalid}
+        />
+      </div>
+      <p className={`text-xs ${invalid ? "text-destructive" : "text-muted-foreground"}`}>
+        A year, or a year with a month, quarter, half or day — 2026, 2026-01,
+        2026-Q1.
+      </p>
+      <Button type="submit" size="sm" disabled={invalid}>
+        Apply
+      </Button>
+    </form>
   );
 }
