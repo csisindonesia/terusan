@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { DataTable, StackedCell } from "~/components/data-table";
 import { PageHeader } from "~/components/page-header";
+import { SearchInput } from "~/components/search-input";
 import { RowActions, copyToClipboard } from "~/components/row-actions";
 import { TablePagination } from "~/components/table-pagination";
 import {
@@ -17,6 +18,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { api, type Observation } from "~/lib/api";
 import { downloadCsv, toCsv } from "~/lib/csv";
+import { asList } from "~/lib/multi";
 import { formatCount, formatDecimal, statusLabel } from "~/lib/format";
 
 // Filters live in the URL so a filtered view is a link someone can send —
@@ -30,10 +32,13 @@ import { formatCount, formatDecimal, statusLabel } from "~/lib/format";
 // conversion happens where a string is actually needed.
 const period = z.union([z.string(), z.number()]).optional();
 
+const list = z.union([z.string(), z.array(z.string())]).optional();
+
 const searchSchema = z.object({
-  indicator: z.string().optional(),
+  indicator: list,
   geo: z.union([z.string(), z.number()]).optional(),
-  geo_type: z.string().optional(),
+  geo_type: list,
+  q: z.string().optional(),
   period_start: period,
   period_end: period,
   page: z.number().int().min(0).optional(),
@@ -172,9 +177,10 @@ function Observations() {
     queryKey: ["observations", search],
     queryFn: () =>
       api.observations({
-        indicator: search.indicator,
+        indicator: asList(search.indicator),
         geo: asText(search.geo),
-        geo_type: search.geo_type,
+        geo_type: asList(search.geo_type),
+        q: search.q,
         period_start: asText(search.period_start),
         period_end: asText(search.period_end),
         limit: PAGE_SIZE,
@@ -223,11 +229,18 @@ function Observations() {
         }
       />
 
+      <SearchInput
+        value={search.q}
+        placeholder="Search places and indicators"
+        className="max-w-sm"
+        onSearch={(q) => navigate({ search: (prev) => ({ ...prev, q, page: 0 }) })}
+      />
+
       <ObservationFilterBar
         value={{
-          indicator: search.indicator,
+          indicator: asList(search.indicator),
           geo: asText(search.geo),
-          geo_type: search.geo_type,
+          geo_type: asList(search.geo_type),
           period_start: asText(search.period_start),
           period_end: asText(search.period_end),
         }}

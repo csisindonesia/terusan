@@ -1,24 +1,30 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { IconChartArea, IconCopy, IconDownload, IconRuler } from "@tabler/icons-react";
+import { IconCopy, IconDownload } from "@tabler/icons-react";
 import { useState } from "react";
 import { z } from "zod";
 
 import { DataTable, StackedCell } from "~/components/data-table";
-import { FilterChip } from "~/components/filter-chip";
+import { ChoiceList, FilterChip, summarise } from "~/components/filter-chip";
 import { PageHeader } from "~/components/page-header";
+import { SearchInput } from "~/components/search-input";
 import { RowActions, copyToClipboard } from "~/components/row-actions";
 import { TablePagination } from "~/components/table-pagination";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { api, type Indicator } from "~/lib/api";
 import { downloadCsv, toCsv } from "~/lib/csv";
-import { formatCount } from "~/lib/format";
+import { formatCount, formatDate, formatRelative } from "~/lib/format";
+import { asList, toggle } from "~/lib/multi";
+
+const list = z.union([z.string(), z.array(z.string())]).optional();
 
 const searchSchema = z.object({
-  frequency: z.string().optional(),
-  unit: z.string().optional(),
+  frequency: list,
+  unit: list,
+  source: list,
+  q: z.string().optional(),
 });
 
 export const Route = createFileRoute("/indicators")({
@@ -48,11 +54,30 @@ const columns: ColumnDef<Indicator>[] = [
     accessorKey: "temporal_resolution",
     header: "Frequency",
     cell: ({ row }) => (
-      <StackedCell
-        primary={<Badge variant="secondary">{row.original.temporal_resolution}</Badge>}
-        secondary={row.original.unit ?? undefined}
-      />
+      <Badge variant="secondary">{row.original.temporal_resolution}</Badge>
     ),
+  },
+  {
+    accessorKey: "unit",
+    header: "Unit",
+    cell: ({ row }) => row.original.unit ?? "—",
+  },
+  {
+    id: "source",
+    header: "Source",
+    enableSorting: false,
+    cell: ({ row }) => {
+      const [first, ...rest] = row.original.sources;
+      if (!first) return <span className="text-muted-foreground">—</span>;
+      return (
+        <StackedCell
+          primary={first}
+          // Naming them all would outgrow the column; the count carries the
+          // rest, and the figures themselves say which row came from where.
+          secondary={rest.length ? `+${rest.length} more` : undefined}
+        />
+      );
+    },
   },
   {
     id: "coverage",
@@ -60,21 +85,21 @@ const columns: ColumnDef<Indicator>[] = [
     cell: ({ row }) => (
       <StackedCell
         primary={`${row.original.period_start}–${row.original.period_end}`}
-        secondary={`${formatCount(row.original.sources)} source${row.original.sources === 1 ? "" : "s"}`}
+        secondary={`${formatCount(row.original.observations)} figures`}
       />
     ),
   },
   {
-    accessorKey: "geographies",
-    header: "Places",
-    meta: { align: "right" },
-    cell: ({ row }) => formatCount(row.original.geographies),
-  },
-  {
-    accessorKey: "observations",
-    header: "Figures",
-    meta: { align: "right" },
-    cell: ({ row }) => formatCount(row.original.observations),
+    accessorKey: "last_updated",
+    header: "Latest update",
+    cell: ({ row }) => (
+      <StackedCell
+        primary={formatDate(row.original.last_updated)}
+        // When the pipeline last ran, which is a different question from how
+        // recent the figures are — that is what Coverage says.
+        secondary={formatRelative(row.original.last_updated)}
+      />
+    ),
   },
   {
     id: "actions",
@@ -104,6 +129,7 @@ const EXPORT_COLUMNS = [
   { key: "geographies" as const, header: "geographies" },
   { key: "observations" as const, header: "observations" },
   { key: "sources" as const, header: "sources" },
+  { key: "last_updated" as const, header: "last_updated" },
 ];
 
 function Indicators() {
@@ -117,14 +143,24 @@ function Indicators() {
   // Filtered here rather than by the API, which returns the whole list: there
   // are a handful of indicators, and a round trip to narrow five rows is worse
   // than narrowing them in place. It moves server-side when the list does.
+  const frequencies = asList(search.frequency);
+  const units = asList(search.unit);
+  const sources = asList(search.source);
+  const needle = (search.q ?? "").toLowerCase();
+
   const rows = all.filter(
     (indicator) =>
-      (!search.frequency || indicator.temporal_resolution === search.frequency) &&
-      (!search.unit || indicator.unit === search.unit),
+      (!frequencies.length || frequencies.includes(indicator.temporal_resolution)) &&
+      (!units.length || (indicator.unit ? units.includes(indicator.unit) : false)) &&
+      (!sources.length || indicator.sources.some((id) => sources.includes(id))) &&
+      (!needle ||
+        indicator.indicator_id.toLowerCase().includes(needle) ||
+        indicator.sources.some((id) => id.toLowerCase().includes(needle))),
   );
 
-  const frequencies = [...new Set(all.map((i) => i.temporal_resolution))].sort();
-  const units = [...new Set(all.map((i) => i.unit).filter(Boolean))].sort() as string[];
+  const allFrequencies = [...new Set(all.map((i) => i.temporal_resolution))].sort();
+  const allUnits = [...new Set(all.map((i) => i.unit).filter(Boolean))].sort() as string[];
+  const allSources = [...new Set(all.flatMap((i) => i.sources))].sort();
 
   function exportRows(chosen: Indicator[], suffix: string) {
     downloadCsv(
@@ -153,36 +189,60 @@ function Indicators() {
         }
       />
 
+      <SearchInput
+        value={search.q}
+        placeholder="Search indicators and sources"
+        className="max-w-sm"
+        onSearch={(q) => navigate({ search: (prev) => ({ ...prev, q }) })}
+      />
+
       <div className="flex flex-wrap items-center gap-2">
         <FilterChip
-          icon={IconChartArea}
           label="Frequency"
-          value={search.frequency}
+          value={summarise(frequencies)}
           onClear={() => navigate({ search: (prev) => ({ ...prev, frequency: undefined }) })}
         >
           <ChoiceList
-            options={frequencies}
-            selected={search.frequency}
-            onSelect={(frequency) =>
-              navigate({ search: (prev) => ({ ...prev, frequency }) })
+            options={allFrequencies.map((value) => ({ value, label: value }))}
+            selected={frequencies}
+            onToggle={(value) =>
+              navigate({ search: (prev) => ({ ...prev, frequency: toggle(frequencies, value) }) })
             }
+            onClear={() => navigate({ search: (prev) => ({ ...prev, frequency: undefined }) })}
           />
         </FilterChip>
 
         <FilterChip
-          icon={IconRuler}
           label="Unit"
-          value={search.unit}
+          value={summarise(units)}
           onClear={() => navigate({ search: (prev) => ({ ...prev, unit: undefined }) })}
         >
           <ChoiceList
-            options={units}
-            selected={search.unit}
-            onSelect={(unit) => navigate({ search: (prev) => ({ ...prev, unit }) })}
+            options={allUnits.map((value) => ({ value, label: value }))}
+            selected={units}
+            onToggle={(value) =>
+              navigate({ search: (prev) => ({ ...prev, unit: toggle(units, value) }) })
+            }
+            onClear={() => navigate({ search: (prev) => ({ ...prev, unit: undefined }) })}
           />
         </FilterChip>
 
-        {search.frequency || search.unit ? (
+        <FilterChip
+          label="Source"
+          value={summarise(sources)}
+          onClear={() => navigate({ search: (prev) => ({ ...prev, source: undefined }) })}
+        >
+          <ChoiceList
+            options={allSources.map((value) => ({ value, label: value }))}
+            selected={sources}
+            onToggle={(value) =>
+              navigate({ search: (prev) => ({ ...prev, source: toggle(sources, value) }) })
+            }
+            onClear={() => navigate({ search: (prev) => ({ ...prev, source: undefined }) })}
+          />
+        </FilterChip>
+
+        {frequencies.length || units.length || sources.length || search.q ? (
           <Button variant="ghost" size="sm" className="h-8" onClick={() => navigate({ search: {} })}>
             Clear all
           </Button>
@@ -224,37 +284,6 @@ function Indicators() {
           ) : null
         }
       />
-    </div>
-  );
-}
-
-/** A short list of values to pick from, for a filter with few options. */
-function ChoiceList({
-  options,
-  selected,
-  onSelect,
-}: {
-  options: string[];
-  selected?: string;
-  onSelect: (value: string) => void;
-}) {
-  if (!options.length) {
-    return <p className="px-2 py-3 text-sm text-muted-foreground">Nothing to choose from.</p>;
-  }
-  return (
-    <div className="grid gap-0.5">
-      {options.map((option) => (
-        <button
-          key={option}
-          type="button"
-          onClick={() => onSelect(option)}
-          className={`rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted ${
-            option === selected ? "bg-muted font-medium" : ""
-          }`}
-        >
-          {option}
-        </button>
-      ))}
     </div>
   );
 }

@@ -64,3 +64,38 @@ export const STATUS_LABELS: Record<string, string> = {
 export function statusLabel(status: string): string {
   return STATUS_LABELS[status] ?? status;
 }
+
+
+/**
+ * A timestamp as a date, in the reader's locale.
+ *
+ * Day precision: these are pipeline run times, and the hour a refresh happened
+ * is rarely the question. `terusan catalog runs` has the detail.
+ */
+export function formatDate(value?: string | null): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+/** How long ago, for a column where recency is the point. */
+export function formatRelative(value?: string | null): string | undefined {
+  if (!value) return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return undefined;
+
+  const days = Math.floor((Date.now() - date.getTime()) / 86_400_000);
+  if (days < 0) return undefined;
+  if (days === 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 30) return `${days} days ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months} month${months === 1 ? "" : "s"} ago`;
+  const years = Math.floor(days / 365);
+  return `${years} year${years === 1 ? "" : "s"} ago`;
+}

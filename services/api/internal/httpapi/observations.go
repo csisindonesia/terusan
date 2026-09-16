@@ -51,12 +51,12 @@ var observationOrder = map[string]string{
 func (s *Server) handleObservations(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	indicator, err := stringParam(r, "indicator", identifierPattern)
+	indicators, err := stringListParam(r, "indicator", identifierPattern)
 	if err != nil {
 		badRequest(w, "invalid parameter", err.Error())
 		return
 	}
-	geo, err := stringParam(r, "geo", identifierPattern)
+	geos, err := stringListParam(r, "geo", identifierPattern)
 	if err != nil {
 		badRequest(w, "invalid parameter", err.Error())
 		return
@@ -71,7 +71,12 @@ func (s *Server) handleObservations(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid parameter", err.Error())
 		return
 	}
-	geoType, err := stringParam(r, "geo_type", identifierPattern)
+	geoTypes, err := stringListParam(r, "geo_type", identifierPattern)
+	if err != nil {
+		badRequest(w, "invalid parameter", err.Error())
+		return
+	}
+	search, err := stringParam(r, "q", searchPattern)
 	if err != nil {
 		badRequest(w, "invalid parameter", err.Error())
 		return
@@ -113,7 +118,7 @@ func (s *Server) handleObservations(w http.ResponseWriter, r *http.Request) {
 		from_ += " LEFT JOIN (SELECT NULL AS geo_id, NULL AS name, NULL AS geo_type) g ON false"
 	}
 
-	where, args := observationFilters(indicator, geo, geoType, from, until)
+	where, args := observationFilters(indicators, geos, geoTypes, from, until, search)
 
 	var total int64
 	countSQL := "SELECT count(*) FROM " + from_ + where
@@ -171,7 +176,9 @@ func (s *Server) handleObservations(w http.ResponseWriter, r *http.Request) {
 }
 
 // observationFilters builds the WHERE clause with every value bound.
-func observationFilters(indicator, geo, geoType, from, until string) (string, []any) {
+func observationFilters(
+	indicators, geos, geoTypes []string, from, until, search string,
+) (string, []any) {
 	var clauses []string
 	var args []any
 
@@ -179,16 +186,18 @@ func observationFilters(indicator, geo, geoType, from, until string) (string, []
 		clauses = append(clauses, clause)
 		args = append(args, value)
 	}
+	addIn := func(column string, values []string) {
+		clause, values2 := inClause(column, values)
+		if clause == "" {
+			return
+		}
+		clauses = append(clauses, clause)
+		args = append(args, values2...)
+	}
 
-	if indicator != "" {
-		add("o.indicator_id = ?", indicator)
-	}
-	if geo != "" {
-		add("o.geo_id = ?", geo)
-	}
-	if geoType != "" {
-		add("g.geo_type = ?", geoType)
-	}
+	addIn("o.indicator_id", indicators)
+	addIn("o.geo_id", geos)
+	addIn("g.geo_type", geoTypes)
 	// Compared as canonical labels rather than dates: `2026-Q1` and `2026-01`
 	// both sort correctly as text, and a caller filtering on a label should not
 	// have to know which resolution the series uses.
@@ -197,6 +206,15 @@ func observationFilters(indicator, geo, geoType, from, until string) (string, []
 	}
 	if until != "" {
 		add("o.period <= ?", until)
+	}
+
+	// Free text searches the columns a reader would recognise a row by, rather
+	// than every column: matching a hash or a URL fragment returns rows nobody
+	// was looking for.
+	if search != "" {
+		clauses = append(clauses, "(g.name ILIKE ? OR o.geo_id ILIKE ? OR o.indicator_id ILIKE ?)")
+		pattern := "%" + search + "%"
+		args = append(args, pattern, pattern, pattern)
 	}
 
 	if len(clauses) == 0 {

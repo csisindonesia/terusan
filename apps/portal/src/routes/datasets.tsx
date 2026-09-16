@@ -1,13 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { IconCopy, IconDownload, IconStack2 } from "@tabler/icons-react";
+import { IconCopy, IconDownload } from "@tabler/icons-react";
 import { useState } from "react";
 import { z } from "zod";
 
 import { DataTable, StackedCell } from "~/components/data-table";
-import { FilterChip } from "~/components/filter-chip";
+import { ChoiceList, FilterChip, summarise } from "~/components/filter-chip";
 import { PageHeader } from "~/components/page-header";
+import { SearchInput } from "~/components/search-input";
 import { RowActions, copyToClipboard } from "~/components/row-actions";
 import { TablePagination } from "~/components/table-pagination";
 import { Badge } from "~/components/ui/badge";
@@ -15,8 +16,12 @@ import { Button } from "~/components/ui/button";
 import { api, type Dataset } from "~/lib/api";
 import { downloadCsv, toCsv } from "~/lib/csv";
 import { formatCount } from "~/lib/format";
+import { asList, toggle } from "~/lib/multi";
 
-const searchSchema = z.object({ layer: z.string().optional() });
+const searchSchema = z.object({
+  layer: z.union([z.string(), z.array(z.string())]).optional(),
+  q: z.string().optional(),
+});
 
 export const Route = createFileRoute("/datasets")({
   validateSearch: searchSchema,
@@ -80,8 +85,17 @@ function Datasets() {
 
   // Filtered in place: the endpoint returns every dataset in the lake, which
   // is a handful, and a round trip to narrow them is worse than not.
-  const rows = search.layer ? all.filter((d) => d.layer === search.layer) : all;
   const layers = [...new Set(all.map((dataset) => dataset.layer))].sort();
+  const chosen = asList(search.layer);
+  const needle = (search.q ?? "").toLowerCase();
+
+  const rows = all.filter(
+    (dataset) =>
+      (!chosen.length || chosen.includes(dataset.layer)) &&
+      (!needle ||
+        dataset.name.toLowerCase().includes(needle) ||
+        dataset.slug.toLowerCase().includes(needle)),
+  );
 
   function exportRows(chosen: Dataset[], suffix: string) {
     downloadCsv(
@@ -110,36 +124,31 @@ function Datasets() {
         }
       />
 
+      <SearchInput
+        value={search.q}
+        placeholder="Search datasets"
+        className="max-w-sm"
+        onSearch={(q) => navigate({ search: (prev) => ({ ...prev, q }) })}
+      />
+
       <div className="flex flex-wrap items-center gap-2">
         <FilterChip
-          icon={IconStack2}
           label="Layer"
-          value={search.layer}
-          onClear={() => navigate({ search: {} })}
+          value={summarise(chosen)}
+          onClear={() => navigate({ search: (prev) => ({ ...prev, layer: undefined }) })}
         >
-          {layers.length ? (
-            <div className="grid gap-0.5">
-              {layers.map((layer) => (
-                <button
-                  key={layer}
-                  type="button"
-                  onClick={() => navigate({ search: { layer } })}
-                  className={`rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted ${
-                    layer === search.layer ? "bg-muted font-medium" : ""
-                  }`}
-                >
-                  {layer}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="px-2 py-3 text-sm text-muted-foreground">
-              Nothing in the lake yet.
-            </p>
-          )}
+          <ChoiceList
+            options={layers.map((layer) => ({ value: layer, label: layer }))}
+            selected={chosen}
+            onToggle={(layer) =>
+              navigate({ search: (prev) => ({ ...prev, layer: toggle(chosen, layer) }) })
+            }
+            onClear={() => navigate({ search: (prev) => ({ ...prev, layer: undefined }) })}
+            empty="Nothing in the lake yet."
+          />
         </FilterChip>
 
-        {search.layer ? (
+        {chosen.length || search.q ? (
           <Button variant="ghost" size="sm" className="h-8" onClick={() => navigate({ search: {} })}>
             Clear all
           </Button>

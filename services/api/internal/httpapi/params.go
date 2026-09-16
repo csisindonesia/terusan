@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 // Query parameters are validated rather than interpolated. Every value that
@@ -14,6 +15,10 @@ import (
 const (
 	DefaultLimit = 100
 	MaxLimit     = 10_000
+
+	// A filter naming hundreds of values is a query the caller should be
+	// sending to the SQL surface instead.
+	MaxFilterValues = 50
 )
 
 // identifierPattern is what an indicator, geography or dataset id may look like.
@@ -30,6 +35,70 @@ type paramError struct {
 }
 
 func (e *paramError) Error() string { return fmt.Sprintf("%s: %s", e.param, e.reason) }
+
+// searchPattern is what a free-text query may contain. Narrow on purpose: the
+// value reaches SQL bound, but a query of punctuation matches everything and
+// costs a full scan to discover it.
+var searchPattern = regexp.MustCompile(`^[\p{L}\p{N} ._:@+-]{1,100}$`)
+
+// stringListParam returns validated values for a parameter that may repeat or
+// carry a comma-separated list.
+//
+// Both forms are accepted because both are in the wild: `?geo_type=a&geo_type=b`
+// is what an HTML form produces, `?geo_type=a,b` is what a hand-written URL
+// usually looks like. Each value is validated separately, so one bad entry
+// fails the request rather than being quietly dropped.
+func stringListParam(r *http.Request, name string, pattern *regexp.Regexp) ([]string, error) {
+	raw := r.URL.Query()[name]
+	if len(raw) == 0 {
+		return nil, nil
+	}
+
+	seen := make(map[string]bool)
+	values := make([]string, 0, len(raw))
+	for _, entry := range raw {
+		for _, value := range strings.Split(entry, ",") {
+			value = strings.TrimSpace(value)
+			if value == "" {
+				continue
+			}
+			if !pattern.MatchString(value) {
+				return nil, &paramError{param: name, reason: "contains a value that is not well-formed"}
+			}
+			if !seen[value] {
+				seen[value] = true
+				values = append(values, value)
+			}
+		}
+	}
+	if len(values) > MaxFilterValues {
+		return nil, &paramError{
+			param:  name,
+			reason: fmt.Sprintf("accepts at most %d values", MaxFilterValues),
+		}
+	}
+	return values, nil
+}
+
+// inClause builds `column IN (?, ?)` with one placeholder per value.
+//
+// Placeholders rather than a joined literal: the values are validated, but a
+// list built by string concatenation is one forgotten check away from being an
+// injection, and there is no reason to rely on the check.
+func inClause(column string, values []string) (string, []any) {
+	if len(values) == 0 {
+		return "", nil
+	}
+	if len(values) == 1 {
+		return column + " = ?", []any{values[0]}
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(values)), ", ")
+	args := make([]any, 0, len(values))
+	for _, value := range values {
+		args = append(args, value)
+	}
+	return column + " IN (" + placeholders + ")", args
+}
 
 // stringParam returns a validated value, or "" when absent.
 func stringParam(r *http.Request, name string, pattern *regexp.Regexp) (string, error) {

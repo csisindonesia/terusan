@@ -50,13 +50,20 @@ export class ApiRequestError extends Error {
   }
 }
 
-async function request<T>(
-  path: string,
-  params?: Record<string, string | number | undefined>,
-): Promise<Page<T>> {
+type Params = Record<string, string | number | string[] | undefined>;
+
+async function request<T>(path: string, params?: Params): Promise<Page<T>> {
   const url = new URL(path, BASE_URL);
   for (const [key, value] of Object.entries(params ?? {})) {
-    if (value !== undefined && value !== "") url.searchParams.set(key, String(value));
+    if (value === undefined || value === "") continue;
+    if (Array.isArray(value)) {
+      // Repeated rather than comma-joined: the API takes both, and repeats
+      // survive a value that happens to contain a comma.
+      if (!value.length) continue;
+      for (const entry of value) url.searchParams.append(key, entry);
+    } else {
+      url.searchParams.set(key, String(value));
+    }
   }
 
   const response = await fetch(url, { headers: { Accept: "application/json" } });
@@ -102,7 +109,10 @@ export type Indicator = {
   geographies: number;
   period_start: string;
   period_end: string;
-  sources: number;
+  /** Named rather than counted: "bps" says where a figure came from. */
+  sources: string[];
+  /** When the pipeline last wrote these rows, not how recent the figures are. */
+  last_updated?: string;
 };
 
 export type Geography = {
@@ -123,9 +133,10 @@ export type Dataset = {
 };
 
 export type ObservationQuery = {
-  indicator?: string;
+  indicator?: string[];
   geo?: string;
-  geo_type?: string;
+  geo_type?: string[];
+  q?: string;
   period_start?: string;
   period_end?: string;
   order?: string;
@@ -136,7 +147,12 @@ export type ObservationQuery = {
 export const api = {
   datasets: () => request<Dataset[]>("/v1/datasets"),
   indicators: () => request<Indicator[]>("/v1/indicators"),
-  geography: (params?: { geo_type?: string; limit?: number; offset?: number }) =>
+  geography: (params?: {
+    geo_type?: string[];
+    q?: string;
+    limit?: number;
+    offset?: number;
+  }) =>
     request<Geography[]>("/v1/geography", params),
   observations: (params?: ObservationQuery) =>
     request<Observation[]>("/v1/observations", params),

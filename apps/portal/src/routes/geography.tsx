@@ -1,13 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { IconChartArea, IconCopy, IconDownload, IconWorld } from "@tabler/icons-react";
+import { IconChartArea, IconCopy, IconDownload } from "@tabler/icons-react";
 import { useState } from "react";
 import { z } from "zod";
 
 import { DataTable, StackedCell } from "~/components/data-table";
-import { FilterChip } from "~/components/filter-chip";
+import { ChoiceList, FilterChip, summarise } from "~/components/filter-chip";
 import { PageHeader } from "~/components/page-header";
+import { SearchInput } from "~/components/search-input";
 import { RowActions, copyToClipboard } from "~/components/row-actions";
 import { TablePagination } from "~/components/table-pagination";
 import { Badge } from "~/components/ui/badge";
@@ -15,11 +16,13 @@ import { Button } from "~/components/ui/button";
 import { api, type Geography } from "~/lib/api";
 import { downloadCsv, toCsv } from "~/lib/csv";
 import { formatCount } from "~/lib/format";
+import { asList, toggle } from "~/lib/multi";
 
 const PAGE_SIZE = 50;
 
 const searchSchema = z.object({
-  geo_type: z.string().optional(),
+  geo_type: z.union([z.string(), z.array(z.string())]).optional(),
+  q: z.string().optional(),
   page: z.number().int().min(0).optional(),
 });
 
@@ -121,7 +124,8 @@ function GeographyPage() {
     queryKey: ["geography", search],
     queryFn: () =>
       api.geography({
-        geo_type: search.geo_type,
+        geo_type: asList(search.geo_type),
+        q: search.q,
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       }),
@@ -129,7 +133,7 @@ function GeographyPage() {
 
   const rows = query.data?.data ?? [];
   const total = query.data?.meta?.total ?? 0;
-  const placeType = PLACE_TYPES.find((type) => type.value === search.geo_type);
+  const chosen = asList(search.geo_type);
 
   function exportRows(chosen: Geography[], suffix: string) {
     downloadCsv(
@@ -158,30 +162,38 @@ function GeographyPage() {
         }
       />
 
+      <SearchInput
+        value={search.q}
+        placeholder="Search places and codes"
+        className="max-w-sm"
+        onSearch={(q) => navigate({ search: (prev) => ({ ...prev, q, page: 0 }) })}
+      />
+
       <div className="flex flex-wrap items-center gap-2">
         <FilterChip
-          icon={IconWorld}
           label="Type"
-          value={placeType?.label}
-          onClear={() => navigate({ search: {} })}
+          value={summarise(chosen, (v) => PLACE_TYPES.find((t) => t.value === v)?.label ?? v)}
+          onClear={() => navigate({ search: (prev) => ({ ...prev, geo_type: undefined, page: 0 }) })}
         >
-          <div className="grid gap-0.5">
-            {PLACE_TYPES.map((type) => (
-              <button
-                key={type.value}
-                type="button"
-                onClick={() =>
-                  navigate({ search: { geo_type: type.value, page: 0 } })
-                }
-                className={`rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted ${
-                  type.value === search.geo_type ? "bg-muted font-medium" : ""
-                }`}
-              >
-                {type.label}
-              </button>
-            ))}
-          </div>
+          <ChoiceList
+            options={PLACE_TYPES}
+            selected={chosen}
+            onToggle={(type) =>
+              navigate({
+                search: (prev) => ({ ...prev, geo_type: toggle(chosen, type), page: 0 }),
+              })
+            }
+            onClear={() =>
+              navigate({ search: (prev) => ({ ...prev, geo_type: undefined, page: 0 }) })
+            }
+          />
         </FilterChip>
+
+        {chosen.length || search.q ? (
+          <Button variant="ghost" size="sm" className="h-8" onClick={() => navigate({ search: {} })}>
+            Clear all
+          </Button>
+        ) : null}
       </div>
 
       <DataTable

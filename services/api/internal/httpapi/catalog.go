@@ -3,6 +3,7 @@ package httpapi
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/csis/terusan/services/api/internal/storage"
 )
@@ -20,7 +21,13 @@ type Indicator struct {
 	Geographies  int64   `json:"geographies"`
 	PeriodStart  string  `json:"period_start"`
 	PeriodEnd    string  `json:"period_end"`
-	Sources      int64   `json:"sources"`
+	// The sources behind the series, named rather than counted: "bps" tells a
+	// reader where a figure came from, "1" tells them nothing.
+	Sources []string `json:"sources"`
+	// When the pipeline last wrote these rows. Distinct from `period_end`,
+	// which is how recent the *figures* are — a series can cover 2025 and have
+	// been refreshed this morning, or last year.
+	LastUpdated *string `json:"last_updated,omitempty"`
 }
 
 func (s *Server) handleIndicators(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +51,8 @@ func (s *Server) handleIndicators(w http.ResponseWriter, r *http.Request) {
 		       count(DISTINCT geo_id),
 		       min(period),
 		       max(period),
-		       count(DISTINCT source_id)
+		       list_sort(list(DISTINCT source_id)),
+		       strftime(max(processed_at), '%%Y-%%m-%%dT%%H:%%M:%%SZ')
 		FROM %s
 		GROUP BY indicator_id
 		ORDER BY indicator_id`, observations))
@@ -57,13 +65,15 @@ func (s *Server) handleIndicators(w http.ResponseWriter, r *http.Request) {
 	indicators := make([]Indicator, 0, 16)
 	for rows.Next() {
 		var i Indicator
+		var sources any
 		if err := rows.Scan(
 			&i.IndicatorID, &i.Resolution, &i.Unit, &i.Observations,
-			&i.Geographies, &i.PeriodStart, &i.PeriodEnd, &i.Sources,
+			&i.Geographies, &i.PeriodStart, &i.PeriodEnd, &sources, &i.LastUpdated,
 		); err != nil {
 			internalError(w, s.log, "scan indicator", err)
 			return
 		}
+		i.Sources = asStrings(sources)
 		indicators = append(indicators, i)
 	}
 	if err := rows.Err(); err != nil {
@@ -88,7 +98,12 @@ type Geography struct {
 func (s *Server) handleGeography(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	geoType, err := stringParam(r, "geo_type", identifierPattern)
+	geoTypes, err := stringListParam(r, "geo_type", identifierPattern)
+	if err != nil {
+		badRequest(w, "invalid parameter", err.Error())
+		return
+	}
+	search, err := stringParam(r, "q", searchPattern)
 	if err != nil {
 		badRequest(w, "invalid parameter", err.Error())
 		return
@@ -111,10 +126,25 @@ func (s *Server) handleGeography(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	where, args := "", []any{}
-	if geoType != "" {
-		where = " WHERE geo_type = ?"
-		args = append(args, geoType)
+	var clauses []string
+	args := []any{}
+
+	if clause, values := inClause("geo_type", geoTypes); clause != "" {
+		clauses = append(clauses, clause)
+		args = append(args, values...)
+	}
+	if search != "" {
+		// Name and identifier are what a reader recognises a place by; the
+		// codes are what a dataset refers to it by. Both are worth matching.
+		clauses = append(clauses,
+			"(name ILIKE ? OR geo_id ILIKE ? OR coalesce(bps_code, '') ILIKE ?)")
+		pattern := "%" + search + "%"
+		args = append(args, pattern, pattern, pattern)
+	}
+
+	where := ""
+	if len(clauses) > 0 {
+		where = " WHERE " + strings.Join(clauses, " AND ")
 	}
 
 	var total int64
@@ -214,4 +244,24 @@ func (s *Server) handleDatasets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeData(w, datasets, &Meta{Total: int64(len(datasets))})
+}
+
+// asStrings reads a DuckDB list column into a slice.
+//
+// The driver hands a LIST back as []any of driver values, so each entry is
+// converted rather than asserted: a nil element is a source that was never
+// recorded, which is a gap in the data rather than a reason to fail the
+// request.
+func asStrings(value any) []string {
+	items, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if text, ok := item.(string); ok && text != "" {
+			out = append(out, text)
+		}
+	}
+	return out
 }

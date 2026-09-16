@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -130,7 +131,9 @@ func TestSortOrderFallsBackWhenAbsent(t *testing.T) {
 // ---- filter construction --------------------------------------------------
 
 func TestFiltersBindEveryValue(t *testing.T) {
-	where, args := observationFilters("GDP", "IDN", "country", "2020", "2024")
+	where, args := observationFilters(
+		[]string{"GDP"}, []string{"IDN"}, []string{"country"}, "2020", "2024", "",
+	)
 	if got := countPlaceholders(where); got != len(args) {
 		t.Errorf("%d placeholders for %d arguments: %q", got, len(args), where)
 	}
@@ -140,14 +143,14 @@ func TestFiltersBindEveryValue(t *testing.T) {
 }
 
 func TestNoFiltersMeansNoWhereClause(t *testing.T) {
-	where, args := observationFilters("", "", "", "", "")
+	where, args := observationFilters(nil, nil, nil, "", "", "")
 	if where != "" || args != nil {
 		t.Errorf("observationFilters = %q, %v; want empty", where, args)
 	}
 }
 
 func TestFilterValuesNeverReachTheSQLText(t *testing.T) {
-	where, _ := observationFilters("GDP'; DROP TABLE x--", "", "", "", "")
+	where, _ := observationFilters([]string{"GDP'; DROP TABLE x--"}, nil, nil, "", "", "")
 	if contains(where, "DROP") {
 		t.Errorf("filter value leaked into SQL: %q", where)
 	}
@@ -165,4 +168,119 @@ func countPlaceholders(s string) int {
 
 func contains(haystack, needle string) bool {
 	return strings.Contains(haystack, needle)
+}
+
+// ---- multi-value filters --------------------------------------------------
+
+func TestListParamAcceptsRepeatedAndCommaSeparated(t *testing.T) {
+	// Both are in the wild: repeats are what a form produces, commas are what
+	// a hand-written URL looks like.
+	repeated := httptest.NewRequest("GET", "/v1/observations?geo=IDN&geo=MYS", nil)
+	commas := httptest.NewRequest("GET", "/v1/observations?geo=IDN,MYS", nil)
+
+	for _, r := range []*http.Request{repeated, commas} {
+		values, err := stringListParam(r, "geo", identifierPattern)
+		if err != nil {
+			t.Fatalf("stringListParam: %v", err)
+		}
+		if len(values) != 2 || values[0] != "IDN" || values[1] != "MYS" {
+			t.Errorf("stringListParam = %v", values)
+		}
+	}
+}
+
+func TestListParamDropsDuplicatesAndBlanks(t *testing.T) {
+	r := httptest.NewRequest("GET", "/v1/observations?geo=IDN,,IDN,MYS", nil)
+	values, err := stringListParam(r, "geo", identifierPattern)
+	if err != nil {
+		t.Fatalf("stringListParam: %v", err)
+	}
+	if len(values) != 2 {
+		t.Errorf("stringListParam = %v, want two distinct values", values)
+	}
+}
+
+func TestOneBadValueFailsTheWholeList(t *testing.T) {
+	// Quietly dropping it would answer a different question than the one asked.
+	r := request("geo", "IDN,DROP TABLE x")
+	if _, err := stringListParam(r, "geo", identifierPattern); err == nil {
+		t.Error("stringListParam accepted a malformed value")
+	}
+}
+
+func TestListParamIsBounded(t *testing.T) {
+	many := make([]string, MaxFilterValues+1)
+	for i := range many {
+		many[i] = "IDN"
+	}
+	// Distinct, so deduplication does not hide the size.
+	for i := range many {
+		many[i] = "ID-" + strings.Repeat("A", i%3+1) + strconv.Itoa(i)
+	}
+	r := request("geo", strings.Join(many, ","))
+	if _, err := stringListParam(r, "geo", identifierPattern); err == nil {
+		t.Error("stringListParam accepted an unbounded list")
+	}
+}
+
+func TestInClauseBindsOnePlaceholderPerValue(t *testing.T) {
+	clause, args := inClause("g.geo_type", []string{"country", "province"})
+	if countPlaceholders(clause) != len(args) {
+		t.Errorf("%q binds %d args", clause, len(args))
+	}
+	if !strings.Contains(clause, "IN (") {
+		t.Errorf("clause = %q", clause)
+	}
+}
+
+func TestInClauseWithOneValueUsesEquality(t *testing.T) {
+	clause, args := inClause("g.geo_type", []string{"country"})
+	if clause != "g.geo_type = ?" || len(args) != 1 {
+		t.Errorf("inClause = %q, %v", clause, args)
+	}
+}
+
+func TestInClauseWithNothingProducesNothing(t *testing.T) {
+	clause, args := inClause("g.geo_type", nil)
+	if clause != "" || args != nil {
+		t.Errorf("inClause = %q, %v", clause, args)
+	}
+}
+
+func TestMultipleValuesStillBindEveryArgument(t *testing.T) {
+	where, args := observationFilters(
+		[]string{"a", "b"}, []string{"IDN", "MYS", "THA"}, []string{"country"}, "", "", "",
+	)
+	if countPlaceholders(where) != len(args) {
+		t.Errorf("%q binds %d args", where, len(args))
+	}
+}
+
+// ---- free-text search -----------------------------------------------------
+
+func TestSearchAcceptsOrdinaryText(t *testing.T) {
+	for _, value := range []string{"Jawa Barat", "IDN", "gdp_current_usd", "Aceh"} {
+		if _, err := stringParam(request("q", value), "q", searchPattern); err != nil {
+			t.Errorf("search %q rejected: %v", value, err)
+		}
+	}
+}
+
+func TestSearchRefusesPunctuationOnlyQueries(t *testing.T) {
+	// A query of wildcards matches everything and costs a scan to find out.
+	for _, value := range []string{"%%%", "';--", "<script>", "*"} {
+		if _, err := stringParam(request("q", value), "q", searchPattern); err == nil {
+			t.Errorf("search accepted %q", value)
+		}
+	}
+}
+
+func TestSearchIsBound(t *testing.T) {
+	where, args := observationFilters(nil, nil, nil, "", "", "Jawa")
+	if countPlaceholders(where) != len(args) {
+		t.Errorf("%q binds %d args", where, len(args))
+	}
+	if strings.Contains(where, "Jawa") {
+		t.Errorf("search text reached the SQL: %q", where)
+	}
 }

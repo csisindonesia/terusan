@@ -1,21 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-  IconCalendar,
-  IconChartArea,
-  IconMapPin,
-  IconWorld,
-} from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 
-import { AddFilterChip, FilterChip } from "~/components/filter-chip";
+import {
+  AddFilterChip,
+  ChoiceList,
+  FilterChip,
+  summarise,
+} from "~/components/filter-chip";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { api } from "~/lib/api";
+import { toggle } from "~/lib/multi";
 
 export type ObservationFilters = {
-  indicator?: string;
+  indicator?: string[];
   geo?: string;
-  geo_type?: string;
+  geo_type?: string[];
   period_start?: string;
   period_end?: string;
 };
@@ -47,8 +47,15 @@ export function ObservationFilterBar({ value, onChange, onClear }: Props) {
     queryFn: () => api.indicators(),
   });
 
-  const active = Object.values(value).filter(Boolean).length;
-  const placeType = PLACE_TYPES.find((type) => type.value === value.geo_type);
+  const chosenIndicators = value.indicator ?? [];
+  const chosenTypes = value.geo_type ?? [];
+  const active =
+    chosenIndicators.length ||
+    chosenTypes.length ||
+    value.geo ||
+    value.period_start ||
+    value.period_end;
+
   const periodLabel =
     value.period_start && value.period_end
       ? `${value.period_start}–${value.period_end}`
@@ -57,9 +64,8 @@ export function ObservationFilterBar({ value, onChange, onClear }: Props) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <FilterChip
-        icon={IconChartArea}
         label="Indicator"
-        value={value.indicator}
+        value={summarise(chosenIndicators)}
         onClear={() => onChange({ indicator: undefined })}
       >
         <ChoiceList
@@ -68,27 +74,30 @@ export function ObservationFilterBar({ value, onChange, onClear }: Props) {
             label: indicator.indicator_id,
             hint: `${indicator.period_start}–${indicator.period_end}`,
           }))}
-          selected={value.indicator}
-          onSelect={(indicator) => onChange({ indicator })}
+          selected={chosenIndicators}
+          onToggle={(id) => onChange({ indicator: toggle(chosenIndicators, id) })}
+          onClear={() => onChange({ indicator: undefined })}
           empty="No indicators yet."
         />
       </FilterChip>
 
       <FilterChip
-        icon={IconWorld}
         label="Place type"
-        value={placeType?.label}
+        value={summarise(
+          chosenTypes,
+          (v) => PLACE_TYPES.find((t) => t.value === v)?.label ?? v,
+        )}
         onClear={() => onChange({ geo_type: undefined })}
       >
         <ChoiceList
-          options={PLACE_TYPES.map((type) => ({ value: type.value, label: type.label }))}
-          selected={value.geo_type}
-          onSelect={(geo_type) => onChange({ geo_type })}
+          options={PLACE_TYPES}
+          selected={chosenTypes}
+          onToggle={(type) => onChange({ geo_type: toggle(chosenTypes, type) })}
+          onClear={() => onChange({ geo_type: undefined })}
         />
       </FilterChip>
 
       <FilterChip
-        icon={IconMapPin}
         label="Place"
         value={value.geo}
         onClear={() => onChange({ geo: undefined })}
@@ -102,7 +111,6 @@ export function ObservationFilterBar({ value, onChange, onClear }: Props) {
       </FilterChip>
 
       <FilterChip
-        icon={IconCalendar}
         label="Period"
         value={periodLabel}
         onClear={() => onChange({ period_start: undefined, period_end: undefined })}
@@ -111,7 +119,10 @@ export function ObservationFilterBar({ value, onChange, onClear }: Props) {
           from={value.period_start ?? ""}
           until={value.period_end ?? ""}
           onApply={(period_start, period_end) =>
-            onChange({ period_start: period_start || undefined, period_end: period_end || undefined })
+            onChange({
+              period_start: period_start || undefined,
+              period_end: period_end || undefined,
+            })
           }
         />
       </FilterChip>
@@ -123,49 +134,11 @@ export function ObservationFilterBar({ value, onChange, onClear }: Props) {
         </p>
       </AddFilterChip>
 
-      {active > 0 ? (
+      {active ? (
         <Button variant="ghost" size="sm" className="h-8" onClick={onClear}>
           Clear all
         </Button>
       ) : null}
-    </div>
-  );
-}
-
-function ChoiceList({
-  options,
-  selected,
-  onSelect,
-  empty = "Nothing to choose from.",
-}: {
-  options: { value: string; label: string; hint?: string }[];
-  selected?: string;
-  onSelect: (value: string) => void;
-  empty?: string;
-}) {
-  if (!options.length) {
-    return <p className="px-2 py-3 text-sm text-muted-foreground">{empty}</p>;
-  }
-
-  return (
-    <div className="grid gap-0.5">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          onClick={() => onSelect(option.value)}
-          className={`flex items-baseline gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted ${
-            option.value === selected ? "bg-muted font-medium" : ""
-          }`}
-        >
-          <span className="truncate">{option.label}</span>
-          {option.hint ? (
-            <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-              {option.hint}
-            </span>
-          ) : null}
-        </button>
-      ))}
     </div>
   );
 }
