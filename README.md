@@ -55,6 +55,22 @@ Two rules the code enforces rather than documents:
 See program.md §45 for NAS layout, bucket lifecycle, backup priority and
 capacity planning.
 
+## Adding a source
+
+Scrapers, API pullers and feed readers all live in
+[pipelines/src/terusan_pipelines/sources/](pipelines/src/terusan_pipelines/sources/),
+one package per source. A source yields artifacts; the runner handles hashing,
+deduplication, RAW paths, provenance, per-host rate limiting and concurrency.
+Existing standalone scripts run unmodified through the legacy adapter.
+
+```bash
+terusan sources list
+terusan sources run bps-inflation --dry-run --limit 5
+terusan sources run --workers 8
+```
+
+See [docs/adding-a-source.md](docs/adding-a-source.md).
+
 ## Setup
 
 Requires Go 1.26+, Python 3.12+ with [uv](https://docs.astral.sh/uv/),
@@ -101,9 +117,10 @@ docs/               additional documentation
 
 ## Status
 
-Early scaffold. Working: storage addressing across all three backends, the
-PostgreSQL catalog schema, an API skeleton with health and readiness, and a
-portal shell. Not yet built: ingestion pipelines, the DuckDB query layer, the
-REST and SQL surfaces, search, and authentication.
+Early scaffold. Working: storage addressing across all three backends, source
+acquisition into RAW with provenance and deduplication, the PostgreSQL catalog
+schema, an API skeleton with health and readiness, and a portal shell. Not yet
+built: extraction into Bronze, normalization into Silver, the DuckDB query
+layer, the REST and SQL surfaces, scheduling, search, and authentication.
 
 Roadmap in program.md §60–63.
