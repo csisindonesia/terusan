@@ -1,13 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { IconDownload, IconWorld } from "@tabler/icons-react";
+import { IconChartArea, IconCopy, IconDownload, IconWorld } from "@tabler/icons-react";
 import { useState } from "react";
 import { z } from "zod";
 
 import { DataTable, StackedCell } from "~/components/data-table";
 import { FilterChip } from "~/components/filter-chip";
 import { PageHeader } from "~/components/page-header";
+import { RowActions, copyToClipboard } from "~/components/row-actions";
 import { TablePagination } from "~/components/table-pagination";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -70,10 +71,33 @@ const columns: ColumnDef<Geography>[] = [
   {
     accessorKey: "valid_from",
     header: "Valid from",
-    meta: { align: "right" },
     // Administrative changes must not silently overwrite earlier definitions
     // (program.md §11), so when a place came into being is worth a column.
     cell: ({ row }) => row.original.valid_from ?? "—",
+  },
+  {
+    id: "actions",
+    header: "",
+    enableSorting: false,
+    meta: { align: "right" },
+    cell: ({ row }) => (
+      <RowActions
+        actions={[
+          {
+            label: "Copy identifier",
+            icon: IconCopy,
+            onSelect: () => void copyToClipboard(row.original.geo_id),
+          },
+          {
+            label: "View figures",
+            icon: IconChartArea,
+            onSelect: () => {
+              window.location.href = `/observations?geo=${encodeURIComponent(row.original.geo_id)}`;
+            },
+          },
+        ]}
+      />
+    ),
   },
 ];
 

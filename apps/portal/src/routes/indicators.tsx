@@ -1,11 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { IconDownload } from "@tabler/icons-react";
+import { IconChartArea, IconCopy, IconDownload, IconRuler } from "@tabler/icons-react";
 import { useState } from "react";
+import { z } from "zod";
 
 import { DataTable, StackedCell } from "~/components/data-table";
+import { FilterChip } from "~/components/filter-chip";
 import { PageHeader } from "~/components/page-header";
+import { RowActions, copyToClipboard } from "~/components/row-actions";
 import { TablePagination } from "~/components/table-pagination";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -13,7 +16,15 @@ import { api, type Indicator } from "~/lib/api";
 import { downloadCsv, toCsv } from "~/lib/csv";
 import { formatCount } from "~/lib/format";
 
-export const Route = createFileRoute("/indicators")({ component: Indicators });
+const searchSchema = z.object({
+  frequency: z.string().optional(),
+  unit: z.string().optional(),
+});
+
+export const Route = createFileRoute("/indicators")({
+  validateSearch: searchSchema,
+  component: Indicators,
+});
 
 const PAGE_SIZE = 50;
 
@@ -65,6 +76,23 @@ const columns: ColumnDef<Indicator>[] = [
     meta: { align: "right" },
     cell: ({ row }) => formatCount(row.original.observations),
   },
+  {
+    id: "actions",
+    header: "",
+    enableSorting: false,
+    meta: { align: "right" },
+    cell: ({ row }) => (
+      <RowActions
+        actions={[
+          {
+            label: "Copy identifier",
+            icon: IconCopy,
+            onSelect: () => void copyToClipboard(row.original.indicator_id),
+          },
+        ]}
+      />
+    ),
+  },
 ];
 
 const EXPORT_COLUMNS = [
@@ -79,10 +107,24 @@ const EXPORT_COLUMNS = [
 ];
 
 function Indicators() {
+  const search = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
   const query = useQuery({ queryKey: ["indicators"], queryFn: () => api.indicators() });
   const [selected, setSelected] = useState<Indicator[]>([]);
 
-  const rows = query.data?.data ?? [];
+  const all = query.data?.data ?? [];
+
+  // Filtered here rather than by the API, which returns the whole list: there
+  // are a handful of indicators, and a round trip to narrow five rows is worse
+  // than narrowing them in place. It moves server-side when the list does.
+  const rows = all.filter(
+    (indicator) =>
+      (!search.frequency || indicator.temporal_resolution === search.frequency) &&
+      (!search.unit || indicator.unit === search.unit),
+  );
+
+  const frequencies = [...new Set(all.map((i) => i.temporal_resolution))].sort();
+  const units = [...new Set(all.map((i) => i.unit).filter(Boolean))].sort() as string[];
 
   function exportRows(chosen: Indicator[], suffix: string) {
     downloadCsv(
@@ -111,11 +153,47 @@ function Indicators() {
         }
       />
 
+      <div className="flex flex-wrap items-center gap-2">
+        <FilterChip
+          icon={IconChartArea}
+          label="Frequency"
+          value={search.frequency}
+          onClear={() => navigate({ search: (prev) => ({ ...prev, frequency: undefined }) })}
+        >
+          <ChoiceList
+            options={frequencies}
+            selected={search.frequency}
+            onSelect={(frequency) =>
+              navigate({ search: (prev) => ({ ...prev, frequency }) })
+            }
+          />
+        </FilterChip>
+
+        <FilterChip
+          icon={IconRuler}
+          label="Unit"
+          value={search.unit}
+          onClear={() => navigate({ search: (prev) => ({ ...prev, unit: undefined }) })}
+        >
+          <ChoiceList
+            options={units}
+            selected={search.unit}
+            onSelect={(unit) => navigate({ search: (prev) => ({ ...prev, unit }) })}
+          />
+        </FilterChip>
+
+        {search.frequency || search.unit ? (
+          <Button variant="ghost" size="sm" className="h-8" onClick={() => navigate({ search: {} })}>
+            Clear all
+          </Button>
+        ) : null}
+      </div>
+
       <DataTable
         columns={columns}
         data={rows}
         isLoading={query.isLoading}
-        emptyMessage="No indicators yet. Normalize a Bronze dataset into Silver first."
+        emptyMessage="No indicators match these filters."
         selectable
         getRowId={(row) => row.indicator_id}
         onSelectionChange={setSelected}
@@ -140,11 +218,43 @@ function Indicators() {
           rows.length ? (
             <>
               {formatCount(rows.length)} indicator{rows.length === 1 ? "" : "s"}
+              {rows.length !== all.length ? ` of ${formatCount(all.length)}` : null}
               {selected.length ? ` · ${formatCount(selected.length)} selected` : null}
             </>
           ) : null
         }
       />
+    </div>
+  );
+}
+
+/** A short list of values to pick from, for a filter with few options. */
+function ChoiceList({
+  options,
+  selected,
+  onSelect,
+}: {
+  options: string[];
+  selected?: string;
+  onSelect: (value: string) => void;
+}) {
+  if (!options.length) {
+    return <p className="px-2 py-3 text-sm text-muted-foreground">Nothing to choose from.</p>;
+  }
+  return (
+    <div className="grid gap-0.5">
+      {options.map((option) => (
+        <button
+          key={option}
+          type="button"
+          onClick={() => onSelect(option)}
+          className={`rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted ${
+            option === selected ? "bg-muted font-medium" : ""
+          }`}
+        >
+          {option}
+        </button>
+      ))}
     </div>
   );
 }

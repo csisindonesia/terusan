@@ -1,12 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { IconDownload } from "@tabler/icons-react";
+import { IconCopy, IconDownload, IconExternalLink } from "@tabler/icons-react";
 import { useState } from "react";
 import { z } from "zod";
 
 import { DataTable, StackedCell } from "~/components/data-table";
 import { PageHeader } from "~/components/page-header";
+import { RowActions, copyToClipboard } from "~/components/row-actions";
 import { TablePagination } from "~/components/table-pagination";
 import {
   ObservationFilterBar,
@@ -115,6 +116,36 @@ const columns: ColumnDef<Observation>[] = [
       ) : (
         row.original.source_id
       ),
+  },
+  {
+    id: "actions",
+    header: "",
+    enableSorting: false,
+    meta: { align: "right" },
+    cell: ({ row }) => (
+      <RowActions
+        actions={[
+          {
+            label: "Copy value",
+            icon: IconCopy,
+            // The stored decimal, not the formatted one: a figure lifted out
+            // of here should be the figure, not its rendering.
+            onSelect: row.original.value
+              ? () => void copyToClipboard(row.original.value as string)
+              : undefined,
+            hint: row.original.value ? undefined : "This figure has no value",
+          },
+          {
+            label: "Open source",
+            icon: IconExternalLink,
+            onSelect: row.original.source_url
+              ? () => window.open(row.original.source_url, "_blank", "noopener")
+              : undefined,
+            hint: row.original.source_url ? undefined : "No source URL recorded",
+          },
+        ]}
+      />
+    ),
   },
 ];
 

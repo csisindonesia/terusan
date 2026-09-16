@@ -1,11 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { IconDownload } from "@tabler/icons-react";
+import { IconCopy, IconDownload, IconStack2 } from "@tabler/icons-react";
 import { useState } from "react";
+import { z } from "zod";
 
 import { DataTable, StackedCell } from "~/components/data-table";
+import { FilterChip } from "~/components/filter-chip";
 import { PageHeader } from "~/components/page-header";
+import { RowActions, copyToClipboard } from "~/components/row-actions";
 import { TablePagination } from "~/components/table-pagination";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -13,7 +16,12 @@ import { api, type Dataset } from "~/lib/api";
 import { downloadCsv, toCsv } from "~/lib/csv";
 import { formatCount } from "~/lib/format";
 
-export const Route = createFileRoute("/datasets")({ component: Datasets });
+const searchSchema = z.object({ layer: z.string().optional() });
+
+export const Route = createFileRoute("/datasets")({
+  validateSearch: searchSchema,
+  component: Datasets,
+});
 
 const PAGE_SIZE = 50;
 
@@ -36,6 +44,23 @@ const columns: ColumnDef<Dataset>[] = [
     meta: { align: "right" },
     cell: ({ row }) => formatCount(row.original.rows),
   },
+  {
+    id: "actions",
+    header: "",
+    enableSorting: false,
+    meta: { align: "right" },
+    cell: ({ row }) => (
+      <RowActions
+        actions={[
+          {
+            label: "Copy slug",
+            icon: IconCopy,
+            onSelect: () => void copyToClipboard(row.original.slug),
+          },
+        ]}
+      />
+    ),
+  },
 ];
 
 const EXPORT_COLUMNS = [
@@ -46,10 +71,17 @@ const EXPORT_COLUMNS = [
 ];
 
 function Datasets() {
+  const search = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
   const query = useQuery({ queryKey: ["datasets"], queryFn: () => api.datasets() });
   const [selected, setSelected] = useState<Dataset[]>([]);
 
-  const rows = query.data?.data ?? [];
+  const all = query.data?.data ?? [];
+
+  // Filtered in place: the endpoint returns every dataset in the lake, which
+  // is a handful, and a round trip to narrow them is worse than not.
+  const rows = search.layer ? all.filter((d) => d.layer === search.layer) : all;
+  const layers = [...new Set(all.map((dataset) => dataset.layer))].sort();
 
   function exportRows(chosen: Dataset[], suffix: string) {
     downloadCsv(
@@ -78,11 +110,47 @@ function Datasets() {
         }
       />
 
+      <div className="flex flex-wrap items-center gap-2">
+        <FilterChip
+          icon={IconStack2}
+          label="Layer"
+          value={search.layer}
+          onClear={() => navigate({ search: {} })}
+        >
+          {layers.length ? (
+            <div className="grid gap-0.5">
+              {layers.map((layer) => (
+                <button
+                  key={layer}
+                  type="button"
+                  onClick={() => navigate({ search: { layer } })}
+                  className={`rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted ${
+                    layer === search.layer ? "bg-muted font-medium" : ""
+                  }`}
+                >
+                  {layer}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="px-2 py-3 text-sm text-muted-foreground">
+              Nothing in the lake yet.
+            </p>
+          )}
+        </FilterChip>
+
+        {search.layer ? (
+          <Button variant="ghost" size="sm" className="h-8" onClick={() => navigate({ search: {} })}>
+            Clear all
+          </Button>
+        ) : null}
+      </div>
+
       <DataTable
         columns={columns}
         data={rows}
         isLoading={query.isLoading}
-        emptyMessage="The lake is empty. Run a source, then extract."
+        emptyMessage="No datasets match this filter."
         selectable
         getRowId={(row) => row.slug}
         onSelectionChange={setSelected}
@@ -106,7 +174,8 @@ function Datasets() {
         summary={
           rows.length ? (
             <>
-              {formatCount(rows.length)} datasets
+              {formatCount(rows.length)} dataset{rows.length === 1 ? "" : "s"}
+              {rows.length !== all.length ? ` of ${formatCount(all.length)}` : null}
               {selected.length ? ` · ${formatCount(selected.length)} selected` : null}
             </>
           ) : null
