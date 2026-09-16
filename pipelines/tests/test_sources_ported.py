@@ -710,3 +710,25 @@ def test_the_base_class_is_not_itself_registrable():
     from terusan_pipelines.sources.worldbank import WorldBankIndicator
 
     assert WorldBankIndicator.abstract
+
+
+# ---- scope ----------------------------------------------------------------
+
+
+def test_worldbank_series_are_pulled_for_indonesia_only():
+    """This is an Indonesian research warehouse.
+
+    Pulling every country buries the figures it exists for under two hundred
+    others; a comparator is a deliberate addition, not the default.
+    """
+    from terusan_pipelines.sources.worldbank import (
+        COUNTRIES,
+        WorldBankGDP,
+        WorldBankPopulation,
+        indicator_url,
+    )
+
+    assert COUNTRIES == "IDN"
+    assert "/country/IDN/" in indicator_url("NY.GDP.MKTP.CD")
+    for source in (WorldBankGDP, WorldBankPopulation):
+        assert "/country/IDN/" in (source.meta.base_url or "")

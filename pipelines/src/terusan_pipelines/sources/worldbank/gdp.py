@@ -27,7 +27,13 @@ from ..base import (
 )
 from ..http import fetcher
 
-API_ROOT = "https://api.worldbank.org/v2/country/all/indicator"
+#: The platform is an Indonesian research warehouse, so the World Bank series
+#: are pulled for Indonesia rather than for every country. Comparators are a
+#: deliberate addition — widen `COUNTRIES` and re-ingest — not the default, which
+#: would otherwise bury Indonesian figures under two hundred others.
+COUNTRIES = "IDN"
+
+API_ROOT = f"https://api.worldbank.org/v2/country/{COUNTRIES}/indicator"
 
 #: A guard against a runaway `pages` value from upstream. A malformed envelope
 #: claiming sixty thousand pages should stop the run, not walk them.

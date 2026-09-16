@@ -510,3 +510,42 @@ def test_bumping_the_parser_version_forces_re_extraction(resolver):
         bumped = ExtractionRunner(resolver).run()
         assert bumped.documents_extracted == 1
         assert bumped.documents_unchanged == 0
+
+
+# ---- dimension scope ------------------------------------------------------
+
+
+def test_referenced_geo_ids_reports_what_the_data_uses(resolver, geography):
+    """A dimension exists to make its facts interpretable, so publishing
+    members nothing refers to is noise."""
+    _land_and_extract(resolver, b"bulan;wilayah;nilai\n2026-01;Jawa Barat;5\n")
+    mapping = ColumnMapping(
+        indicator_id="X",
+        period_column="bulan",
+        value_column="nilai",
+        geo_column="wilayah",
+    )
+    runner = SilverRunner(resolver, geography=geography)
+    runner.normalize(mapping, dataset="inflation")
+
+    assert runner.referenced_geo_ids() == {"ID-JB"}
+
+
+def test_referenced_geo_ids_is_empty_before_anything_is_normalized(resolver):
+    assert SilverRunner(resolver).referenced_geo_ids() == set()
+
+
+def test_unresolved_places_do_not_appear_as_referenced(resolver, geography):
+    """A null geo_id is a gap in the data, not a member of the dimension."""
+    _land_and_extract(resolver, b"bulan;wilayah;nilai\n2026-01;Atlantis;5\n")
+    mapping = ColumnMapping(
+        indicator_id="X",
+        period_column="bulan",
+        value_column="nilai",
+        geo_column="wilayah",
+    )
+    runner = SilverRunner(resolver, geography=geography)
+    result = runner.normalize(mapping, dataset="inflation")
+
+    assert result.stats.unresolved_geo == 1
+    assert runner.referenced_geo_ids() == set()

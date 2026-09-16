@@ -104,6 +104,27 @@ class SilverRunner:
         self._log(result)
         return result
 
+    def referenced_geo_ids(self) -> set[str]:
+        """Geography identifiers that Silver observations actually use.
+
+        A dimension exists to make its facts interpretable, so publishing
+        members nothing refers to is noise — two hundred countries beside a
+        warehouse holding Indonesian figures.
+        """
+        root = Path(self._resolver.resolve(Layer.SILVER, "observations"))
+        if not any(root.rglob("*.parquet")):
+            return set()
+
+        pattern = self._resolver.glob(Layer.SILVER, "observations")
+        with Warehouse(self._resolver) as warehouse:
+            rows = warehouse.query(
+                "SELECT DISTINCT geo_id FROM "
+                "read_parquet(?, union_by_name=true, hive_partitioning=true) "
+                "WHERE geo_id IS NOT NULL",
+                [pattern],
+            ).fetchall()
+        return {row[0] for row in rows}
+
     def write_geography(self, geographies: list[Geography]) -> int:
         """Publish the geography dimension (program.md §11)."""
         rows = [

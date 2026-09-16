@@ -275,15 +275,15 @@ ambiguous or absent values.
 Not yet built: curation into Gold, the REST and SQL surfaces, scheduling,
 search, and authentication.
 
-Verified end to end against the live World Bank API: 17,160 observations from
-one page, through RAW and Bronze into typed Silver, every one of them resolving
-to a geography.
+Scoped to Indonesia. The World Bank series are pulled for `IDN` rather than for
+every country, and the geography dimension publishes the places in use plus
+Indonesia's 38 provinces — a comparator series is a deliberate addition, not the
+default.
 
-Aggregates are recorded as `geo_type = 'region'` rather than dropped. They are
-real published figures, but every country sits inside several overlapping
-groupings, so summing the whole dataset gives about seven times the truth —
-106 trillion USD across countries in 2023, against 671 trillion across the
-aggregates. Recording the distinction lets a consumer filter; deleting the rows
-would not, because nobody can filter what is absent.
+World Bank aggregates are still recorded as `geo_type = 'region'` where they
+appear, rather than dropped: they are real published figures, but every country
+sits inside several overlapping groupings, so summing a dataset containing both
+counts most places more than once. Recording the distinction lets a consumer
+filter; deleting the rows would not, because nobody can filter what is absent.
 
 Roadmap in program.md §60–63.

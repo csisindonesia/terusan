@@ -177,6 +177,17 @@ df = con.sql("""
 Any tool that reads Parquet works — Polars, pandas, Power BI, Metabase. That is
 the point of keeping storage and serving separate (program.md §2.3).
 
+## Scope
+
+The World Bank series are pulled for Indonesia (`COUNTRIES = "IDN"` in
+`sources/worldbank/gdp.py`). Widen it and re-ingest to add comparators —
+`"IDN;MYS;THA;VNM"` for regional neighbours — rather than pulling every country
+and burying the figures this warehouse exists for.
+
+`terusan silver dimensions` publishes only the places the observations refer
+to, plus Indonesia and its 38 provinces. `--all` publishes the full reference,
+for when a comparator series is about to land.
+
 ## Adding another series
 
 The World Bank publishes thousands of indicators through one endpoint shape, so

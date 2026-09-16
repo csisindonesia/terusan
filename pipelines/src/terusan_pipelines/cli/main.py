@@ -555,22 +555,46 @@ def silver_check(
 
 
 @silver_app.command("dimensions")
-def silver_dimensions() -> None:
+def silver_dimensions(
+    everything: Annotated[
+        bool,
+        typer.Option(
+            "--all",
+            help="Publish every reference member, not only the ones in use.",
+        ),
+    ] = False,
+) -> None:
     """Publish the geography and commodity dimensions into Silver.
 
     Reference data under `reference/` is the authority; this copies it into the
     lake so a query can join on it (program.md §11, §12). Nothing writes back
     the other way.
+
+    By default only the members the observations actually refer to are
+    published, together with Indonesia and its provinces. A dimension exists to
+    make its facts interpretable, and two hundred countries beside a warehouse
+    of Indonesian figures interpret nothing. `--all` publishes the lot, for
+    when a comparator series is about to arrive.
     """
     runner = SilverRunner(_resolver())
-    geographies = [*load_countries(), *load_aggregates(), *load_indonesia()]
-    commodities = load_commodities()
+    everything_geo = [*load_countries(), *load_aggregates(), *load_indonesia()]
+
+    if everything:
+        geographies = everything_geo
+    else:
+        used = runner.referenced_geo_ids()
+        # Indonesia and its administrative hierarchy are kept whether or not a
+        # figure names them yet: they are what this warehouse is about, and a
+        # province with no observations is a gap worth seeing.
+        always = {g.geo_id for g in load_indonesia()} | {"IDN"}
+        geographies = [g for g in everything_geo if g.geo_id in used | always]
 
     typer.echo(
         json.dumps(
             {
                 "geography": runner.write_geography(geographies),
-                "commodities": runner.write_commodities(commodities),
+                "commodities": runner.write_commodities(load_commodities()),
+                "scope": "all reference members" if everything else "in use, plus Indonesia",
             },
             indent=2,
         )
