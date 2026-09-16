@@ -6,6 +6,7 @@ import { useState } from "react";
 import { z } from "zod";
 
 import { DataTable, StackedCell } from "~/components/data-table";
+import { TablePagination } from "~/components/table-pagination";
 import {
   ObservationFilterBar,
   type ObservationFilters,
@@ -241,34 +242,23 @@ function Observations() {
         )}
       />
 
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>
-          {total > 0
-            ? `${formatCount(page * PAGE_SIZE + 1)}–${formatCount(
-                Math.min((page + 1) * PAGE_SIZE, total),
-              )} of ${formatCount(total)}`
-            : null}
-          {selected.length ? ` · ${formatCount(selected.length)} selected` : null}
-        </span>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page === 0}
-            onClick={() => navigate({ search: (prev) => ({ ...prev, page: page - 1 }) })}
-          >
-            Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!meta?.has_more}
-            onClick={() => navigate({ search: (prev) => ({ ...prev, page: page + 1 }) })}
-          >
-            Next
-          </Button>
-        </div>
-      </div>
+      <TablePagination
+        page={page}
+        total={total}
+        pageSize={PAGE_SIZE}
+        onPage={(next) => navigate({ search: (prev) => ({ ...prev, page: next }) })}
+        summary={
+          total > 0 ? (
+            <>
+              {formatCount(page * PAGE_SIZE + 1)}–
+              {formatCount(Math.min((page + 1) * PAGE_SIZE, total))} of{" "}
+              {formatCount(total)}
+              {selected.length ? ` · ${formatCount(selected.length)} selected` : null}
+            </>
+          ) : null
+        }
+      />
+
     </div>
   );
 }
