@@ -1,13 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import {
-  IconCalendar,
-  IconDownload,
-  IconMapPin,
-  IconPlugConnected,
-  IconRuler,
-} from "@tabler/icons-react";
+import { IconDownload } from "@tabler/icons-react";
 import { useState } from "react";
 import { z } from "zod";
 
@@ -58,7 +52,6 @@ const columns: ColumnDef<Observation>[] = [
   {
     accessorKey: "geo_name",
     header: "Place",
-    meta: { icon: IconMapPin },
     cell: ({ row }) => (
       <StackedCell
         primary={row.original.geo_name ?? "—"}
@@ -69,7 +62,6 @@ const columns: ColumnDef<Observation>[] = [
   {
     accessorKey: "period",
     header: "Period",
-    meta: { icon: IconCalendar },
     cell: ({ row }) => (
       <StackedCell
         primary={row.original.period}
@@ -80,7 +72,7 @@ const columns: ColumnDef<Observation>[] = [
   {
     accessorKey: "value",
     header: "Value",
-    meta: { align: "right", icon: IconRuler },
+    meta: { align: "right" },
     cell: ({ row }) => {
       const { value, unit, status, value_unambiguous } = row.original;
       if (value === null) {
@@ -108,7 +100,6 @@ const columns: ColumnDef<Observation>[] = [
   {
     accessorKey: "source_id",
     header: "Source",
-    meta: { icon: IconPlugConnected },
     cell: ({ row }) =>
       row.original.source_url ? (
         <a

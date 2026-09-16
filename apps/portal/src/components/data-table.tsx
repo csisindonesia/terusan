@@ -130,7 +130,14 @@ export function DataTable<TData>({
                   return (
                     <TableHead
                       key={header.id}
-                      className={meta?.align === "right" ? "text-right" : ""}
+                      className={cn(
+                        // A rule between headers, so a wide table reads as
+                        // columns rather than as a run of words. Only between:
+                        // a trailing one would fence the table off from the
+                        // border it already has.
+                        "border-r last:border-r-0",
+                        meta?.align === "right" && "text-right",
+                      )}
                     >
                       <span
                         className={cn(
@@ -138,12 +145,6 @@ export function DataTable<TData>({
                           meta?.align === "right" && "justify-end",
                         )}
                       >
-                        {/* The column's own icon, which makes a wide table
-                            scannable sideways rather than only by reading. */}
-                        {meta?.icon ? (
-                          <meta.icon className="size-4 shrink-0 text-muted-foreground" />
-                        ) : null}
-
                         {header.isPlaceholder
                           ? null
                           : flexRender(header.column.columnDef.header, header.getContext())}
