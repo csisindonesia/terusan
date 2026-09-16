@@ -20,7 +20,22 @@ extract = [
     "pypdf>=5.1.0",
     "pdfplumber>=0.11.0",
     "selectolax>=0.3.27",
+]
+
+# What the vendored agency scrapers need. They keep `requests` rather than being
+# rewritten onto the shared client: their headers encode workarounds that took
+# someone a while to find — bi.go.id resets the connection for a short
+# User-Agent — and a rewrite risks losing exactly that.
+agencies = [
+    "requests>=2.32.0",
+    "pandas>=2.2.0",
     "openpyxl>=3.1.5",
+]
+
+# SP2KP publishes through a Tableau view that only yields its crosstab to a
+# real browser.
+browser = [
+    "playwright>=1.49.0",
 ]
 
 [dependency-groups]
@@ -43,6 +58,11 @@ packages = ["src/terusan_pipelines"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+# Vendored agency scrapers keep the shape they arrived in. Restyling them would
+# bury the next real change in a diff of cosmetic ones, and these modules encode
+# workarounds that are easier to verify against their original than to re-read.
+extend-exclude = ["src/terusan_pipelines/sources/*/legacy/*"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]

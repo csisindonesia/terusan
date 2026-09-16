@@ -133,6 +133,35 @@ success ratio — see [bank_indonesia/seki.py](../pipelines/src/terusan_pipeline
 Without the ratio, a site-wide outage arrives as a successful run holding almost
 nothing.
 
+## Vendored scrapers
+
+An existing scraper that already separates fetching from parsing does not need
+rewriting. It moves into `sources/<agency>/legacy/` as it is, minus its entry
+point and any output path — landing belongs to the platform — and a thin
+`Source` beside it calls its fetch function and yields the bytes:
+
+```python
+class ConsumerSurvey(Source):
+    meta = SourceMeta(slug="bi-consumer-survey", ...)
+
+    def collect(self, ctx):
+        yield Artifact(
+            content=consumer_survey.download_zip(),
+            filename="survei-konsumen.zip",
+            dataset="consumer-survey",
+            source_url=consumer_survey.ZIP_URL,
+        )
+```
+
+Vendored modules are excluded from ruff. Restyling them buries the next real
+change in a diff of cosmetic ones, and their docstrings are worth keeping
+verbatim — they record things like *bi.go.id resets the connection for a short
+User-Agent*, which is not obvious and took someone a while to find.
+
+Their parse functions come along unused, waiting for the extractor that will
+read the landed bytes. Fetching and parsing in one step is what the RAW layer
+exists to undo (program.md §2.1).
+
 ## Registration
 
 None. Subclassing `Source` inside the package is enough — the registry walks
