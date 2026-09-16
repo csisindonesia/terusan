@@ -98,3 +98,10 @@ export function formatRelative(value?: string | null): string | undefined {
   const years = Math.floor(days / 365);
   return `${years} year${years === 1 ? "" : "s"} ago`;
 }
+
+/** A signed percentage, for a change that can go either way. */
+export function formatPercent(value: number | null, digits = 1): string {
+  if (value === null || !Number.isFinite(value)) return "—";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(digits)}%`;
+}

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -30,17 +31,61 @@ type Indicator struct {
 	LastUpdated *string `json:"last_updated,omitempty"`
 }
 
-func (s *Server) handleIndicators(w http.ResponseWriter, r *http.Request) {
+// handleIndicator returns one series.
+//
+// A separate route rather than a filter on the list, because a detail page asks
+// a different question — this one thing, in full — and a 404 is the honest
+// answer to an identifier that names nothing.
+func (s *Server) handleIndicator(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	if !s.warehouse.Exists(ctx, storage.LayerSilver, "observations") {
-		writeData(w, []Indicator{}, &Meta{Layer: "silver"})
+
+	id := r.PathValue("id")
+	if !identifierPattern.MatchString(id) {
+		badRequest(w, "invalid parameter", "id: is not a well-formed identifier")
 		return
+	}
+
+	indicators, err := s.indicatorRows(ctx, w, id)
+	if err != nil {
+		return // already reported
+	}
+	if len(indicators) == 0 {
+		notFound(w, "no such indicator", id)
+		return
+	}
+	writeData(w, indicators[0], &Meta{Layer: "silver"})
+}
+
+func (s *Server) handleIndicators(w http.ResponseWriter, r *http.Request) {
+	indicators, err := s.indicatorRows(r.Context(), w, "")
+	if err != nil {
+		return // already reported
+	}
+	writeData(w, indicators, &Meta{Total: int64(len(indicators)), Layer: "silver"})
+}
+
+// indicatorRows summarises the series, or one of them when `only` is set.
+//
+// Derived from the observations rather than read from an indicators table:
+// there is no point advertising an indicator with nothing behind it, and the
+// coverage range is the first thing anyone asks about a series.
+func (s *Server) indicatorRows(
+	ctx context.Context, w http.ResponseWriter, only string,
+) ([]Indicator, error) {
+	if !s.warehouse.Exists(ctx, storage.LayerSilver, "observations") {
+		return nil, nil
 	}
 
 	observations, err := s.source(storage.LayerSilver, "observations")
 	if err != nil {
 		internalError(w, s.log, "resolve observations", err)
-		return
+		return nil, err
+	}
+
+	where, args := "", []any{}
+	if only != "" {
+		where = " WHERE indicator_id = ?"
+		args = append(args, only)
 	}
 
 	rows, err := s.warehouse.DB().QueryContext(ctx, fmt.Sprintf(`
@@ -53,12 +98,12 @@ func (s *Server) handleIndicators(w http.ResponseWriter, r *http.Request) {
 		       max(period),
 		       list_sort(list(DISTINCT source_id)),
 		       strftime(max(processed_at), '%%Y-%%m-%%dT%%H:%%M:%%SZ')
-		FROM %s
+		FROM %s%s
 		GROUP BY indicator_id
-		ORDER BY indicator_id`, observations))
+		ORDER BY indicator_id`, observations, where), args...)
 	if err != nil {
 		internalError(w, s.log, "query indicators", err)
-		return
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -71,17 +116,17 @@ func (s *Server) handleIndicators(w http.ResponseWriter, r *http.Request) {
 			&i.Geographies, &i.PeriodStart, &i.PeriodEnd, &sources, &i.LastUpdated,
 		); err != nil {
 			internalError(w, s.log, "scan indicator", err)
-			return
+			return nil, err
 		}
 		i.Sources = asStrings(sources)
 		indicators = append(indicators, i)
 	}
 	if err := rows.Err(); err != nil {
 		internalError(w, s.log, "read indicators", err)
-		return
+		return nil, err
 	}
 
-	writeData(w, indicators, &Meta{Total: int64(len(indicators)), Layer: "silver"})
+	return indicators, nil
 }
 
 // Geography is one member of the geography dimension (program.md §11).

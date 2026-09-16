@@ -39,6 +39,7 @@ func (s *Server) Routes() http.Handler {
 
 	mux.HandleFunc("GET /v1/observations", s.handleObservations)
 	mux.HandleFunc("GET /v1/indicators", s.handleIndicators)
+	mux.HandleFunc("GET /v1/indicators/{id}", s.handleIndicator)
 	mux.HandleFunc("GET /v1/geography", s.handleGeography)
 	mux.HandleFunc("GET /v1/datasets", s.handleDatasets)
 

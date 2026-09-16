@@ -28,7 +28,7 @@ const searchSchema = z.object({
   q: z.string().optional(),
 });
 
-export const Route = createFileRoute("/indicators")({
+export const Route = createFileRoute("/indicators/")({
   validateSearch: searchSchema,
   component: Indicators,
 });
@@ -40,11 +40,11 @@ const columns: ColumnDef<Indicator>[] = [
     accessorKey: "indicator_id",
     header: "Indicator",
     cell: ({ row }) => (
-      // Straight to the figures, filtered — the only question anyone has after
-      // reading a row here.
+      // To the series itself rather than to a filtered table: the next
+      // question after reading a row here is about this one indicator.
       <Link
-        to="/observations"
-        search={{ indicator: row.original.indicator_id }}
+        to="/indicators/$indicatorId"
+        params={{ indicatorId: row.original.indicator_id }}
         className="font-medium underline-offset-4 hover:underline"
       >
         {row.original.indicator_id}

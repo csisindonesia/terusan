@@ -147,6 +147,8 @@ export type ObservationQuery = {
 export const api = {
   datasets: () => request<Dataset[]>("/v1/datasets"),
   indicators: () => request<Indicator[]>("/v1/indicators"),
+  indicator: (id: string) =>
+    request<Indicator>(`/v1/indicators/${encodeURIComponent(id)}`),
   geography: (params?: {
     geo_type?: string[];
     q?: string;
