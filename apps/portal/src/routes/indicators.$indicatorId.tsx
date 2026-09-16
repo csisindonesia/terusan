@@ -1,7 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { IconArrowLeft, IconDownload, IconExternalLink } from "@tabler/icons-react";
+import {
+  IconArrowLeft,
+  IconCopy,
+  IconDownload,
+  IconExternalLink,
+  IconPlayerPlay,
+  IconRefresh,
+} from "@tabler/icons-react";
 import { z } from "zod";
 
 import { DataTable, StackedCell } from "~/components/data-table";
@@ -12,6 +19,7 @@ import {
 } from "~/components/filter-chip";
 import { SearchInput } from "~/components/search-input";
 import { TablePagination } from "~/components/table-pagination";
+import { RowActions, copyToClipboard } from "~/components/row-actions";
 import { TableToolbar } from "~/components/table-toolbar";
 import { TimeSeriesChart } from "~/components/time-series-chart";
 import { Badge } from "~/components/ui/badge";
@@ -133,6 +141,7 @@ function IndicatorDetail() {
 
   const meta = indicator.data?.data;
   const rows = observations.data?.data ?? [];
+  const source = meta?.sources[0];
 
   const figures: Figure[] = rows.map((row) => ({
     period: row.period,
@@ -180,6 +189,48 @@ function IndicatorDetail() {
           </h1>
           {meta ? <Badge variant="secondary">{meta.temporal_resolution}</Badge> : null}
           {meta?.unit ? <Badge variant="outline">{meta.unit}</Badge> : null}
+
+          <div className="ml-auto">
+            <RowActions
+              label="Indicator actions"
+              actions={[
+                {
+                  label: "Copy ingest command",
+                  icon: IconCopy,
+                  // The pipeline runs from a terminal, so the useful thing the
+                  // browser can do is hand over the exact line to paste.
+                  onSelect: source
+                    ? () =>
+                        void copyToClipboard(
+                          `cd pipelines && uv run terusan sources run ${source}`,
+                        )
+                    : undefined,
+                  hint: source ? undefined : "No source recorded for this series",
+                },
+                {
+                  label: "Copy rebuild command",
+                  icon: IconCopy,
+                  onSelect: () =>
+                    void copyToClipboard(
+                      `cd pipelines && uv run terusan warehouse extract && ` +
+                        `uv run terusan silver normalize ${indicatorId.toUpperCase()}`,
+                    ),
+                },
+              ]}
+              unavailable={[
+                {
+                  label: "Run ingestion now",
+                  icon: IconPlayerPlay,
+                  hint: "The serving layer is read-only — run it from a terminal",
+                },
+                {
+                  label: "Rebuild from RAW",
+                  icon: IconRefresh,
+                  hint: "The serving layer is read-only — run it from a terminal",
+                },
+              ]}
+            />
+          </div>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">
           {meta ? (
@@ -197,7 +248,45 @@ function IndicatorDetail() {
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_17rem]">
+      <div className="grid gap-8 lg:grid-cols-[16rem_minmax(0,1fr)]">
+        {/* Metadata first, and on the left: it is what a reader checks *while*
+            reading a figure, and the left edge is where the eye starts. No
+            card around it — a border here fences off the one thing that should
+            read as part of the page. */}
+        <aside className="lg:sticky lg:top-20 lg:self-start">
+          <h2 className="font-heading text-sm font-semibold tracking-tight">
+            Metadata
+          </h2>
+          <dl className="mt-3 space-y-3">
+            <Fact label="Frequency" value={meta?.temporal_resolution} />
+            <Fact label="Unit" value={meta?.unit} />
+            <Fact
+              label="Coverage"
+              value={meta ? `${meta.period_start} – ${meta.period_end}` : undefined}
+            />
+            <Fact
+              label="Places"
+              value={meta ? formatCount(meta.geographies) : undefined}
+            />
+            <Fact
+              label="Figures"
+              value={meta ? formatCount(meta.observations) : undefined}
+            />
+            <Fact label="Sources" value={meta?.sources.join(", ")} />
+            <Fact
+              label="Last updated"
+              value={meta ? formatDate(meta.last_updated) : undefined}
+              hint={meta ? formatRelative(meta.last_updated) : undefined}
+            />
+            <Fact label="Layer" value="silver" hint="Normalized, typed observations" />
+            <Fact
+              label="Access"
+              value="Internal"
+              hint="Widening access is a decision, not a default"
+            />
+          </dl>
+        </aside>
+
         <div className="min-w-0 space-y-6">
           <Section title="Analytics">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -391,51 +480,6 @@ function IndicatorDetail() {
             </div>
           </Section>
         </div>
-
-        {/* Metadata sits beside the data rather than above it: it is what the
-            reader checks *while* reading a figure, not before. Sticky, so it
-            stays there down a long table. */}
-        <aside className="lg:sticky lg:top-20 lg:self-start">
-          <Card>
-            <CardContent className="py-4">
-              <h2 className="font-heading text-sm font-semibold tracking-tight">
-                Metadata
-              </h2>
-              <dl className="mt-3 space-y-3">
-                <Fact label="Frequency" value={meta?.temporal_resolution} />
-                <Fact label="Unit" value={meta?.unit} />
-                <Fact
-                  label="Coverage"
-                  value={meta ? `${meta.period_start} – ${meta.period_end}` : undefined}
-                />
-                <Fact
-                  label="Places"
-                  value={meta ? formatCount(meta.geographies) : undefined}
-                />
-                <Fact
-                  label="Figures"
-                  value={meta ? formatCount(meta.observations) : undefined}
-                />
-                <Fact label="Sources" value={meta?.sources.join(", ")} />
-                <Fact
-                  label="Last updated"
-                  value={meta ? formatDate(meta.last_updated) : undefined}
-                  hint={meta ? formatRelative(meta.last_updated) : undefined}
-                />
-                <Fact
-                  label="Layer"
-                  value="silver"
-                  hint="Normalized, typed observations"
-                />
-                <Fact
-                  label="Access"
-                  value="Internal"
-                  hint="Widening access is a decision, not a default"
-                />
-              </dl>
-            </CardContent>
-          </Card>
-        </aside>
       </div>
 
       {rows[0]?.source_url ? (

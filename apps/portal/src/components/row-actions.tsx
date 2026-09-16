@@ -29,14 +29,23 @@ export type RowAction = {
  */
 export function RowActions({
   actions,
+  unavailable,
   editable = false,
+  label = "Row actions",
 }: {
   /** The things that do work, shown above the standard pair. */
   actions?: RowAction[];
+  /** Further entries that need an endpoint nobody has built yet. */
+  unavailable?: RowAction[];
   /** Set when the write endpoints exist, which today they do not. */
   editable?: boolean;
+  label?: string;
 }) {
   const standard: RowAction[] = [
+    ...(unavailable ?? []).map((action) => ({
+      ...action,
+      onSelect: editable ? action.onSelect : undefined,
+    })),
     {
       label: "Edit",
       icon: IconPencil,
@@ -57,7 +66,7 @@ export function RowActions({
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="Row actions"
+            aria-label={label}
             className="data-[popup-open]:bg-muted"
           >
             <IconDotsVertical />
