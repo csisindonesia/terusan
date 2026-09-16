@@ -175,7 +175,7 @@ terusan warehouse query "SELECT source_id, count(*) FROM read_parquet('...') GRO
 ## The portal and the API
 
 ```bash
-make dev        # API on :8080, portal on :3000
+make dev        # API on :8080, portal on :3000, Ctrl-C stops both
 ```
 
 | Endpoint | What it answers |

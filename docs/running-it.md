@@ -50,6 +50,42 @@ Watch the counters rather than the exit code. `unresolved_geo`,
 needs attention — a name the reference data does not know, or a number that
 could be read two ways.
 
+## The portal and the API
+
+```bash
+make dev
+```
+
+```text
+API    http://localhost:8080
+portal http://localhost:3000
+Ctrl-C stops both.
+```
+
+Both run in one process group, so interrupting stops both — including the
+binary `go run` compiles and launches as a further child, which is what
+survives a plain `make -j2` and leaves the port held.
+
+If a port is already taken the script says so and stops, rather than letting
+vite move to the next free one. A portal on 3001 talking to an API that only
+allows 3000 fails in a way nobody enjoys diagnosing.
+
+Either can also run alone:
+
+```bash
+make dev-api        # :8080
+make dev-portal     # :3000
+```
+
+Ports move with the environment:
+
+```bash
+API_PORT=9000 PORTAL_PORT=4000 make dev
+```
+
+The portal reads `VITE_API_URL` at build time; with a non-default API port, set
+it in `apps/portal/.env` and add the portal's origin to `API_CORS_ORIGINS`.
+
 ## Seeing the data
 
 Every dataset is registered as a view named `<layer>_<dataset>`:

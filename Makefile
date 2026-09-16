@@ -69,9 +69,8 @@ dev-api: ## Run the serving layer on :8080
 	cd services/api && go run ./cmd/api
 
 .PHONY: dev
-dev: ## Run the API and the portal together
-	@echo "API on :8080, portal on :3000 — Ctrl-C stops both"
-	@$(MAKE) -j2 dev-api dev-portal
+dev: ## Run the API and the portal together (Ctrl-C stops both)
+	@./scripts/dev.sh
 
 # ---- pipeline -------------------------------------------------------------
 
