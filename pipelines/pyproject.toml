@@ -1,0 +1,52 @@
+[project]
+name = "terusan-pipelines"
+version = "0.1.0"
+description = "Ingestion, extraction and normalization pipelines for the Terusan research data warehouse"
+requires-python = ">=3.12"
+dependencies = [
+    "duckdb>=1.2.1",
+    "pyarrow>=18.0.0",
+    "httpx>=0.28.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    "typer>=0.15.0",
+    "structlog>=24.4.0",
+]
+
+[project.optional-dependencies]
+extract = [
+    "pypdf>=5.1.0",
+    "pdfplumber>=0.11.0",
+    "selectolax>=0.3.27",
+    "openpyxl>=3.1.5",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "ruff>=0.8.0",
+    "mypy>=1.14.0",
+]
+
+[project.scripts]
+terusan = "terusan_pipelines.cli.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/terusan_pipelines"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+strict = true

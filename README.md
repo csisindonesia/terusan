@@ -1,0 +1,109 @@
+# Terusan
+
+Research data warehouse, data catalog and data serving platform.
+
+Heterogeneous research data — government portals, statistical agencies, APIs,
+scraped pages, regulations, news, PDFs and spreadsheets — is collected,
+preserved, normalized, cataloged and served. Visualization happens in external
+tools (Power BI, Superset, Metabase, Jupyter, R); this platform serves the data
+they read.
+
+Full specification: [program.md](program.md).
+
+## Architecture
+
+```text
+Sources → Ingestion → RAW → Bronze → Silver → Gold → DuckDB → Serving → Consumers
+```
+
+| Component | Location | Stack |
+|---|---|---|
+| Data portal | [apps/portal/](apps/portal/) | TanStack Start, React 19, TypeScript |
+| Serving layer | [services/api/](services/api/) | Go 1.26, net/http |
+| Ingestion pipelines | [pipelines/](pipelines/) | Python 3.12+, uv |
+| Application catalog | [db/migrations/](db/migrations/) | PostgreSQL 18 |
+| Analytical engine | — | DuckDB over Parquet |
+
+## Storage
+
+Code lives in the repository. Data does not.
+
+The data lake sits under a single logical root, `STORAGE_ROOT`, holding
+`raw/ bronze/ silver/ gold/ exports/ temporary/`. That root resolves to a
+different physical backend per profile, and nothing else in the codebase
+changes:
+
+| Profile | `STORAGE_ROOT` | Backend |
+|---|---|---|
+| `local` | `./.data` | local filesystem |
+| `shared-dev` | `/Volumes/research/terusan` | NAS |
+| `staging` | `s3://terusan-staging` | MinIO / R2 |
+| `production` | `s3://terusan-warehouse` | S3-compatible |
+
+Two rules the code enforces rather than documents:
+
+- **All physical paths come from the storage resolver.** Building them by hand
+  is what makes a lake impossible to move. Go:
+  [`internal/storage`](services/api/internal/storage/resolver.go). Python:
+  [`terusan_pipelines.storage`](pipelines/src/terusan_pipelines/storage/resolver.py).
+  Both run the same fixture, [`fixtures/storage/contract.json`](fixtures/storage/contract.json),
+  because the pipelines write datasets the API has to read back.
+- **Absent configuration resolves to `local`.** A missing `.env` must not reach
+  a shared backend, and non-local profiles refuse writes until
+  `STORAGE_ALLOW_SHARED_WRITES=true` is set explicitly.
+
+See program.md §45 for NAS layout, bucket lifecycle, backup priority and
+capacity planning.
+
+## Setup
+
+Requires Go 1.26+, Python 3.12+ with [uv](https://docs.astral.sh/uv/),
+Node 22+ with corepack, and PostgreSQL 18.
+
+```bash
+cp .env.example .env
+make setup          # install toolchains, create ./.data layers
+make db-create
+make db-migrate
+```
+
+## Running
+
+```bash
+make dev-api        # serving layer on :8080
+make dev-portal     # data portal on :3000
+```
+
+```bash
+make test           # Go + Python suites
+make lint           # gofmt, go vet, ruff, tsc
+make build          # every deployable artifact
+```
+
+`make help` lists every target.
+
+## Repository layout
+
+```text
+apps/portal/        data portal (TanStack Start)
+services/api/       serving layer (Go)
+pipelines/          ingestion, extraction, normalization (Python)
+packages/           shared TypeScript contracts
+db/migrations/      PostgreSQL catalog schema
+sql/                DuckDB transformations, by layer
+schemas/            dataset schema definitions
+fixtures/           small committed test inputs
+infra/              deployment configuration
+docs/               additional documentation
+.data/    [ignored] local storage root
+.cache/   [ignored] DuckDB spill and scratch
+```
+
+## Status
+
+Early scaffold. Working: storage addressing across all three backends, the
+PostgreSQL catalog schema, an API skeleton with health and readiness, and a
+portal shell. Not yet built: ingestion pipelines, the DuckDB query layer, the
+REST and SQL surfaces, search, and authentication.
+
+Roadmap in program.md §60–63.

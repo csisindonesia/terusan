@@ -1,0 +1,47 @@
+# ---- Data lake (never in git; see program.md §45.3) ----
+/.data/
+/.cache/
+# Anchored: an unanchored `storage/` would also ignore the resolver packages
+# in services/api/internal and pipelines/src.
+/storage/
+
+# Parquet is data, not code. Fixtures opt back in below.
+*.parquet
+!fixtures/**/*.parquet
+
+# DuckDB
+*.duckdb
+*.duckdb.wal
+*.duckdb.tmp/
+
+# ---- Secrets ----
+.env
+.env.*
+!.env.example
+
+# ---- Node ----
+node_modules/
+dist/
+.output/
+.vinxi/
+.nitro/
+.tanstack/
+*.tsbuildinfo
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# ---- Go ----
+/services/api/bin/
+/services/api/api
+
+# ---- OS / editor ----
+.DS_Store
+.idea/
+*.swp

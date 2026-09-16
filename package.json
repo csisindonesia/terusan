@@ -1,0 +1,21 @@
+{
+  "name": "terusan",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Research Data Warehouse & Data Portal",
+  "packageManager": "pnpm@10.18.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @terusan/portal dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}
