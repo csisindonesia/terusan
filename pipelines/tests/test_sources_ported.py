@@ -575,7 +575,9 @@ def test_the_worldbank_extractor_yields_one_row_per_observation(resolver):
 
     assert [r["columns"]["country_iso3"] for r in rows] == ["IDN", "MYS"]
     assert rows[0]["columns"]["year"] == "2023"
-    assert rows[0]["columns"]["gdp_usd"] == "1371166925749.88"
+    # The value column is named generically: one extractor serves every World
+    # Bank series, so it cannot be called gdp_usd.
+    assert rows[0]["columns"]["value"] == "1371166925749.88"
     assert rows[0]["columns"]["country_name"] == "Indonesia"
 
 
@@ -613,7 +615,7 @@ def test_a_null_value_becomes_an_empty_cell_not_a_zero(resolver):
         ]
     )
     rows = list(WorldBankExtractor().extract(_landed_worldbank(resolver, content)))
-    assert rows[0]["columns"]["gdp_usd"] == ""
+    assert rows[0]["columns"]["value"] == ""
 
 
 def test_an_empty_page_yields_nothing(resolver):
@@ -641,3 +643,70 @@ def test_source_specific_extractors_run_before_the_generic_ones():
 
     kinds = [type(e) for e in DEFAULT_EXTRACTORS]
     assert kinds.index(WorldBankExtractor) < kinds.index(JsonExtractor)
+
+
+# ---- one shape, many series ----------------------------------------------
+
+
+def test_every_worldbank_series_shares_one_extractor(resolver):
+    """The API publishes thousands of indicators through one envelope."""
+    from terusan_pipelines.extract import Landed as LandedDoc
+    from terusan_pipelines.extract import WorldBankExtractor
+    from terusan_pipelines.sources import (
+        Artifact,
+        Category,
+        CollectionMethod,
+        Landing,
+        SourceMeta,
+        SourceType,
+    )
+
+    extractor = WorldBankExtractor()
+    for slug, dataset in (("worldbank-gdp", "gdp"), ("worldbank-population", "population")):
+        meta = SourceMeta(
+            slug=slug,
+            name=slug,
+            category=Category.STATISTICS,
+            source_type=SourceType.GOVERNMENT_API,
+            collection_method=CollectionMethod.API,
+        )
+        content = _worldbank_page(
+            [
+                {
+                    "countryiso3code": "IDN",
+                    "country": {"value": "Indonesia"},
+                    "date": "2023",
+                    "value": 1.0,
+                }
+            ]
+        )
+        result = Landing(resolver).land(
+            meta, Artifact(content=content, filename="page-001.json", dataset=dataset)
+        )
+        landed = LandedDoc.from_metadata(Path(result.path).parent / "metadata.json")
+
+        assert extractor.handles(landed), slug
+        rows = list(extractor.extract(landed))
+        # The Bronze dataset comes from the artifact, so a normalization run
+        # reads one series rather than filtering all of them.
+        assert rows[0]["dataset"] == dataset
+
+
+def test_a_series_declares_only_its_code_and_registry_record():
+    from terusan_pipelines.sources.worldbank import (
+        WorldBankGDP,
+        WorldBankIndicator,
+        WorldBankPopulation,
+    )
+
+    assert issubclass(WorldBankGDP, WorldBankIndicator)
+    assert issubclass(WorldBankPopulation, WorldBankIndicator)
+    assert WorldBankGDP.indicator_code == "NY.GDP.MKTP.CD"
+    assert WorldBankPopulation.indicator_code == "SP.POP.TOTL"
+    assert WorldBankGDP.dataset != WorldBankPopulation.dataset
+
+
+def test_the_base_class_is_not_itself_registrable():
+    from terusan_pipelines.sources.worldbank import WorldBankIndicator
+
+    assert WorldBankIndicator.abstract

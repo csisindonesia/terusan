@@ -21,7 +21,9 @@ from typing import Any
 
 from .base import ExtractionError, Extractor, Landed
 
-SOURCE_SLUG = "worldbank-gdp"
+#: Every World Bank series shares one envelope, so the extractor claims them by
+#: prefix rather than being duplicated per indicator.
+SOURCE_PREFIX = "worldbank-"
 
 
 class WorldBankExtractor(Extractor):
@@ -30,7 +32,9 @@ class WorldBankExtractor(Extractor):
     target = "records"
 
     def handles(self, landed: Landed) -> bool:
-        return landed.source_slug == SOURCE_SLUG and landed.path.suffix.lower() == ".json"
+        return (
+            landed.source_slug.startswith(SOURCE_PREFIX) and landed.path.suffix.lower() == ".json"
+        )
 
     def extract(self, landed: Landed) -> Iterator[dict[str, Any]]:
         try:
@@ -54,13 +58,15 @@ class WorldBankExtractor(Extractor):
 
             value = row.get("value")
             yield {
-                "dataset": "gdp",
+                # Carried from the artifact rather than hardcoded: one
+                # extractor serves every World Bank series.
+                "dataset": landed.dataset or "worldbank",
                 "row_number": number,
                 "columns": {
                     "country_iso3": str(iso3),
                     "country_name": str((row.get("country") or {}).get("value") or ""),
                     "year": str(row.get("date") or ""),
-                    "gdp_usd": "" if value is None else str(value),
+                    "value": "" if value is None else str(value),
                     "indicator": str((row.get("indicator") or {}).get("id") or ""),
                 },
             }

@@ -182,7 +182,7 @@ make dev        # API on :8080, portal on :3000
 |---|---|
 | `GET /v1/datasets` | what is in the lake, read from storage |
 | `GET /v1/indicators` | each series, its coverage, how many places |
-| `GET /v1/observations` | figures, filtered by indicator, place, period |
+| `GET /v1/observations` | figures, filtered by indicator, place, place type, period |
 | `GET /v1/geography` | the geography dimension |
 
 Every response uses the envelope from program.md §53 — `data`, plus `meta` or

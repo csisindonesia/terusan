@@ -113,6 +113,29 @@ df = con.sql("""
 Any tool that reads Parquet works — Polars, pandas, Power BI, Metabase. That is
 the point of keeping storage and serving separate (program.md §2.3).
 
+## Adding another series
+
+The World Bank publishes thousands of indicators through one endpoint shape, so
+a second series is a declaration rather than a file:
+
+```python
+class WorldBankPopulation(WorldBankIndicator):
+    indicator_code = "SP.POP.TOTL"
+    dataset = "population"
+    meta = SourceMeta(slug="worldbank-population", ...)
+```
+
+Then the usual four stages, with `--dataset population` and an indicator id of
+your choosing:
+
+```bash
+uv run terusan sources run worldbank-population --limit 1
+uv run terusan warehouse extract
+uv run terusan silver normalize POPULATION_TOTAL \
+  --dataset population --period-column year --value-column value \
+  --geo-column country_iso3 --unit persons --number-format en
+```
+
 ## Working out a mapping
 
 Before normalizing a new table, check how its cells will be read:
