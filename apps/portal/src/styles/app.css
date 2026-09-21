@@ -49,22 +49,44 @@
 }
 
 :root {
+    /* The top navbar's height. The sidebar starts below it, and so does
+       every page's own sticky header, so the number is declared once. */
+    --app-header: 3.5rem;
     --background: oklch(1 0 0);
     --foreground: oklch(0.148 0.004 228.8);
-    --card: oklch(1 0 0);
+    /* A step below the page, not level with it. A card whose fill is the
+       background's is a card with nothing but a hairline ring to say where it
+       starts, and a bento of eight of them reads as one sheet of paper. Two
+       and a half per cent of lightness is enough to separate them and little
+       enough that the cards still read as white. */
+    --card: oklch(0.975 0.002 197.1);
     --card-foreground: oklch(0.148 0.004 228.8);
+    /* Floating layers stay at the top of the stack: a popover over a card has
+       to separate from it, and the shadow alone was doing that against white. */
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.148 0.004 228.8);
     --primary: oklch(0.218 0.008 223.9);
     --primary-foreground: oklch(0.987 0.002 197.1);
-    --secondary: oklch(0.963 0.002 197.1);
+    /* These three sit *inside* a card — a badge, a hover row, a skeleton — so
+       they move down with it. At the old 0.963 they were a hundredth of a step
+       from the new card surface and all but vanished on it. */
+    --secondary: oklch(0.94 0.003 197.1);
     --secondary-foreground: oklch(0.218 0.008 223.9);
-    --muted: oklch(0.963 0.002 197.1);
-    --muted-foreground: oklch(0.56 0.021 213.5);
-    --accent: oklch(0.963 0.002 197.1);
+    --muted: oklch(0.94 0.003 197.1);
+    /* Darkened with the surface it sits on. At 0.56 on the old white card this
+       was 4.61:1; on the new one it measured 4.29, under AA for the caption
+       text it is mostly used for. 0.535 puts it back over (4.74 on a card,
+       4.29 on a muted chip, 5.10 on the page). */
+    --muted-foreground: oklch(0.535 0.021 213.5);
+    --accent: oklch(0.94 0.003 197.1);
     --accent-foreground: oklch(0.218 0.008 223.9);
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.925 0.005 214.3);
+    /* Also a step down, for the same reason: a rule drawn for a white page is
+       a fainter rule on a card a step below it. 0.90 gives the card the same
+       1.25:1 edge the old border had against white. Inputs keep the old value
+       — they sit on the page and on cards both, and a control's edge is held
+       to a higher bar than a divider's. */
+    --border: oklch(0.9 0.005 214.3);
     --input: oklch(0.925 0.005 214.3);
     --ring: oklch(0.723 0.014 214.4);
     --chart-1: oklch(0.865 0.127 207.078);
@@ -77,7 +99,7 @@
     --sidebar-foreground: oklch(0.148 0.004 228.8);
     --sidebar-primary: oklch(0.218 0.008 223.9);
     --sidebar-primary-foreground: oklch(0.987 0.002 197.1);
-    --sidebar-accent: oklch(0.963 0.002 197.1);
+    --sidebar-accent: oklch(0.94 0.003 197.1);
     --sidebar-accent-foreground: oklch(0.218 0.008 223.9);
     --sidebar-border: oklch(0.925 0.005 214.3);
     --sidebar-ring: oklch(0.723 0.014 214.4);

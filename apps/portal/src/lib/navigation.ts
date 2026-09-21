@@ -31,7 +31,6 @@ import {
   IconListCheck,
   IconLock,
   IconMapPin,
-  IconPlugConnected,
   IconRoute,
   IconSchema,
   IconSearch,
@@ -63,13 +62,6 @@ export type NavGroup = {
   items: NavItem[];
 };
 
-/** A group flattened for the rail, carrying where its section begins. */
-export type RailGroup = NavGroup & {
-  sectionLabel?: string;
-  /** True for the first group of a labelled section, which draws a rule. */
-  startsSection: boolean;
-};
-
 export type NavSection = {
   /** Absent for the first section, which needs no heading above the rest. */
   label?: string;
@@ -85,10 +77,9 @@ export const NAVIGATION: NavSection[] = [
         items: [
           { label: "Datasets", icon: IconDatabase, to: "/datasets" },
           { label: "Indicators", icon: IconChartBar, to: "/indicators" },
-          { label: "Documents", icon: IconFileText },
-          { label: "Regulations", icon: IconGavel },
-          { label: "Sources", icon: IconPlugConnected },
-          { label: "Topics", icon: IconTags },
+          { label: "Documents", icon: IconFileText, to: "/documents" },
+          { label: "Regulations", icon: IconGavel, to: "/regulations" },
+          { label: "Topics", icon: IconTags, to: "/topics" },
         ],
       },
       {
@@ -97,7 +88,7 @@ export const NAVIGATION: NavSection[] = [
         items: [
           { label: "Data Explorer", icon: IconLayoutGrid, to: "/observations" },
           { label: "Geography", icon: IconMapPin, to: "/geography" },
-          { label: "Commodities", icon: IconBox },
+          { label: "Commodities", icon: IconBox, to: "/commodities" },
           { label: "Organizations", icon: IconBuilding },
           { label: "Entities", icon: IconTopologyStar3 },
         ],
@@ -106,9 +97,9 @@ export const NAVIGATION: NavSection[] = [
         label: "Research",
         icon: IconSearch,
         items: [
-          { label: "Search", icon: IconSearch },
-          { label: "Collections", icon: IconFolders },
-          { label: "Saved Queries", icon: IconClipboardList },
+          { label: "Search", icon: IconSearch, to: "/search" },
+          { label: "Collections", icon: IconFolders, to: "/collections" },
+          { label: "Saved Queries", icon: IconClipboardList, to: "/saved-queries" },
         ],
       },
       {
@@ -130,7 +121,6 @@ export const NAVIGATION: NavSection[] = [
         icon: IconDatabaseCog,
         items: [
           { label: "Datasets", icon: IconDatabase },
-          { label: "Sources", icon: IconPlugConnected },
           { label: "Ingestion", icon: IconRoute },
           { label: "Pipelines", icon: IconSitemap },
         ],
@@ -160,7 +150,7 @@ export const NAVIGATION: NavSection[] = [
         label: "System",
         icon: IconServer,
         items: [
-          { label: "Jobs", icon: IconStack2 },
+          { label: "Jobs", icon: IconStack2, to: "/jobs" },
           { label: "Storage", icon: IconDatabase },
           { label: "Audit Logs", icon: IconHistory },
           { label: "Settings", icon: IconSettings },
@@ -171,45 +161,29 @@ export const NAVIGATION: NavSection[] = [
 ];
 
 /**
- * Every group in rail order, flattened across sections.
- *
- * The rail has no room for section headings, so a group carries its section's
- * name for the tooltip and the panel header instead.
- */
-export function navigationGroups(): RailGroup[] {
-  const groups: RailGroup[] = [];
-  for (const section of NAVIGATION) {
-    section.groups.forEach((group, index) => {
-      groups.push({
-        ...group,
-        sectionLabel: section.label,
-        startsSection: Boolean(section.label) && index === 0,
-      });
-    });
-  }
-  return groups;
-}
-
-/**
- * The group the rail starts on.
+ * The group the sidebar opens on when the route points at none of them.
  *
  * NAVIGATION is a constant that always declares groups, but the type system
  * cannot know that; the check keeps it honest rather than casting it away.
  */
-export function defaultGroup(): RailGroup {
-  const [first] = navigationGroups();
+export function defaultGroup(): NavGroup {
+  const first = NAVIGATION[0]?.groups[0];
   if (!first) throw new Error("NAVIGATION declares no groups");
   return first;
 }
 
 /** The group holding the page at `pathname`, if any. */
-export function groupForPath(pathname: string): RailGroup | undefined {
-  return navigationGroups().find((group) =>
-    group.items.some(
-      (item) =>
-        item.to && (item.exact ? pathname === item.to : pathname.startsWith(item.to)),
-    ),
-  );
+export function groupForPath(pathname: string): NavGroup | undefined {
+  for (const section of NAVIGATION) {
+    for (const group of section.groups) {
+      const hit = group.items.some(
+        (item) =>
+          item.to && (item.exact ? pathname === item.to : pathname.startsWith(item.to)),
+      );
+      if (hit) return group;
+    }
+  }
+  return undefined;
 }
 
 /** How many destinations exist, for the "not built" note in the footer. */

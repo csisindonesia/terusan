@@ -159,11 +159,9 @@ def parse_wide_city_table(ws, header_year_row=4, header_period_row=5, name_col=1
     return records
 
 
-def scrape():
-    print(f"Downloading {ZIP_URL} ...")
-    zip_bytes = download_zip()
-    print(f"  got {len(zip_bytes):,} bytes")
-    wb = extract_workbook(zip_bytes)
+def scrape_workbook(wb):
+    # Split out of scrape() so an extractor can read the landed copy
+    # rather than downloading the file a second time.
     print(f"  workbook sheets: {wb.sheetnames}")
 
     all_records = []
@@ -180,6 +178,9 @@ def scrape():
             all_records.append(rec)
     return all_records
 
+
+def scrape():
+    return scrape_workbook(extract_workbook(download_zip()))
 
 def save_sample_csv(records, out_path, last_n_periods=6):
     import csv

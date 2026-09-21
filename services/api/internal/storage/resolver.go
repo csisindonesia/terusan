@@ -3,6 +3,7 @@ package storage
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -148,6 +149,51 @@ func (r *Resolver) Glob(layer Layer, segments ...string) (string, error) {
 		return "", err
 	}
 	return join(base, "**/*.parquet"), nil
+}
+
+// HasParquet reports whether a dataset has any files behind it, by looking at
+// the filesystem rather than by asking the query engine.
+//
+// The engine's answer costs a glob expansion: `SELECT 1 FROM read_parquet(...)
+// LIMIT 1` over the observations enumerates sixteen hundred partition
+// directories before it can return the one row, which measured at 176ms — paid
+// on nearly every request, before the real query starts.
+//
+// This walks until it finds the first Parquet file and stops. Object storage
+// has no cheap equivalent, so it reports false there and the caller falls back
+// to asking the engine.
+func (r *Resolver) HasParquet(layer Layer, segments ...string) (found bool, known bool) {
+	if r.cfg.IsObjectStorage() {
+		return false, false
+	}
+	root, err := r.Resolve(layer, segments...)
+	if err != nil {
+		return false, false
+	}
+
+	stop := errors.New("found")
+	err = filepath.WalkDir(root, func(_ string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".parquet") {
+			found = true
+			return stop
+		}
+		return nil
+	})
+	switch {
+	case errors.Is(err, stop):
+		return true, true
+	case errors.Is(err, fs.ErrNotExist):
+		// A dataset that was never written. A definite no, and the common
+		// case for a lake that holds only some of what the API can serve.
+		return false, true
+	case err != nil:
+		// An unreadable directory is not an answer; let the engine try.
+		return false, false
+	}
+	return found, true
 }
 
 // Scratch returns a local-disk scratch path, creating the directory. It never

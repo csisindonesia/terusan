@@ -39,7 +39,12 @@ from .reference import (
     load_countries,
     load_indonesia,
 )
-from .runner import PIPELINE_VERSION, SilverResult, SilverRunner
+from .runner import (
+    PIPELINE_VERSION,
+    CollapsedDimension,
+    SilverResult,
+    SilverRunner,
+)
 from .schema import (
     SILVER_COMMODITIES,
     SILVER_DOCUMENTS,
@@ -47,6 +52,7 @@ from .schema import (
     SILVER_INDICATORS,
     SILVER_OBSERVATIONS,
     SILVER_SCHEMAS,
+    SILVER_SOURCES,
 )
 from .values import NumberFormat, ParsedValue, ValueStatus, parse_value
 
@@ -58,6 +64,7 @@ __all__ = [
     "SILVER_GEOGRAPHY",
     "SILVER_INDICATORS",
     "SILVER_OBSERVATIONS",
+    "SILVER_SOURCES",
     "SILVER_SCHEMAS",
     "ColumnMapping",
     "Commodity",
@@ -76,6 +83,7 @@ __all__ = [
     "Registry",
     "Resolution",
     "SilverResult",
+    "CollapsedDimension",
     "SilverRunner",
     "UnparseablePeriod",
     "ValueStatus",

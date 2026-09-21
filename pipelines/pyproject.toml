@@ -30,6 +30,11 @@ agencies = [
     "requests>=2.32.0",
     "pandas>=2.2.0",
     "openpyxl>=3.1.5",
+    # Bank Indonesia publishes SEKI as legacy BIFF `.xls`, which openpyxl
+    # cannot open.
+    "xlrd>=2.0.1",
+    # The HEESI table configuration is YAML, as it arrived.
+    "pyyaml>=6.0",
 ]
 
 # SP2KP publishes through a Tableau view that only yields its crosstab to a
@@ -41,6 +46,15 @@ browser = [
 [dependency-groups]
 dev = [
     "pytest>=8.3.0",
+    # The SIPRI Milex reader is tested against a workbook the test builds, so
+    # the suite needs a workbook library even though openpyxl ships in the
+    # `agencies` extra for running it. `pandas` and `pyyaml` are here for the
+    # same reason: the vendored HEESI parsers are configured in YAML and hand
+    # back a DataFrame, and a suite that could not import them would leave the
+    # handbook's fourteen tables untested.
+    "openpyxl>=3.1.5",
+    "pandas>=2.2.0",
+    "pyyaml>=6.0",
     "ruff>=0.8.0",
     "mypy>=1.14.0",
 ]
@@ -62,7 +76,11 @@ target-version = "py312"
 # Vendored agency scrapers keep the shape they arrived in. Restyling them would
 # bury the next real change in a diff of cosmetic ones, and these modules encode
 # workarounds that are easier to verify against their original than to re-read.
-extend-exclude = ["src/terusan_pipelines/sources/*/legacy/*"]
+extend-exclude = [
+    "src/terusan_pipelines/sources/*/legacy/*",
+    # The HEESI table parsers, vendored for the same reason.
+    "src/terusan_pipelines/extract/heesi/vendored/*",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]

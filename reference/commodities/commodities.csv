@@ -1,0 +1,66 @@
+# Commodities, keyed by a readable slug (program.md §12).
+#
+# The dimension exists so a figure about a good can be found by the good rather
+# than by the series it happens to sit in: Bank Indonesia prices rice daily in
+# one series of many rows, and Yahoo prices gold daily in a series of its own,
+# and both are figures about a commodity.
+#
+# The identifier is a slug rather than an HS code. HS is the right code set for
+# trade and the wrong one for everything else — thermal coal and Brent crude
+# are traded contracts before they are tariff lines, and a price series has no
+# customs classification at all. The HS code is carried beside the slug where
+# one applies, so a trade dataset still joins.
+#
+# `aliases` are separated by `|` and matched case- and punctuation-insensitively,
+# so a Yahoo ticker (`GC=F` → `gc f`) resolves as readily as a name. They are
+# what a source actually prints, not what it ought to print.
+#
+# A commodity listed here with nothing collected against it is not a mistake:
+# the registry says what the warehouse *can* resolve, and the Commodities page
+# lists what it has figures for. Nickel is the current example — Indonesia's
+# largest metal export, present here only as Bank Indonesia's export value, and
+# no price series has been registered for it yet.
+commodity_id,canonical_name,category,subcategory,hs_code,hs_version,unit_default,aliases
+gold,Gold,metals,precious,7108,HS2022,USD/troy oz,GC=F|XAU|Emas|Gold — COMEX
+copper,Copper,metals,base,7403,HS2022,USD/lb,HG=F|Tembaga|Copper — COMEX|Copper ore
+nickel,Nickel,metals,base,7502,HS2022,USD/t,Nikel|Nickel matte|LME Nickel
+tin,Tin,metals,base,8001,HS2022,USD/t,Timah
+bauxite,Bauxite,metals,ore,2606,HS2022,USD/t,Bauksit|Aluminium ore
+thermal-coal,Thermal coal,energy,coal,2701,HS2022,USD/t,MTF=F|Coal|Batubara|Batu bara|API2|Steam coal
+brent-crude,Brent crude oil,energy,crude,2709,HS2022,USD/bbl,BZ=F|Brent|Crude oil|Minyak mentah
+natural-gas,Natural gas,energy,gas,2711,HS2022,USD/MMBtu,LNG|Gas alam
+palm-oil,Crude palm oil,agriculture,vegetable-oil,1511,HS2022,USD/t,CPO=F|CPO|Kelapa sawit|Minyak sawit|Crude palm oil
+rubber,Natural rubber,agriculture,industrial-crop,4001,HS2022,USD/kg,Karet
+coffee,Coffee,agriculture,soft,0901,HS2022,USc/lb,KC=F|Kopi|Arabica|Robusta
+cocoa,Cocoa,agriculture,soft,1801,HS2022,USD/t,CC=F|Kakao|Cacao
+rice,Rice,agriculture,staple-food,1006,HS2022,IDR/kg,Beras
+rice-low-grade-1,Rice — low grade I,agriculture,staple-food,1006,HS2022,IDR/kg,Beras Kualitas Bawah I
+rice-low-grade-2,Rice — low grade II,agriculture,staple-food,1006,HS2022,IDR/kg,Beras Kualitas Bawah II
+rice-medium-grade-1,Rice — medium grade I,agriculture,staple-food,1006,HS2022,IDR/kg,Beras Kualitas Medium I
+rice-medium-grade-2,Rice — medium grade II,agriculture,staple-food,1006,HS2022,IDR/kg,Beras Kualitas Medium II
+rice-super-grade-1,Rice — super grade I,agriculture,staple-food,1006,HS2022,IDR/kg,Beras Kualitas Super I
+rice-super-grade-2,Rice — super grade II,agriculture,staple-food,1006,HS2022,IDR/kg,Beras Kualitas Super II
+chicken-meat,Chicken meat,agriculture,livestock,0207,HS2022,IDR/kg,Daging Ayam
+chicken-meat-broiler-fresh,Chicken meat — broiler fresh,agriculture,livestock,0207,HS2022,IDR/kg,Daging Ayam Ras Segar
+beef,Beef,agriculture,livestock,0201,HS2022,IDR/kg,Daging Sapi
+beef-grade-1,Beef — grade 1,agriculture,livestock,0201,HS2022,IDR/kg,Daging Sapi Kualitas 1
+beef-grade-2,Beef — grade 2,agriculture,livestock,0201,HS2022,IDR/kg,Daging Sapi Kualitas 2
+chicken-eggs,Chicken eggs,agriculture,livestock,0407,HS2022,IDR/kg,Telur Ayam
+chicken-eggs-broiler-fresh,Chicken eggs — broiler fresh,agriculture,livestock,0407,HS2022,IDR/kg,Telur Ayam Ras Segar
+shallots,Shallots,agriculture,horticulture,070310,HS2022,IDR/kg,Bawang Merah
+shallots-medium,Shallots — medium size,agriculture,horticulture,070310,HS2022,IDR/kg,Bawang Merah Ukuran Sedang
+garlic,Garlic,agriculture,horticulture,070320,HS2022,IDR/kg,Bawang Putih
+garlic-medium,Garlic — medium size,agriculture,horticulture,070320,HS2022,IDR/kg,Bawang Putih Ukuran Sedang
+red-chili,Red chili,agriculture,horticulture,070960,HS2022,IDR/kg,Cabai Merah
+red-chili-large,Red chili — large,agriculture,horticulture,070960,HS2022,IDR/kg,Cabai Merah Besar
+red-chili-curly,Red chili — curly,agriculture,horticulture,070960,HS2022,IDR/kg,Cabai Merah Keriting
+birds-eye-chili,Bird's eye chili,agriculture,horticulture,070960,HS2022,IDR/kg,Cabai Rawit
+birds-eye-chili-green,Bird's eye chili — green,agriculture,horticulture,070960,HS2022,IDR/kg,Cabai Rawit Hijau
+birds-eye-chili-red,Bird's eye chili — red,agriculture,horticulture,070960,HS2022,IDR/kg,Cabai Rawit Merah
+cooking-oil,Cooking oil,agriculture,vegetable-oil,151190,HS2022,IDR/kg,Minyak Goreng
+cooking-oil-bulk,Cooking oil — bulk,agriculture,vegetable-oil,151190,HS2022,IDR/kg,Minyak Goreng Curah
+cooking-oil-branded-1,Cooking oil — branded 1,agriculture,vegetable-oil,151190,HS2022,IDR/kg,Minyak Goreng Kemasan Bermerk 1
+cooking-oil-branded-2,Cooking oil — branded 2,agriculture,vegetable-oil,151190,HS2022,IDR/kg,Minyak Goreng Kemasan Bermerk 2
+sugar,Granulated sugar,agriculture,staple-food,1701,HS2022,IDR/kg,Gula Pasir
+sugar-premium,Granulated sugar — premium,agriculture,staple-food,1701,HS2022,IDR/kg,Gula Pasir Kualitas Premium
+sugar-local,Granulated sugar — local,agriculture,staple-food,1701,HS2022,IDR/kg,Gula Pasir Lokal

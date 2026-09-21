@@ -2,14 +2,20 @@
 package httpapi
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/csis/terusan/services/api/internal/auth"
+	"github.com/csis/terusan/services/api/internal/cache"
+	"github.com/csis/terusan/services/api/internal/collections"
 	"github.com/csis/terusan/services/api/internal/config"
 	"github.com/csis/terusan/services/api/internal/query"
+	"github.com/csis/terusan/services/api/internal/runner"
 	"github.com/csis/terusan/services/api/internal/storage"
+	"github.com/csis/terusan/services/api/internal/suggestions"
 )
 
 // Server holds the dependencies every handler needs.
@@ -17,16 +23,66 @@ type Server struct {
 	cfg       *config.Config
 	storage   *storage.Resolver
 	warehouse *query.Warehouse
-	log       *slog.Logger
+	cache     cache.Cache
+	runner    *runner.Runner
+	// The two things this service stores rather than derives. Both nil where
+	// the deployment has no application database, and their routes say so.
+	shelf       *collections.Store
+	auth        *auth.Service
+	suggestions *suggestions.Store
+	log         *slog.Logger
 }
 
 // New returns a Server over cfg.
-func New(cfg *config.Config, warehouse *query.Warehouse, log *slog.Logger) *Server {
-	return &Server{
-		cfg:       cfg,
-		storage:   storage.NewResolver(cfg.Storage),
-		warehouse: warehouse,
-		log:       log,
+//
+// `c` may be nil, and is on any deployment without a Redis: the server then
+// uses a cache that misses everything and serves each request from Parquet.
+// `shelf` and `accounts` may be nil, and are wherever APP_DB is unset: the
+// portal then keeps collections in the browser, which works and cannot be
+// shared, and shows no login because there is nothing to log in to.
+func New(
+	cfg *config.Config, warehouse *query.Warehouse, c cache.Cache,
+	shelf *collections.Store, accounts *auth.Service, asked *suggestions.Store,
+	log *slog.Logger,
+) *Server {
+	if c == nil {
+		c = cache.Nothing{}
+	}
+	s := &Server{
+		cfg:         cfg,
+		storage:     storage.NewResolver(cfg.Storage),
+		warehouse:   warehouse,
+		cache:       c,
+		shelf:       shelf,
+		auth:        accounts,
+		suggestions: asked,
+		log:         log,
+	}
+	// Disabled unless the deployment asked for it, and then the only thing it
+	// can do is start `uv run terusan …` against a source the registry names
+	// (see internal/runner).
+	s.runner = runner.New(runner.Config{
+		Enabled:        cfg.Pipelines.Enabled,
+		Root:           cfg.Pipelines.Root,
+		UV:             cfg.Pipelines.UV,
+		Timeout:        cfg.Pipelines.Timeout,
+		MaxConcurrent:  cfg.Pipelines.MaxConcurrent,
+		MaxOutputLines: cfg.Pipelines.MaxOutputLines,
+		History:        cfg.Pipelines.History,
+	}, log, s.invalidate)
+	return s
+}
+
+// invalidate drops the response cache after a pipeline run.
+//
+// Every cached answer was derived before that run touched the lake, and a
+// reader who has just watched an ingestion finish should not then be served a
+// minute of answers from before it.
+func (s *Server) invalidate() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.cache.Purge(ctx); err != nil {
+		s.log.Warn("cache.purge_failed", "error", err)
 	}
 }
 
@@ -37,13 +93,113 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /readyz", s.handleReady)
 
-	mux.HandleFunc("GET /v1/observations", s.handleObservations)
-	mux.HandleFunc("GET /v1/indicators", s.handleIndicators)
-	mux.HandleFunc("GET /v1/indicators/{id}", s.handleIndicator)
-	mux.HandleFunc("GET /v1/geography", s.handleGeography)
-	mux.HandleFunc("GET /v1/datasets", s.handleDatasets)
+	// Every route that reads the lake is cached: each is a pure function of
+	// the lake's contents and the query string, and the lake changes when a
+	// pipeline runs rather than between two requests. The document file is
+	// the exception — it streams from disk with range support, and holding
+	// that in Redis would trade a fast local read for a slow network one.
+	mux.HandleFunc("GET /v1/observations", s.withCache(s.handleObservations))
+	mux.HandleFunc("GET /v1/indicators", s.withCache(s.handleIndicators))
+	mux.HandleFunc("GET /v1/indicators/{id}", s.withCache(s.handleIndicator))
+	// What the series was read out of, which is the question a reader looking
+	// at a figure actually has.
+	mux.HandleFunc("GET /v1/indicators/{id}/documents", s.withCache(s.handleIndicatorDocuments))
+	// Whether the pipelines behind the series are still running, and what
+	// happened last time they did (program.md §39). Read from the lake's
+	// journal, so it answers with no catalog database up.
+	mux.HandleFunc("GET /v1/indicators/{id}/runs", s.withCache(s.handleIndicatorRuns))
+	mux.HandleFunc("GET /v1/geography", s.withCache(s.handleGeography))
+	// The other dimension a figure can vary by. Derived from the observations
+	// rather than the registry, which knows almost none of them yet.
+	mux.HandleFunc("GET /v1/commodities", s.withCache(s.handleCommodities))
+	mux.HandleFunc("GET /v1/datasets", s.withCache(s.handleDatasets))
+	mux.HandleFunc("GET /v1/datasets/{id}", s.withCache(s.handleDataset))
+	mux.HandleFunc("GET /v1/storage", s.withCache(s.handleStorage))
+	mux.HandleFunc("GET /v1/sources", s.withCache(s.handleSources))
+	mux.HandleFunc("GET /v1/runs", s.withCache(s.handleRuns))
+	mux.HandleFunc("GET /v1/documents", s.withCache(s.handleDocuments))
+	// Before the {id} route, which would otherwise swallow it.
+	mux.HandleFunc("GET /v1/documents/facets", s.withCache(s.handleDocumentFacets))
+	mux.HandleFunc("GET /v1/documents/{id}", s.withCache(s.handleDocument))
+	mux.HandleFunc("GET /v1/documents/{id}/indicators", s.withCache(s.handleDocumentIndicators))
+	// The preserved copy, which is the point of keeping originals at all
+	// (program.md §2.1).
+	mux.HandleFunc("GET /v1/documents/{id}/file", s.handleDocumentFile)
+	// The same bytes under a trailing filename, which is cosmetic and worth
+	// it: a browser titles its PDF viewer from the last path segment, so
+	// without this a reader sits in front of a document called "file". The
+	// segment is ignored — the response is built from the catalogue, never
+	// from what the URL claims.
+	mux.HandleFunc("GET /v1/documents/{id}/file/{name}", s.handleDocumentFile)
+	mux.HandleFunc("GET /v1/regulations", s.withCache(s.handleRegulations))
+	// Before the {key} route, which would otherwise swallow it.
+	mux.HandleFunc("GET /v1/regulations/facets", s.withCache(s.handleRegulationFacets))
+	mux.HandleFunc("GET /v1/regulations/{key}", s.withCache(s.handleRegulation))
+	mux.HandleFunc("GET /v1/regulations/{key}/sections", s.withCache(s.handleRegulationSections))
+	mux.HandleFunc("GET /v1/regulations/{key}/citations", s.withCache(s.handleRegulationCitations))
 
-	return s.withCORS(s.withRequestLogging(mux))
+	// What this deployment will do beyond answering questions, so the portal
+	// can show a button that works rather than one that explains itself.
+	mux.HandleFunc("GET /v1/capabilities", s.handleCapabilities)
+
+	// The one write surface, and it writes nothing itself: it asks a pipeline
+	// to run, and the pipeline lands what it finds the way every figure here
+	// arrives (see jobs.go). Off unless PIPELINES_ENABLED is set, in which
+	// case these three answer; otherwise the POST is a 403 and the list is
+	// empty. Uncached by nature — a job changes while it is being watched.
+	mux.HandleFunc("POST /v1/sources/{id}/run", s.handleRunSource)
+	mux.HandleFunc("GET /v1/jobs", s.handleJobs)
+	mux.HandleFunc("GET /v1/jobs/{id}", s.handleJob)
+
+	// The shelf. Uncached, unlike everything above: these answer from a
+	// database this process writes, so a cached copy would be a copy of what
+	// the reader changed a second ago. Off entirely without COLLECTIONS_DB,
+	// and read-only without COLLECTIONS_WRITE (see collections.go).
+	mux.HandleFunc("GET /v1/collections", s.handleCollections)
+	mux.HandleFunc("POST /v1/collections", s.handleCreateCollection)
+	// Before the {id} route, which would otherwise swallow it.
+	mux.HandleFunc("POST /v1/collections/import", s.handleImportShelf)
+	mux.HandleFunc("GET /v1/collections/{id}", s.handleCollection)
+	mux.HandleFunc("PATCH /v1/collections/{id}", s.handleUpdateCollection)
+	mux.HandleFunc("DELETE /v1/collections/{id}", s.handleDeleteCollection)
+	mux.HandleFunc("POST /v1/collections/{id}/items", s.handleAddItems)
+	mux.HandleFunc("DELETE /v1/collections/{id}/items/{kind}/{ref}", s.handleRemoveItem)
+
+	// Who is asking. Identity, not authority: every route answers the same way
+	// to everyone who gets past AUTH_REQUIRED (see auth.go).
+	// The first account on a deployment that has none, from the machine the
+	// API runs on. After that it is a conflict and accounts come from authctl.
+	mux.HandleFunc("POST /v1/auth/bootstrap", s.handleBootstrap)
+	mux.HandleFunc("POST /v1/auth/login", s.handleLogin)
+	mux.HandleFunc("POST /v1/auth/logout", s.handleLogout)
+	mux.HandleFunc("GET /v1/auth/me", s.handleMe)
+	// The account's own page: a name, a password, and everywhere it is signed
+	// in. All scoped to the session asking — there is no route here that takes
+	// somebody else's user id.
+	mux.HandleFunc("PATCH /v1/auth/profile", s.handleUpdateProfile)
+	mux.HandleFunc("POST /v1/auth/password", s.handleChangePassword)
+	mux.HandleFunc("GET /v1/auth/sessions", s.handleLogins)
+	// Before the {id} route, which would otherwise swallow it.
+	mux.HandleFunc("DELETE /v1/auth/sessions/others", s.handleRevokeOtherLogins)
+	mux.HandleFunc("DELETE /v1/auth/sessions/{id}", s.handleRevokeLogin)
+
+	// What readers have asked the warehouse to collect. A queue rather than a
+	// message: it keeps a status, and the next person about to ask for the
+	// same source can see that somebody already did.
+	mux.HandleFunc("GET /v1/suggestions", s.handleSuggestions)
+	mux.HandleFunc("POST /v1/suggestions", s.handleCreateSuggestion)
+	mux.HandleFunc("PATCH /v1/suggestions/{id}", s.handleUpdateSuggestion)
+	mux.HandleFunc("DELETE /v1/suggestions/{id}", s.handleDeleteSuggestion)
+
+	mux.HandleFunc("GET /v1/queries", s.handleSavedQueries)
+	mux.HandleFunc("POST /v1/queries", s.handleSaveQuery)
+	mux.HandleFunc("PATCH /v1/queries/{id}", s.handleRenameQuery)
+	mux.HandleFunc("DELETE /v1/queries/{id}", s.handleDeleteQuery)
+
+	// Outermost first: CORS answers the browser's preflight before anything
+	// else looks at the request, the log records what arrived, the session is
+	// resolved once, and the gate decides whether it goes through.
+	return s.withCORS(s.withRequestLogging(s.withSession(s.withAuth(mux))))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -60,6 +216,9 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 		"storage_profile": string(s.cfg.Storage.Profile),
 		"storage_backend": string(s.cfg.Storage.Backend),
 		"storage_root":    s.storage.Root(),
+		// Reported because a cache that has quietly stopped working looks
+		// exactly like one that is working, only slower.
+		"cache": s.cache.Stats(),
 	}
 	if err := s.warehouse.Ping(r.Context()); err != nil {
 		body["status"] = "degraded"
@@ -105,8 +264,14 @@ func (s *Server) withCORS(next http.Handler) http.Handler {
 		if origin != "" && allowed[origin] {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods",
+				"GET, POST, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			// The session cookie only reaches the API from the portal's origin
+			// if this says so — and it is safe to say because the origin is an
+			// allow-list above rather than a wildcard, which the browser would
+			// refuse to pair with credentials anyway.
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
 		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

@@ -1,4 +1,11 @@
-import { IconCheck, IconChevronDown, IconPlus, IconX } from "@tabler/icons-react";
+import {
+  IconCheck,
+  IconChevronDown,
+  IconPlus,
+  IconSearch,
+  IconX,
+} from "@tabler/icons-react";
+import { useState } from "react";
 
 import { Button } from "~/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
@@ -97,57 +104,102 @@ export type ChoiceOption = { value: string; label: string; hint?: string };
  * provinces, annual *and* monthly. Forcing one at a time makes the reader run
  * the query twice and add up the answers themselves.
  */
+/**
+ * Past this many options, scanning the list costs more than typing does — and
+ * thirty-one commodities do not fit on screen at all, so the ones past the fold
+ * are invisible rather than merely slow to find.
+ */
+const SEARCHABLE_FROM = 6;
+
 export function ChoiceList({
   options,
   selected,
   onToggle,
   onClear,
   empty = "Nothing to choose from.",
+  searchPlaceholder = "Search",
 }: {
   options: ChoiceOption[];
   selected: string[];
   onToggle: (value: string) => void;
   onClear?: () => void;
   empty?: string;
+  searchPlaceholder?: string;
 }) {
+  const [needle, setNeedle] = useState("");
+
   if (!options.length) {
     return <p className="px-2 py-3 text-sm text-muted-foreground">{empty}</p>;
   }
 
+  const searchable = options.length >= SEARCHABLE_FROM;
+  const query = needle.trim().toLowerCase();
+  const shown =
+    searchable && query
+      ? options.filter((option) => option.label.toLowerCase().includes(query))
+      : options;
+
   return (
     <div className="grid gap-0.5">
-      {options.map((option) => {
-        const isOn = selected.includes(option.value);
-        return (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onToggle(option.value)}
-            aria-pressed={isOn}
-            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
-          >
-            {/* A tick in a box rather than a highlighted row: with several
+      {searchable ? (
+        <div className="relative mb-1">
+          <IconSearch className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="search"
+            value={needle}
+            onChange={(event) => setNeedle(event.target.value)}
+            placeholder={searchPlaceholder}
+            aria-label={searchPlaceholder}
+            // Filters as you type rather than on submit: the list it narrows is
+            // right there, so a round trip through a button would be a step
+            // with nothing to show for it.
+            className="h-8 w-full rounded-md border bg-transparent pl-7 pr-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring"
+          />
+        </div>
+      ) : null}
+
+      {/* Kept as a list with a message rather than an empty box: a filter that
+          matches nothing should say so, not look broken. */}
+      {shown.length === 0 ? (
+        <p className="px-2 py-3 text-sm text-muted-foreground">
+          Nothing matches “{needle.trim()}”.
+        </p>
+      ) : null}
+
+      <div className="grid max-h-64 gap-0.5 overflow-y-auto">
+        {shown.map((option) => {
+          const isOn = selected.includes(option.value);
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onToggle(option.value)}
+              aria-pressed={isOn}
+              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+            >
+              {/* A tick in a box rather than a highlighted row: with several
                 values held at once, the reader needs to see which, not just
                 that something is on. */}
-            <span
-              className={cn(
-                "flex size-4 shrink-0 items-center justify-center rounded-[4px] border",
-                isOn
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-input",
-              )}
-            >
-              {isOn ? <IconCheck className="size-3" /> : null}
-            </span>
-            <span className="truncate">{option.label}</span>
-            {option.hint ? (
-              <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                {option.hint}
+              <span
+                className={cn(
+                  "flex size-4 shrink-0 items-center justify-center rounded-[4px] border",
+                  isOn
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-input",
+                )}
+              >
+                {isOn ? <IconCheck className="size-3" /> : null}
               </span>
-            ) : null}
-          </button>
-        );
-      })}
+              <span className="truncate">{option.label}</span>
+              {option.hint ? (
+                <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                  {option.hint}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
 
       {selected.length && onClear ? (
         <>

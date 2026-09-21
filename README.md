@@ -117,6 +117,27 @@ nothing: the lake is the system of record for data, the catalog records what
 happened to it. Scheduled runs should pass `--require-catalog`, where losing
 history silently is worse than failing loudly.
 
+### Daily
+
+```bash
+make daily              # fetch, extract and normalize the daily sources, now
+make schedule-install   # run that at 05:00 every day, through launchd
+make schedule-status    # loaded? last exit code? tail of the last log
+make schedule-uninstall # stop it
+```
+
+`scripts/daily.sh` fetches, extracts and normalizes: a figure that reaches
+Bronze and stops there is invisible, because the catalogue the portal and the
+API read is derived from Silver. It names the sources that declare a daily
+schedule rather than running every scheduled source — a monthly release does not
+want fetching thirty times a month, which is the point of a cron per registry
+record. It holds a lock in `.cache/`, so a laptop waking into a missed run
+cannot fetch twice at once, and logs each day to `.cache/logs/daily-<date>.log`.
+
+launchd rather than cron: cron skips a run on a sleeping machine, launchd fires
+it on wake. Set `REQUIRE_CATALOG=1` once PostgreSQL is running, so a scheduled
+run that cannot record its history fails loudly instead of quietly.
+
 ## Silver
 
 Bronze keeps everything as text so a value cannot change type between
@@ -166,6 +187,37 @@ The column mapping is declared, not inferred. A column headed `2026` is a
 period in a wide table and a value in a long one, and nothing in the data says
 which.
 
+## What the figures were read from
+
+Every artifact a scraper lands carries a provenance sidecar, and every
+observation carries the `document_id` of the file it came out of. `terusan
+silver documents` turns those sidecars into a catalogue: what was collected,
+who published it, what licence it carries, and how many series and figures rest
+on it — counted from the observations themselves, so the catalogue cannot claim
+a link the figures do not make.
+
+Documents only: the PDFs, Word files and papers somebody would open and read. A
+scraper lands far more — spreadsheets, CSVs, the pages crawled to find a series
+— and those stay in RAW with their provenance travelling on the observation row
+itself (`document_id`, `content_hash`, `source_url`, `raw_path`) rather than
+through a table whose job is to help a reader find something to read.
+
+```bash
+terusan silver documents      # rebuild it; cheap, and run after every scrape
+```
+
+The original is kept, not just linked. An agency reorganises its site and the
+citation breaks; the preserved copy does not, and `GET /v1/documents/{id}/file`
+hands it back with the licence beside it (program.md §2.1).
+
+A PDF reads in the browser rather than only downloading. `/documents/{id}`
+describes the document and `/documents/{id}/preview` is the reader — its own
+URL, so the link somebody is sent opens the handbook rather than a page about
+it. The frame points at `?inline=1`, which the API grants for PDFs alone and
+serves sandboxed. Anything else is bytes from a third-party site and downloads
+as an attachment, because a landed HTML page rendered inline in the API's
+origin would run whatever script it arrived with.
+
 Query any layer through DuckDB, against whichever backend holds the lake:
 
 ```bash
@@ -176,17 +228,81 @@ terusan warehouse query "SELECT source_id, count(*) FROM read_parquet('...') GRO
 
 ```bash
 make dev        # API on :8080, portal on :3000, Ctrl-C stops both
+                # both reload on change: vite HMR for the portal,
+                # a rebuild-and-restart for the API on any .go edit
 ```
 
 | Endpoint | What it answers |
 |---|---|
-| `GET /v1/datasets` | what is in the lake, read from storage |
+| `GET /v1/datasets` | collections as their publishers issue them |
+| `GET /v1/datasets/{id}` | one collection, and the series inside it |
+| `GET /v1/storage` | what is physically in the lake |
 | `GET /v1/indicators` | each series, its coverage, how many places |
-| `GET /v1/observations` | figures, filtered by indicator, place, place type, period |
+| `GET /v1/observations` | figures, filtered by indicator, place, place type, commodity, period |
 | `GET /v1/geography` | the geography dimension |
+| `GET /v1/commodities` | the commodity dimension, read off the figures themselves |
+| `GET /v1/sources` | the source registry — schedule, licence, rate limit |
+| `GET /v1/documents` | the publications collected — handbooks, reports, papers |
+| `GET /v1/documents/{id}` | one document, with its licence and its publisher |
+| `GET /v1/documents/{id}/file` | the preserved original; `?inline=1` to read a PDF |
+| `GET /v1/documents/{id}/file/{name}` | the same bytes, named, so a viewer can title it |
+| `GET /v1/documents/{id}/indicators` | the series read out of one document |
+| `GET /v1/indicators/{id}/documents` | the material one series was read from |
 
 Every response uses the envelope from program.md §53 — `data`, plus `meta` or
 `error` — so a consumer writes one parser rather than one per route.
+
+### Speed
+
+The warehouse is columnar files, not a database with a buffer pool: every
+request re-opens Parquet and re-aggregates. Three things make that quick.
+
+**The lake is not listed twice.** DuckDB prunes partitions *after* expanding
+the glob, so a filter on the partition key does not save the listing — and over
+the observations, which are one directory per series, the listing is the whole
+cost. Counting one series through the full glob measures 185ms; through its own
+partition, 0.3ms. A query that names its series now globs only those
+directories. It is an optimisation and never a filter: the `WHERE` clause is
+unchanged, and anything that cannot be narrowed safely reads the whole dataset.
+
+**The shape of the lake is remembered.** "Does this dataset exist" was asked
+several times per request and cost 176ms each time over the observations,
+because it expanded that same glob. It is now answered from the filesystem and
+held for 30 seconds.
+
+**Rendered responses are cached in Redis**, keyed by path and canonical query,
+for `CACHE_TTL_SECONDS`. Optional: with no `REDIS_URL` the API derives every
+response and behaves exactly as it did without it. Failures are never cached —
+a 500 from a warehouse that was briefly unreachable would otherwise be served
+for the rest of the TTL. Every response carries `X-Cache: hit|miss`, and
+`/readyz` reports hits, misses and errors, because a cache that has quietly
+stopped working looks exactly like one that is working, only slower.
+
+```bash
+brew services start redis     # or: docker run -p 6379:6379 redis
+export REDIS_URL=redis://localhost:6379/0
+```
+
+Measured on the development lake — 484k observations, 266k regulations:
+
+| Endpoint | Before | After | Cached |
+|---|--:|--:|--:|
+| `/v1/indicators/{id}` | 823 ms | 8 ms | 0.8 ms |
+| `/v1/observations?indicator=…` | 1301 ms | 6 ms | 0.5 ms |
+| `/v1/indicators` | 1177 ms | 687 ms | 1.6 ms |
+| `/v1/observations` (unfiltered) | 1862 ms | 1066 ms | 0.7 ms |
+| `/v1/storage` | 982 ms | 592 ms | 0.5 ms |
+
+The unfiltered scans are still slow to derive, and the reason is the layout
+rather than the query: `silver/observations` is 34MB across **1,639 Parquet
+files**, one directory per series, because normalization partitions by
+`indicator_id` so it can replace one series idempotently. File count dominates
+— 14.4M rows of regulation sections in 90 files count in 11ms, while 484k
+observations in 1,639 files take 226ms. `check_partition_keys` exists to catch
+exactly this and cannot see it, because each normalization run writes one
+series and looks reasonable on its own. Fixing it means changing what a
+partition means to the normalizer, which is a pipeline change rather than a
+serving one.
 
 Values come back as **strings**, not JSON numbers. Silver stores `decimal128`
 because published statistics are decimal quantities; serialising through a JSON
@@ -196,6 +312,10 @@ decimal storage exists to prevent.
 Parameters are validated against patterns and every value reaching SQL is bound.
 `order` cannot be bound, so the caller picks a key and the server supplies the
 clause — nothing from a request is interpolated.
+
+The portal's own patterns — how a table page is put together, how a detail page
+splits across tabs, and the rules both follow — are in
+[docs/design.md](docs/design.md).
 
 ## Running it
 
@@ -210,6 +330,7 @@ cd pipelines
 uv run terusan sources run worldbank-gdp --limit 1   # → RAW
 uv run terusan warehouse extract                     # → Bronze
 uv run terusan silver dimensions                     # → Silver dimensions
+uv run terusan silver documents                      # → the document catalogue
 uv run terusan warehouse tables                      # what is in the lake
 uv run terusan warehouse query "SELECT * FROM silver_observations LIMIT 5"
 ```
@@ -272,8 +393,11 @@ Also working: normalization into Silver — typed observations with bounded
 periods, resolved geography and commodity dimensions, and explicit handling of
 ambiguous or absent values.
 
-Not yet built: curation into Gold, the REST and SQL surfaces, scheduling,
-search, and authentication.
+Daily ingestion runs through a launchd agent (`make schedule-install`);
+per-source crons in the registry are metadata until a scheduler reads them.
+
+Not yet built: curation into Gold, the REST and SQL surfaces, search, and
+authentication.
 
 Scoped to Indonesia. The World Bank series are pulled for `IDN` rather than for
 every country, and the geography dimension publishes the places in use plus

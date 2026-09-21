@@ -42,6 +42,18 @@ const (
 	CodeNotFound    = "not_found"
 	CodeInternal    = "internal_error"
 	CodeUnavailable = "unavailable"
+	// The deployment will not do this, whoever is asking. Not an authorization
+	// failure — there is nothing to authenticate as — but a capability this
+	// serving layer was started without.
+	CodeForbidden = "forbidden"
+	// The request is fine and the moment is wrong: the same source is already
+	// being ingested.
+	CodeConflict = "conflict"
+	// No session, or one that has expired. Distinct from forbidden: that is
+	// "this deployment will not do this at all", this is "not as nobody".
+	CodeUnauthorized = "unauthorized"
+	// Slow down — today only a login that has been guessed at too often.
+	CodeTooManyRequests = "too_many_requests"
 )
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

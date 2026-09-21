@@ -47,6 +47,26 @@ export function formatCount(value: number): string {
 }
 
 /**
+ * A file size a reader can judge at a glance.
+ *
+ * Binary units, because that is what a file manager shows and a reader
+ * comparing the two should not find them disagreeing. One decimal place past
+ * a kilobyte: "10.5 MB" is the useful precision, "10.46 MB" is not.
+ */
+export function formatBytes(value?: number | null): string {
+  if (value === undefined || value === null) return "—";
+  if (value < 1024) return `${value} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let size = value / 1024;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+  return `${size.toFixed(1)} ${units[unit]}`;
+}
+
+/**
  * How a missing value should read.
  *
  * "Not collected" and "collected and zero" are different facts, so each status
@@ -66,6 +86,21 @@ export function statusLabel(status: string): string {
 }
 
 /**
+ * A timestamp from either shape the API sends.
+ *
+ * Indicators carry ISO-8601 — `2026-09-17T06:16:06Z` — while datasets carry
+ * PostgreSQL's own rendering, `2026-09-17 06:16:08.365451+07`: a space instead
+ * of the T, and a bare-hour offset. V8 happens to accept that; the spec does
+ * not, so a browser is free to return Invalid Date and print the raw string at
+ * the reader. Normalized here, once, rather than at each call site.
+ */
+export function parseTimestamp(value: string): Date | undefined {
+  const normalized = value.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00");
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+/**
  * A timestamp as a date, in the reader's locale.
  *
  * Day precision: these are pipeline run times, and the hour a refresh happened
@@ -73,8 +108,8 @@ export function statusLabel(status: string): string {
  */
 export function formatDate(value?: string | null): string {
   if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
+  const date = parseTimestamp(value);
+  if (!date) return value;
   return date.toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
@@ -85,8 +120,8 @@ export function formatDate(value?: string | null): string {
 /** How long ago, for a column where recency is the point. */
 export function formatRelative(value?: string | null): string | undefined {
   if (!value) return undefined;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return undefined;
+  const date = parseTimestamp(value);
+  if (!date) return undefined;
 
   const days = Math.floor((Date.now() - date.getTime()) / 86_400_000);
   if (days < 0) return undefined;
@@ -104,4 +139,34 @@ export function formatPercent(value: number | null, digits = 1): string {
   if (value === null || !Number.isFinite(value)) return "—";
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toFixed(digits)}%`;
+}
+
+/**
+ * An instant to the minute, for a run history.
+ *
+ * `formatDate` is day precision, which is right for a release date and wrong
+ * here: two runs on one day are the common case, and "which came first" is the
+ * whole question.
+ */
+export function formatMoment(value?: string | null): string {
+  if (!value) return "—";
+  const date = parseTimestamp(value);
+  if (!date) return value;
+  return date.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** How long something took, at the precision the number deserves. */
+export function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds)) return "—";
+  if (seconds < 1) return "<1s";
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${Math.round(seconds % 60)}s`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }

@@ -12,6 +12,7 @@ import csv
 import io
 import json
 from collections.abc import Iterator
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from .base import ExtractionError, Extractor, Landed
@@ -29,6 +30,31 @@ DELIMITERS = (";", "\t", "|", ",")
 
 #: Rows sampled when deciding which delimiter a file uses.
 _SNIFF_ROWS = 20
+
+
+def number_text(value: object) -> str:
+    """A spreadsheet cell's number as digits, never as an exponent.
+
+    Excel readers hand back a float for every numeric cell, so a rupiah figure
+    becomes `2.475257e+14` and a year becomes `2025.0` under `str()`. Neither
+    is what the published table says, and the raw value is kept beside every
+    observation for someone to check against that table.
+    """
+    if value is None or isinstance(value, bool):
+        return "" if value is None else ("1" if value else "")
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if value != value:  # NaN, which is how pandas writes a missing number
+            return ""
+        try:
+            number = Decimal(repr(value))
+        except InvalidOperation:  # pragma: no cover - repr of a float parses
+            return str(value)
+        if number == number.to_integral_value():
+            return str(int(number))
+        return format(number, "f")
+    return str(value).strip()
 
 
 def decode(data: bytes) -> str:

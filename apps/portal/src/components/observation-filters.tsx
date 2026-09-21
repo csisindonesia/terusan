@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   AddFilterChip,
@@ -9,13 +9,16 @@ import {
 } from "~/components/filter-chip";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { PERIOD_PATTERN, PeriodFilter } from "~/components/period-filter";
 import { api } from "~/lib/api";
+import { indicatorLabel } from "~/lib/labels";
 import { toggle } from "~/lib/multi";
 
 export type ObservationFilters = {
   indicator?: string[];
   geo?: string;
   geo_type?: string[];
+  commodity?: string[];
   period_start?: string;
   period_end?: string;
 };
@@ -25,7 +28,6 @@ export type ObservationFilters = {
  * else, so it is checked here too — a message beside the field beats a 400
  * after a round trip.
  */
-const PERIOD_PATTERN = /^\d{4}(-(\d{2}|Q[1-4]|S[12])(-\d{2})?)?$/;
 
 const PLACE_TYPES = [
   { value: "country", label: "Countries" },
@@ -47,11 +49,25 @@ export function ObservationFilterBar({ value, onChange, onClear }: Props) {
     queryFn: () => api.indicators(),
   });
 
+  // Every commodity, not a page of them: the list is a choice list, and one
+  // that silently stops at fifty offers a reader a filter they cannot set.
+  const commodities = useQuery({
+    queryKey: ["commodities", "all"],
+    queryFn: () => api.commodities({ limit: 1000 }),
+  });
+
+  const byId = useMemo(
+    () => new Map((indicators.data?.data ?? []).map((i) => [i.indicator_id, i])),
+    [indicators.data],
+  );
+
   const chosenIndicators = value.indicator ?? [];
   const chosenTypes = value.geo_type ?? [];
+  const chosenCommodities = value.commodity ?? [];
   const active =
     chosenIndicators.length ||
     chosenTypes.length ||
+    chosenCommodities.length ||
     value.geo ||
     value.period_start ||
     value.period_end;
@@ -65,13 +81,17 @@ export function ObservationFilterBar({ value, onChange, onClear }: Props) {
     <div className="flex flex-wrap items-center gap-2">
       <FilterChip
         label="Indicator"
-        value={summarise(chosenIndicators)}
+        value={summarise(chosenIndicators, (id) =>
+          indicatorLabel(byId.get(id) ?? { indicator_id: id }),
+        )}
         onClear={() => onChange({ indicator: undefined })}
       >
         <ChoiceList
+          // Listed by name: the identifier is a derived code, and a list of
+          // forty of them is a list nobody can choose from.
           options={(indicators.data?.data ?? []).map((indicator) => ({
             value: indicator.indicator_id,
-            label: indicator.indicator_id,
+            label: indicatorLabel(indicator),
             hint: `${indicator.period_start}–${indicator.period_end}`,
           }))}
           selected={chosenIndicators}
@@ -107,6 +127,27 @@ export function ObservationFilterBar({ value, onChange, onClear }: Props) {
           placeholder="IDN, ID-32, WLD"
           hint="A geography identifier, as the table shows it."
           onApply={(geo) => onChange({ geo: geo || undefined })}
+        />
+      </FilterChip>
+
+      {/* Only the series that vary by commodity have one, and they name no
+          place at all — so this chip and the two above it are alternatives
+          rather than filters that narrow each other. */}
+      <FilterChip
+        label="Commodity"
+        value={summarise(chosenCommodities, (name) => name)}
+        onClear={() => onChange({ commodity: undefined })}
+      >
+        <ChoiceList
+          options={(commodities.data?.data ?? []).map((commodity) => ({
+            value: commodity.name,
+            label: commodity.name,
+            hint: commodity.units.join(", ") || undefined,
+          }))}
+          selected={chosenCommodities}
+          onToggle={(name) => onChange({ commodity: toggle(chosenCommodities, name) })}
+          onClear={() => onChange({ commodity: undefined })}
+          empty="No commodity figures yet."
         />
       </FilterChip>
 
@@ -173,60 +214,6 @@ function TextFilter({
       />
       <p className="text-xs text-muted-foreground">{hint}</p>
       <Button type="submit" size="sm">
-        Apply
-      </Button>
-    </form>
-  );
-}
-
-function PeriodFilter({
-  from,
-  until,
-  onApply,
-}: {
-  from: string;
-  until: string;
-  onApply: (from: string, until: string) => void;
-}) {
-  const [start, setStart] = useState(from);
-  const [end, setEnd] = useState(until);
-
-  useEffect(() => setStart(from), [from]);
-  useEffect(() => setEnd(until), [until]);
-
-  const invalid =
-    (start !== "" && !PERIOD_PATTERN.test(start)) ||
-    (end !== "" && !PERIOD_PATTERN.test(end));
-
-  return (
-    <form
-      className="grid gap-2"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!invalid) onApply(start.trim(), end.trim());
-      }}
-    >
-      <div className="grid grid-cols-2 gap-2">
-        <Input
-          value={start}
-          onChange={(event) => setStart(event.target.value)}
-          placeholder="From"
-          aria-invalid={invalid}
-          autoFocus
-        />
-        <Input
-          value={end}
-          onChange={(event) => setEnd(event.target.value)}
-          placeholder="To"
-          aria-invalid={invalid}
-        />
-      </div>
-      <p
-        className={`text-xs ${invalid ? "text-destructive" : "text-muted-foreground"}`}
-      >
-        A year, or a year with a month, quarter, half or day — 2026, 2026-01, 2026-Q1.
-      </p>
-      <Button type="submit" size="sm" disabled={invalid}>
         Apply
       </Button>
     </form>

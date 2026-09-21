@@ -123,7 +123,21 @@ def load_aggregates(path: Path | None = None) -> list[Geography]:
 
 
 def load_indonesia(path: Path | None = None) -> list[Geography]:
-    """Indonesian administrative areas, keyed by BPS code."""
+    """Indonesian administrative areas: provinces and the level below them.
+
+    Both, because most Indonesian figures are published per regency or city —
+    a district's movement share, a regency's budget realisation, a city's food
+    prices — and a registry holding only the 38 provinces leaves every one of
+    them resolving to nothing.
+
+    `path` still names the provinces file alone, for a caller that wants only
+    them; the regencies come from their own file beside it.
+    """
+    return [*load_provinces(path), *(load_regencies() if path is None else [])]
+
+
+def load_provinces(path: Path | None = None) -> list[Geography]:
+    """The 38 provinces, keyed by BPS code."""
     source = path or GEOGRAPHY_DIR / "indonesia-provinces.csv"
     areas = []
     for row in _rows(source):
@@ -139,6 +153,44 @@ def load_indonesia(path: Path | None = None) -> list[Geography]:
                 parent_geo_id=(row.get("parent_geo_id") or "").strip() or None,
                 country_code="ID",
                 province_code=bps,
+                bps_code=bps,
+                valid_from=_date(row.get("valid_from")),
+                valid_to=_date(row.get("valid_to")),
+                aliases=_aliases(row.get("aliases")),
+            )
+        )
+    return areas
+
+
+def load_regencies(path: Path | None = None) -> list[Geography]:
+    """Regencies and cities (kabupaten/kota), keyed by BPS code.
+
+    Absent is not an error: a checkout without the file still resolves
+    provinces, and a figure published per regency stays unresolved — which is
+    the gap showing rather than a run failing (program.md §42).
+    """
+    source = path or GEOGRAPHY_DIR / "indonesia-regencies.csv"
+    if not source.exists():
+        return []
+
+    areas = []
+    for row in _rows(source):
+        geo_id = (row.get("geo_id") or "").strip()
+        if not geo_id:
+            continue
+        bps = (row.get("bps_code") or "").strip() or None
+        areas.append(
+            Geography(
+                geo_id=geo_id,
+                name=(row.get("name") or "").strip(),
+                geo_type=GeoType((row.get("geo_type") or "regency").strip()),
+                parent_geo_id=(row.get("parent_geo_id") or "").strip() or None,
+                country_code="ID",
+                # `11.05` belongs to province `11`: the prefix is the parent's
+                # code, which is what makes a BPS code join upwards without a
+                # lookup.
+                province_code=bps.split(".")[0] if bps else None,
+                regency_code=bps,
                 bps_code=bps,
                 valid_from=_date(row.get("valid_from")),
                 valid_to=_date(row.get("valid_to")),
@@ -180,6 +232,7 @@ def geography_registry(
     """
     registry = GeographyRegistry()
     loaded = 0
+    seen: set[str] = set()
     for enabled, loader in (
         (countries, load_countries),
         (aggregates, load_aggregates),
@@ -188,6 +241,14 @@ def geography_registry(
         if not enabled:
             continue
         for geography in loader():
+            # A place may be described by more than one file — Indonesia is in
+            # the country list and again in the provinces file, which is where
+            # the names agencies actually print live. Registering it twice would
+            # trip the duplicate guard and cost it every one of its names.
+            if geography.geo_id in seen:
+                registry.add(geography)
+                continue
+            seen.add(geography.geo_id)
             registry.add(geography)
             loaded += 1
     log.debug("reference.geography_loaded", members=loaded)

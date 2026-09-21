@@ -11,6 +11,7 @@ from conftest import requires_postgres
 from terusan_pipelines.catalog import (
     CatalogReporter,
     CatalogUnavailable,
+    Fanout,
     NullReporter,
     connect,
     recent_runs,
@@ -30,6 +31,7 @@ from terusan_pipelines.sources import (
     SourceType,
 )
 from terusan_pipelines.storage import StorageConfig, StorageResolver
+from terusan_pipelines.warehouse import read_runs
 
 
 @pytest.fixture
@@ -88,10 +90,16 @@ def test_null_reporter_accepts_everything(resolver):
     assert result.artifacts_landed == 3
 
 
-def test_reporter_falls_back_when_there_is_no_catalog(monkeypatch):
+def test_reporter_still_journals_when_there_is_no_catalog(monkeypatch, resolver):
+    """No database is a degraded mode, not an unrecorded one."""
     monkeypatch.delenv("DATABASE_URL", raising=False)
-    with reporter() as r:
-        assert isinstance(r, NullReporter)
+    with reporter(resolver=resolver) as r:
+        assert isinstance(r, Fanout)
+        Runner(resolver, reporter=r).run_one(_Fake())
+
+    runs = read_runs(resolver)
+    assert [run["pipeline"] for run in runs] == ["ingest-fake-reported"]
+    assert runs[0]["records_out"] == 3
 
 
 def test_required_reporter_fails_loudly(monkeypatch):

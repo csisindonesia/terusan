@@ -1,222 +1,201 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { IconDatabaseSearch } from "@tabler/icons-react";
+import { IconMinus, IconPlus } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 
 import { NavUser } from "~/components/nav-user";
+import {
+  Collapsible,
+  CollapsiblePanel,
+  CollapsibleTrigger,
+} from "~/components/ui/collapsible";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarHeader,
+  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+  useSidebar,
 } from "~/components/ui/sidebar";
-import { cn } from "~/lib/utils";
 import {
   NAVIGATION,
   defaultGroup,
   groupForPath,
   navigationCoverage,
-  navigationGroups,
+  type NavGroup,
   type NavItem,
-  type RailGroup,
 } from "~/lib/navigation";
 
 /**
- * Two panels: a rail of sections, and the items of whichever is selected.
+ * One panel, with each section of the platform a collapsible group.
  *
- * Thirty-four destinations in one list is a wall nobody reads. Splitting them
- * puts one decision on screen at a time — which part of the platform, then
- * which page — and keeps the second panel short enough to scan.
+ * It was two panels — a rail of icons plus the pages of whichever was
+ * selected — which spent 21rem of the window to show four or five links at a
+ * time. Folding the groups into a single list costs nothing when they are
+ * shut, shows the whole shape of the platform at a glance, and lets two
+ * sections stay open together when work spans both.
  */
 export function AppSidebar() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const groups = navigationGroups();
   const coverage = navigationCoverage();
 
-  const [activeLabel, setActiveLabel] = useState(
-    () => groupForPath(pathname)?.label ?? defaultGroup().label,
-  );
+  // Open groups rather than one selected group: the rail could only ever point
+  // at a single section, which made moving between, say, Discover and Explore
+  // a click to switch and a click to arrive.
+  const [openGroups, setOpenGroups] = useState<string[]>(() => {
+    // Falls back to the first group rather than to nothing: the landing page
+    // belongs to no group, and a sidebar that opens with every section shut
+    // makes the reader click before it tells them anything.
+    const match = groupForPath(pathname) ?? defaultGroup();
+    return [match.label];
+  });
 
   // Follow the route when it changes under us — a link from elsewhere in the
-  // app, or a pasted URL, should leave the rail pointing at the right section
-  // rather than at whatever was last clicked.
+  // app, or a pasted URL, should leave its group open rather than the page
+  // being highlighted inside something folded shut.
   useEffect(() => {
     const match = groupForPath(pathname);
-    if (match) setActiveLabel(match.label);
+    if (!match) return;
+    setOpenGroups((open) =>
+      open.includes(match.label) ? open : [...open, match.label],
+    );
   }, [pathname]);
 
-  const active = groups.find((group) => group.label === activeLabel) ?? defaultGroup();
+  function toggle(label: string, open: boolean) {
+    setOpenGroups((current) =>
+      open ? [...current, label] : current.filter((entry) => entry !== label),
+    );
+  }
 
   return (
-    // `collapsible="icon"` rather than `"none"`: it is the only variant with a
-    // mobile branch, and without it the two panels stayed at their full 21rem
-    // on a phone. It also gives the toggle something to do — collapsing to
-    // `--sidebar-width-icon`, set to the rail's width, leaves the rail behind.
-    //
-    // The row lives on the inner wrapper this variant renders, which is what
-    // `*:data-[sidebar=sidebar]` targets.
+    // Pushed below the navbar: the panel is `fixed inset-y-0` by default,
+    // which would put its first group behind the bar. Marked important
+    // because both declarations are fighting classes on the same element.
     <Sidebar
       collapsible="icon"
-      className="overflow-hidden *:data-[sidebar=sidebar]:flex-row"
+      className="top-(--app-header)! h-[calc(100svh-var(--app-header))]!"
     >
-      <GroupRail groups={groups} activeLabel={active.label} onSelect={setActiveLabel} />
-      <ItemPanel group={active} pathname={pathname} coverage={coverage} />
-    </Sidebar>
-  );
-}
-
-/** The narrow panel: one icon per section, labelled only by its tooltip. */
-function GroupRail({
-  groups,
-  activeLabel,
-  onSelect,
-}: {
-  groups: RailGroup[];
-  activeLabel: string;
-  onSelect: (label: string) => void;
-}) {
-  return (
-    <Sidebar
-      collapsible="none"
-      className="w-(--sidebar-rail-width)! shrink-0 border-r bg-sidebar"
-    >
-      <SidebarHeader className="p-0">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              size="lg"
-              tooltip="Terusan"
-              className="justify-center md:h-14"
-              render={<Link to="/" />}
-            >
-              <div className="flex aspect-square size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <IconDatabaseSearch className="size-5" />
-              </div>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarHeader>
-
       <SidebarContent>
-        <SidebarGroup className="px-1.5">
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {groups.map((group) => (
-                <SidebarMenuItem key={group.label}>
-                  {/* A rule above the first administration entry, so the two
-                      halves of the platform read apart without a heading the
-                      rail has no room for. */}
-                  {group.startsSection ? (
-                    <div
-                      className="mx-1.5 my-2 border-t"
-                      role="separator"
-                      aria-label={group.sectionLabel}
-                    />
-                  ) : null}
-                  <SidebarMenuButton
-                    tooltip={
-                      group.sectionLabel
-                        ? `${group.sectionLabel} — ${group.label}`
-                        : group.label
-                    }
-                    isActive={group.label === activeLabel}
-                    onClick={() => onSelect(group.label)}
-                    className="justify-center px-0"
-                  >
-                    <group.icon />
-                    <span className="sr-only">{group.label}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {NAVIGATION.map((section, index) => (
+          <SidebarGroup key={section.label ?? `section-${index}`}>
+            {section.label ? (
+              <SidebarGroupLabel className="tracking-wide uppercase">
+                {section.label}
+              </SidebarGroupLabel>
+            ) : null}
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {section.groups.map((group) => (
+                  <NavGroupItem
+                    key={group.label}
+                    group={group}
+                    pathname={pathname}
+                    open={openGroups.includes(group.label)}
+                    onOpenChange={(open) => toggle(group.label, open)}
+                  />
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
       </SidebarContent>
 
-      {/* At the foot of the rail rather than the panel: these belong to the
-          person rather than to whichever section happens to be open, and they
-          stay reachable when the panel is collapsed away. */}
-      <SidebarFooter className="gap-0 border-t px-1.5 py-2">
+      <SidebarFooter className="gap-2 border-t">
+        <p className="px-2 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+          {coverage.built} of {coverage.total} pages built. The rest are listed so the
+          shape is visible.
+        </p>
         <NavUser />
       </SidebarFooter>
     </Sidebar>
   );
 }
 
-/** The wide panel: the selected section's pages. */
-function ItemPanel({
+/** One section of the platform: a header that folds its pages away. */
+function NavGroupItem({
   group,
   pathname,
-  coverage,
+  open,
+  onOpenChange,
 }: {
-  group: RailGroup;
+  group: NavGroup;
   pathname: string;
-  coverage: { built: number; total: number };
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
-  function isActive(item: NavItem) {
-    if (!item.to) return false;
-    return item.exact ? pathname === item.to : pathname.startsWith(item.to);
-  }
+  const { state, isMobile, setOpen } = useSidebar();
+  const collapsedToIcons = state === "collapsed" && !isMobile;
+  const holdsCurrentPage = group.items.some((item) => isCurrent(item, pathname));
+  // Down to icons there is no room for the pages, so a group that the person
+  // left open shows shut without forgetting that they left it open.
+  const expanded = open && !collapsedToIcons;
 
   return (
-    <Sidebar collapsible="none" className="min-w-0 flex-1 bg-sidebar">
-      <SidebarHeader className="gap-0.5 border-b md:h-14 md:justify-center">
-        {group.sectionLabel ? (
-          <span className="text-[0.7rem] font-medium tracking-wide text-muted-foreground uppercase">
-            {group.sectionLabel}
-          </span>
-        ) : null}
-        <span className="flex items-center gap-2 font-heading font-semibold">
-          <group.icon className="size-5 shrink-0" />
-          {group.label}
-        </span>
-      </SidebarHeader>
+    <Collapsible
+      open={expanded}
+      onOpenChange={onOpenChange}
+      render={<SidebarMenuItem />}
+    >
+      <CollapsibleTrigger
+        render={
+          <SidebarMenuButton
+            tooltip={group.label}
+            // Marked active only while shut: an open group already shows which
+            // of its pages you are on, and highlighting both reads as two.
+            isActive={holdsCurrentPage && !expanded}
+            // Pressing a group while the sidebar is down to icons has nowhere
+            // to put the pages, so it opens the sidebar first.
+            onClick={collapsedToIcons ? () => setOpen(true) : undefined}
+          />
+        }
+      >
+        <group.icon />
+        <span>{group.label}</span>
+        {/* Which way the press goes, rather than which way the group
+                    points. Swapped by the trigger's own state so the mark is
+                    right at first paint, the same way the theme icons are. */}
+        <IconPlus className="ml-auto size-4! text-muted-foreground group-data-[collapsible=icon]:hidden group-data-[panel-open]/menu-button:hidden" />
+        <IconMinus className="ml-auto hidden size-4! text-muted-foreground group-data-[collapsible=icon]:hidden group-data-[panel-open]/menu-button:block" />
+      </CollapsibleTrigger>
 
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {group.items.map((item) => (
-                <SidebarMenuItem key={item.label}>
-                  {item.to ? (
-                    <SidebarMenuButton
-                      isActive={isActive(item)}
-                      render={<Link to={item.to} />}
-                    >
-                      <item.icon />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  ) : (
-                    // Shown rather than hidden: the shape of the platform is
-                    // worth seeing, and a link that 404s is worse than one
-                    // that says it is not here yet.
-                    <SidebarMenuButton
-                      disabled
-                      className={cn("cursor-default opacity-45")}
-                    >
-                      <item.icon />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  )}
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarContent>
-
-      <SidebarFooter>
-        <p className="px-2 pb-1 text-xs text-muted-foreground">
-          {coverage.built} of {coverage.total} pages built. The rest are listed so the
-          shape is visible.
-        </p>
-      </SidebarFooter>
-    </Sidebar>
+      <CollapsiblePanel className="group-data-[collapsible=icon]:hidden">
+        <SidebarMenuSub>
+          {group.items.map((item) => (
+            <SidebarMenuSubItem key={item.label}>
+              {item.to ? (
+                <SidebarMenuSubButton
+                  isActive={isCurrent(item, pathname)}
+                  render={<Link to={item.to} />}
+                >
+                  <item.icon />
+                  <span>{item.label}</span>
+                </SidebarMenuSubButton>
+              ) : (
+                // Shown rather than hidden: the shape of the platform is worth
+                // seeing, and a link that 404s is worse than one that says it
+                // is not here yet.
+                <SidebarMenuSubButton aria-disabled render={<span />}>
+                  <item.icon />
+                  <span>{item.label}</span>
+                </SidebarMenuSubButton>
+              )}
+            </SidebarMenuSubItem>
+          ))}
+        </SidebarMenuSub>
+      </CollapsiblePanel>
+    </Collapsible>
   );
+}
+
+function isCurrent(item: NavItem, pathname: string): boolean {
+  if (!item.to) return false;
+  return item.exact ? pathname === item.to : pathname.startsWith(item.to);
 }
 
 export { NAVIGATION };

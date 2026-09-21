@@ -166,3 +166,40 @@ def test_the_raw_text_is_always_kept():
     """Whatever the outcome, the source cell stays visible in Silver."""
     assert parse_value("wat").raw == "wat"
     assert parse_value("1.234,56").raw == "1.234,56"
+
+
+# ---- scientific notation --------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        # DJPK's APBD export writes its largest figures with an exponent.
+        ("4.7909816610247E+14", Decimal("479098166102470")),
+        ("1.0887460909906E+14", Decimal("108874609099060")),
+        ("-1.5E+3", Decimal("-1500")),
+        ("1.5e3", Decimal("1500")),
+        # The brackets are an accounting negative, exponent or not.
+        ("(1.5E+3)", Decimal("-1500")),
+    ],
+)
+def test_exponential_figures_parse_exactly(raw, expected):
+    """479 trillion rupiah, not a parse failure — and not a float, which would
+    lose the low digits of a figure this size."""
+    parsed = parse_value(raw)
+    assert parsed.status is ValueStatus.OK
+    assert parsed.value == expected
+
+
+@pytest.mark.parametrize("number_format", [NumberFormat.INDONESIAN, NumberFormat.ANGLO])
+def test_an_exponent_reads_the_same_under_either_convention(number_format):
+    """A literal with an exponent has no grouping to disambiguate, so the dot
+    is a decimal point whichever convention the source writes in — the reading
+    must not depend on the flag."""
+    assert parse_value("4.79E+14", number_format).value == Decimal("479000000000000")
+
+
+def test_grouped_numbers_are_still_read_by_convention():
+    """The exponent path must not swallow ordinary Indonesian numbers."""
+    assert parse_value("1.234,56", NumberFormat.INDONESIAN).value == Decimal("1234.56")
+    assert parse_value("1,234.56", NumberFormat.ANGLO).value == Decimal("1234.56")

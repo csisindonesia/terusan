@@ -22,6 +22,8 @@ from .datasets import (
 from .reporting import (
     BRONZE_DATASETS,
     CatalogReporter,
+    Fanout,
+    JournalReporter,
     NullReporter,
     Reporter,
     reporter,
@@ -42,6 +44,8 @@ __all__ = [
     "CatalogReporter",
     "CatalogUnavailable",
     "DatasetStats",
+    "Fanout",
+    "JournalReporter",
     "NullReporter",
     "Reporter",
     "RunHandle",

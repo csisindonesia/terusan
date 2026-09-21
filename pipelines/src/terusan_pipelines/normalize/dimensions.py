@@ -137,22 +137,48 @@ class Registry[T]:
 
     def __init__(self, noise: set[str] | None = None) -> None:
         self._members: dict[str, T] = {}
+        #: Names as written, punctuation and case folded but nothing removed.
         self._index: dict[str, str] = {}
+        #: The same names with the noise words dropped — `kabupaten`, `kota`,
+        #: `provinsi`. Kept apart from the exact index, because dropping them
+        #: makes different places look identical: `Kota Bandung` reduces to
+        #: `bandung`, which is a different regency. Sharing one index let that
+        #: collision delete the exact name of both, and a source writing
+        #: `Bandung` then resolved to nothing at all.
+        self._reduced: dict[str, str] = {}
+        #: The reduced form with its spaces closed up. Publishers disagree
+        #: about where the space goes — `Banyu Asin` and `Banyuasin`,
+        #: `Gunung Kidul` and `Gunungkidul` are each one regency written two
+        #: ways — and no list of aliases keeps up with that. Consulted last,
+        #: so it can only answer where the name as written matched nothing.
+        self._squashed: dict[str, str] = {}
         self._noise = noise or set()
 
     def add(self, identifier: str, member: T, names: list[str]) -> None:
         """Register a member under every name it is known by."""
         self._members[identifier] = member
         for name in names:
-            for key in self._keys(name):
-                existing = self._index.get(key)
-                if existing is not None and existing != identifier:
-                    # Two members answering to one name cannot both be right,
-                    # and picking one silently would misfile every figure using
-                    # it. Neither keeps the name.
-                    self._index[key] = ""
-                    continue
-                self._index[key] = identifier
+            exact = normalize_name(name)
+            self._claim(self._index, exact, identifier)
+            reduced = normalize_name(name, drop=self._noise) if self._noise else exact
+            if self._noise:
+                self._claim(self._reduced, reduced, identifier)
+            self._claim(self._squashed, reduced.replace(" ", ""), identifier)
+
+    @staticmethod
+    def _claim(index: dict[str, str], key: str, identifier: str) -> None:
+        """Record a name, or refuse it to everybody.
+
+        Two members answering to one name cannot both be right, and picking one
+        silently would misfile every figure that uses it. Neither keeps it.
+        """
+        if not key:
+            return
+        existing = index.get(key)
+        if existing is not None and existing != identifier:
+            index[key] = ""
+            return
+        index[key] = identifier
 
     def resolve(self, name: str) -> Resolution:
         """Look a name up, reporting how it matched."""
@@ -163,20 +189,21 @@ class Registry[T]:
         if identifier := self._index.get(exact):
             return Resolution(identifier, matched_on=name, method="exact")
 
+        # Only once the name as written matches nothing. `Kota Bandung` and
+        # `Bandung` are two places, and the reduced form cannot tell them
+        # apart — so it answers for a name neither of them was written as,
+        # rather than for one of theirs.
         reduced = normalize_name(name, drop=self._noise)
-        if reduced != exact and (identifier := self._index.get(reduced)):
+        if reduced != exact and (identifier := self._reduced.get(reduced)):
             return Resolution(identifier, matched_on=name, method="normalized")
+
+        if identifier := self._squashed.get(reduced.replace(" ", "")):
+            return Resolution(identifier, matched_on=name, method="spacing")
 
         return Resolution(None, matched_on=name)
 
     def get(self, identifier: str) -> T | None:
         return self._members.get(identifier)
-
-    def _keys(self, name: str) -> set[str]:
-        keys = {normalize_name(name)}
-        if self._noise:
-            keys.add(normalize_name(name, drop=self._noise))
-        return {k for k in keys if k}
 
     def __len__(self) -> int:
         return len(self._members)

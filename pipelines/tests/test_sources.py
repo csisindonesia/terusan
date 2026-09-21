@@ -22,6 +22,7 @@ from terusan_pipelines.sources import (
     Source,
     SourceMeta,
     SourceType,
+    UnknownSource,
     legacy_source,
     summarize,
 )
@@ -113,6 +114,58 @@ def test_relanding_identical_content_is_a_noop(resolver):
     assert second.deduplicated
     assert second.bytes_written == 0
     assert first.path == second.path
+
+
+def test_relanding_refreshes_the_provenance_sidecar(resolver):
+    """A scraper that learns a document's real title improves every copy of it.
+
+    Immutability protects the source bytes, not our description of them. Without
+    this, an improvement reaches only material collected after it and the
+    archive keeps whatever was known the day it arrived.
+    """
+    landing = Landing(resolver)
+    landing.land(meta_for(), artifact(metadata={"title": "cpi.csv"}))
+    second = landing.land(meta_for(), artifact(metadata={"title": "Consumer Price Index"}))
+
+    assert second.deduplicated
+    sidecar = json.loads((Path(second.path).parent / "metadata.json").read_text())
+    assert sidecar["extra"]["title"] == "Consumer Price Index"
+
+
+def test_relanding_keeps_the_first_retrieval_date(resolver):
+    """These are the bytes that arrived the first time, and restamping them
+    with today would misdate the archive on every re-run."""
+    landing = Landing(resolver)
+    first = landing.land(meta_for(), artifact())
+    original = json.loads((Path(first.path).parent / "metadata.json").read_text())["retrieved_at"]
+
+    second = landing.land(meta_for(), artifact(metadata={"title": "Later"}))
+    refreshed = json.loads((Path(second.path).parent / "metadata.json").read_text())
+
+    assert refreshed["retrieved_at"] == original
+
+
+def test_relanding_unchanged_provenance_leaves_the_sidecar_alone(resolver):
+    """A re-run over a stable archive should write nothing at all."""
+    landing = Landing(resolver)
+    first = landing.land(meta_for(), artifact())
+    sidecar = Path(first.path).parent / "metadata.json"
+    before = sidecar.stat().st_mtime_ns
+
+    landing.land(meta_for(), artifact())
+    assert sidecar.stat().st_mtime_ns == before
+
+
+def test_relanding_never_rewrites_the_bytes(resolver):
+    """The one thing immutability does protect."""
+    landing = Landing(resolver)
+    first = landing.land(meta_for(), artifact())
+    content = Path(first.path)
+    before = content.stat().st_mtime_ns
+
+    landing.land(meta_for(), artifact(metadata={"title": "Later"}))
+    assert content.stat().st_mtime_ns == before
+    assert content.read_bytes() == b"cpi,2026\n1.2"
 
 
 def test_untrusted_titles_are_slugified_into_the_path(resolver):
@@ -345,3 +398,43 @@ def test_registry_lists_scheduled_sources():
     registry.register(Manual)
     registry._loaded = True
     assert [s.meta.slug for s in registry.scheduled()] == ["scheduled-one"]
+
+
+def test_discovery_ignores_sources_defined_outside_the_package():
+    """`Source.__subclasses__()` reaches every subclass alive in the process.
+
+    A throwaway defined in a test — or in a notebook, or in a consumer's own
+    module — is not part of the package being discovered, and registering it
+    would let an unrelated import decide what the registry holds. One that
+    happened to reuse a slug would fail discovery of the real sources outright.
+    """
+
+    class Outsider(Source):
+        meta = meta_for("outsider", name="Defined in a test, not in the package")
+
+        def collect(self, ctx):  # pragma: no cover - never reached
+            raise AssertionError("discovery should not have found this")
+
+    found = Registry()
+    found.discover()
+
+    assert Outsider not in found.all()
+    with pytest.raises(UnknownSource):
+        found.get("outsider")
+
+
+def test_discovery_can_be_narrowed_to_one_package():
+    """The argument selects a subtree, so an agency's sources can load alone."""
+    whole = Registry()
+    whole.discover()
+
+    bank_indonesia = Registry()
+    bank_indonesia.discover("terusan_pipelines.sources.bank_indonesia")
+
+    slugs = {source.meta.slug for source in bank_indonesia.all()}
+    assert slugs
+    assert slugs < {source.meta.slug for source in whole.all()}
+    assert all(
+        source.__module__.startswith("terusan_pipelines.sources.bank_indonesia")
+        for source in bank_indonesia.all()
+    )

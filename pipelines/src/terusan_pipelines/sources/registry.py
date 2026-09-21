@@ -55,6 +55,15 @@ class Registry:
         for subclass in _all_subclasses(Source):
             if subclass.abstract or getattr(subclass, "__abstractmethods__", None):
                 continue
+            # Only what this package defines. `Source.__subclasses__()` reaches
+            # every subclass alive anywhere in the process — a throwaway defined
+            # in a test, a notebook cell, a downstream consumer's own module —
+            # and registering those would let an unrelated import decide what
+            # this registry holds, or collide on a slug and fail the discovery
+            # of the real sources. It also makes the argument mean something:
+            # discovering one agency's package registers that agency alone.
+            if not _defined_in(subclass, package):
+                continue
             self.register(subclass)
         self._loaded = True
 
@@ -85,6 +94,11 @@ class Registry:
     def __len__(self) -> int:
         self.ensure_loaded()
         return len(self._sources)
+
+
+def _defined_in(subclass: type, package: str) -> bool:
+    module = subclass.__module__
+    return module == package or module.startswith(f"{package}.")
 
 
 def _all_subclasses(cls: type) -> Iterator[type]:

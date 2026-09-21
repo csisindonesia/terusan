@@ -13,6 +13,7 @@ from .compaction import (
     find_partitions,
 )
 from .query import Warehouse, warehouse
+from .runlog import RunLog, RunRecord, read_runs
 from .schema import (
     BRONZE_DOCUMENTS,
     BRONZE_PROVENANCE_FIELDS,
@@ -41,6 +42,8 @@ __all__ = [
     "BadPartitionKey",
     "CompactionResult",
     "ParquetWriter",
+    "RunLog",
+    "RunRecord",
     "Warehouse",
     "WriteResult",
     "MAX_PARTITION_CARDINALITY",
@@ -51,6 +54,7 @@ __all__ = [
     "conform",
     "empty",
     "find_partitions",
+    "read_runs",
     "table_from_rows",
     "warehouse",
 ]

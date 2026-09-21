@@ -36,6 +36,16 @@ type DataTableProps<TData> = {
   onSelectionChange?: (rows: TData[]) => void;
   /** Rendered above the table when something is selected. */
   renderSelectionActions?: (rows: TData[]) => React.ReactNode;
+  /**
+   * Sorting held by the caller, for a table whose rows are paged outside it.
+   *
+   * Without this the table sorts the rows it was handed, which on a paged table
+   * is one page — so "sort by value" would order fifty rows against the other
+   * four hundred's position. A caller that pages its own data sorts its own
+   * data, and passes the state back in so the headers still show it.
+   */
+  sorting?: SortingState;
+  onSortingChange?: (next: SortingState) => void;
 };
 
 export function DataTable<TData>({
@@ -48,15 +58,24 @@ export function DataTable<TData>({
   getRowId,
   onSelectionChange,
   renderSelectionActions,
+  sorting: controlledSorting,
+  onSortingChange,
 }: DataTableProps<TData>) {
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const [ownSorting, setOwnSorting] = useState<SortingState>([]);
   const [selection, setSelection] = useState<RowSelectionState>({});
+
+  const controlled = controlledSorting !== undefined;
+  const sorting = controlledSorting ?? ownSorting;
 
   const table = useReactTable({
     data,
     columns,
     state: { sorting, rowSelection: selection },
-    onSortingChange: setSorting,
+    onSortingChange: (updater) => {
+      const next = typeof updater === "function" ? updater(sorting) : updater;
+      if (controlled) onSortingChange?.(next);
+      else setOwnSorting(next);
+    },
     onRowSelectionChange: setSelection,
     enableRowSelection: selectable,
     getRowId,
@@ -64,7 +83,11 @@ export function DataTable<TData>({
     // Sorting is client-side over the page already fetched. Server-side
     // ordering is a separate concern, handled by the `order` parameter, and
     // mixing the two silently would sort one page against another's order.
-    getSortedRowModel: getSortedRowModel(),
+    //
+    // A caller holding the sorting has already applied it to the whole set, so
+    // re-sorting the page here would be work for nothing.
+    manualSorting: controlled,
+    getSortedRowModel: controlled ? undefined : getSortedRowModel(),
   });
 
   const selectedRows = table.getSelectedRowModel().rows.map((row) => row.original);
@@ -97,13 +120,17 @@ export function DataTable<TData>({
         </div>
       ) : null}
 
-      <div className="overflow-x-auto rounded-lg border">
+      {/* A gutter on the first and last cell rather than padding on the
+          container: the header stripe and the row rules still run the full
+          width, while the content they frame keeps clear of the border. A row
+          whose first word touches the edge reads as clipped. */}
+      <div className="overflow-x-auto rounded-lg border [&_td:first-child]:pl-4 [&_td:last-child]:pr-4 [&_th:first-child]:pl-4 [&_th:last-child]:pr-4">
         <Table>
           <TableHeader className="bg-muted/40">
             {table.getHeaderGroups().map((group) => (
               <TableRow key={group.id} className="hover:bg-transparent">
                 {selectable ? (
-                  <TableHead className="w-10 pl-3">
+                  <TableHead className="w-10">
                     <Checkbox
                       checked={table.getIsAllPageRowsSelected()}
                       // base-ui carries the partial state in its own prop
@@ -135,6 +162,7 @@ export function DataTable<TData>({
                         // border it already has.
                         "border-r last:border-r-0",
                         meta?.align === "right" && "text-right",
+                        meta?.width,
                       )}
                     >
                       <span
@@ -192,7 +220,7 @@ export function DataTable<TData>({
                   data-state={row.getIsSelected() ? "selected" : undefined}
                 >
                   {selectable ? (
-                    <TableCell className="pl-3">
+                    <TableCell>
                       <Checkbox
                         checked={row.getIsSelected()}
                         onCheckedChange={(checked) => row.toggleSelected(checked)}

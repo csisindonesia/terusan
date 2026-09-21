@@ -131,9 +131,10 @@ func TestSortOrderFallsBackWhenAbsent(t *testing.T) {
 // ---- filter construction --------------------------------------------------
 
 func TestFiltersBindEveryValue(t *testing.T) {
-	where, args := observationFilters(
-		[]string{"GDP"}, []string{"IDN"}, []string{"country"}, "2020", "2024", "",
-	)
+	where, args := observationFilters(observationFilter{
+		Indicators: []string{"GDP"}, Geos: []string{"IDN"},
+		GeoTypes: []string{"country"}, From: "2020", Until: "2024",
+	})
 	if got := countPlaceholders(where); got != len(args) {
 		t.Errorf("%d placeholders for %d arguments: %q", got, len(args), where)
 	}
@@ -143,14 +144,16 @@ func TestFiltersBindEveryValue(t *testing.T) {
 }
 
 func TestNoFiltersMeansNoWhereClause(t *testing.T) {
-	where, args := observationFilters(nil, nil, nil, "", "", "")
+	where, args := observationFilters(observationFilter{})
 	if where != "" || args != nil {
 		t.Errorf("observationFilters = %q, %v; want empty", where, args)
 	}
 }
 
 func TestFilterValuesNeverReachTheSQLText(t *testing.T) {
-	where, _ := observationFilters([]string{"GDP'; DROP TABLE x--"}, nil, nil, "", "", "")
+	where, _ := observationFilters(observationFilter{
+		Indicators: []string{"GDP'; DROP TABLE x--"},
+	})
 	if contains(where, "DROP") {
 		t.Errorf("filter value leaked into SQL: %q", where)
 	}
@@ -248,9 +251,11 @@ func TestInClauseWithNothingProducesNothing(t *testing.T) {
 }
 
 func TestMultipleValuesStillBindEveryArgument(t *testing.T) {
-	where, args := observationFilters(
-		[]string{"a", "b"}, []string{"IDN", "MYS", "THA"}, []string{"country"}, "", "", "",
-	)
+	where, args := observationFilters(observationFilter{
+		Indicators: []string{"a", "b"},
+		Geos:       []string{"IDN", "MYS", "THA"},
+		GeoTypes:   []string{"country"},
+	})
 	if countPlaceholders(where) != len(args) {
 		t.Errorf("%q binds %d args", where, len(args))
 	}
@@ -276,11 +281,46 @@ func TestSearchRefusesPunctuationOnlyQueries(t *testing.T) {
 }
 
 func TestSearchIsBound(t *testing.T) {
-	where, args := observationFilters(nil, nil, nil, "", "", "Jawa")
+	where, args := observationFilters(observationFilter{Search: "Jawa"})
 	if countPlaceholders(where) != len(args) {
 		t.Errorf("%q binds %d args", where, len(args))
 	}
 	if strings.Contains(where, "Jawa") {
 		t.Errorf("search text reached the SQL: %q", where)
+	}
+}
+
+func TestCommodityFilterIsBoundAndNamesTheRawColumn(t *testing.T) {
+	// Most commodities are not in the registry, so their identifier is null and
+	// the printed name is the only thing that distinguishes one from another.
+	where, args := observationFilters(observationFilter{
+		Commodities: []string{"Cabai Merah", "Beras"},
+	})
+	if countPlaceholders(where) != len(args) {
+		t.Errorf("%q binds %d args", where, len(args))
+	}
+	if !contains(where, "commodity_name_raw") {
+		t.Errorf("commodity filter ignores the raw name: %q", where)
+	}
+	if contains(where, "Cabai") {
+		t.Errorf("commodity value reached the SQL: %q", where)
+	}
+}
+
+func TestSearchReachesCommodityNames(t *testing.T) {
+	// A series with no geography is unsearchable if search only sees places.
+	where, _ := observationFilters(observationFilter{Search: "Beras"})
+	if !contains(where, "commodity_name_raw") {
+		t.Errorf("search skips commodities: %q", where)
+	}
+}
+
+func TestSearchMatchesThePrintedPlaceName(t *testing.T) {
+	// Seventeen of the eighteen survey cities are not in the geography
+	// registry, so `g.name` is null for them and only the printed name can
+	// match.
+	where, _ := observationFilters(observationFilter{Search: "Palembang"})
+	if !contains(where, "geo_name_raw") {
+		t.Errorf("search skips unresolved places: %q", where)
 	}
 }

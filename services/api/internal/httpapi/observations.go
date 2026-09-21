@@ -36,8 +36,13 @@ type Observation struct {
 	GeoID            *string `json:"geo_id"`
 	GeoName          *string `json:"geo_name,omitempty"`
 	GeoType          *string `json:"geo_type,omitempty"`
-	SourceID         string  `json:"source_id"`
-	SourceURL        *string `json:"source_url,omitempty"`
+	// Not every series varies by place. Bank Indonesia's food prices are a
+	// commodity by a date and name no place at all, and a reader given only
+	// the geography columns sees thirty-one identical rows.
+	CommodityID   *string `json:"commodity_id"`
+	CommodityName *string `json:"commodity_name,omitempty"`
+	SourceID      string  `json:"source_id"`
+	SourceURL     *string `json:"source_url,omitempty"`
 }
 
 var observationOrder = map[string]string{
@@ -76,6 +81,15 @@ func (s *Server) handleObservations(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid parameter", err.Error())
 		return
 	}
+	// Matched on the printed name rather than the identifier: most commodities
+	// are not in the registry yet, so their identifier is null and the name the
+	// source printed is all that distinguishes them. `searchPattern` because
+	// those names carry spaces — `Cabai Merah Keriting`.
+	commodities, err := stringListParam(r, "commodity", searchPattern)
+	if err != nil {
+		badRequest(w, "invalid parameter", err.Error())
+		return
+	}
 	search, err := stringParam(r, "q", searchPattern)
 	if err != nil {
 		badRequest(w, "invalid parameter", err.Error())
@@ -97,7 +111,13 @@ func (s *Server) handleObservations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	observations, err := s.source(storage.LayerSilver, "observations")
+	// Narrowed to the series asked for, where any were. The filter below is
+	// unchanged and still does the filtering; this only spares DuckDB the
+	// listing of sixteen hundred partition directories it was about to
+	// discard, which is most of what an observations query costs.
+	observations, err := s.warehouse.SourceIn(
+		storage.LayerSilver, "observations", "indicator_id", indicators,
+	)
 	if err != nil {
 		internalError(w, s.log, "resolve observations", err)
 		return
@@ -106,6 +126,11 @@ func (s *Server) handleObservations(w http.ResponseWriter, r *http.Request) {
 	// The geography join is a LEFT JOIN: an observation whose place could not be
 	// resolved is still a real figure, and dropping it here would hide the gap
 	// that Silver went to the trouble of recording.
+	//
+	// The name falls back to what the source printed for the same reason the
+	// commodity name does. Seventeen of Bank Indonesia's eighteen survey cities
+	// are not in the geography registry — it holds provinces — and selecting
+	// `g.name` alone reported eighteen cities as one unnamed place.
 	from_ := observations + " o"
 	if s.warehouse.Exists(ctx, storage.LayerSilver, "geography") {
 		geography, err := s.source(storage.LayerSilver, "geography")
@@ -118,7 +143,30 @@ func (s *Server) handleObservations(w http.ResponseWriter, r *http.Request) {
 		from_ += " LEFT JOIN (SELECT NULL AS geo_id, NULL AS name, NULL AS geo_type) g ON false"
 	}
 
-	where, args := observationFilters(indicators, geos, geoTypes, from, until, search)
+	// Same treatment for the commodity dimension. The canonical name is used
+	// where the registry knows the commodity and the name the source printed
+	// where it does not — an unresolved commodity is still the row's identity,
+	// and blanking it would leave the reader unable to tell rice from chilli.
+	if s.warehouse.Exists(ctx, storage.LayerSilver, "commodities") {
+		commodityDim, err := s.source(storage.LayerSilver, "commodities")
+		if err != nil {
+			internalError(w, s.log, "resolve commodities", err)
+			return
+		}
+		from_ += " LEFT JOIN " + commodityDim + " c ON c.commodity_id = o.commodity_id"
+	} else {
+		from_ += " LEFT JOIN (SELECT NULL AS commodity_id, NULL AS canonical_name) c ON false"
+	}
+
+	where, args := observationFilters(observationFilter{
+		Indicators:  indicators,
+		Geos:        geos,
+		GeoTypes:    geoTypes,
+		Commodities: commodities,
+		From:        from,
+		Until:       until,
+		Search:      search,
+	})
 
 	var total int64
 	countSQL := "SELECT count(*) FROM " + from_ + where
@@ -130,7 +178,9 @@ func (s *Server) handleObservations(w http.ResponseWriter, r *http.Request) {
 	querySQL := fmt.Sprintf(`
 		SELECT o.observation_id, o.indicator_id, o.period, o.period_start, o.period_end,
 		       o.temporal_resolution, CAST(o.value AS VARCHAR), o.unit, o.status,
-		       o.value_unambiguous, o.geo_id, g.name, g.geo_type, o.source_id, o.source_url
+		       o.value_unambiguous, o.geo_id, coalesce(g.name, o.geo_name_raw), g.geo_type,
+		       o.commodity_id, coalesce(c.canonical_name, o.commodity_name_raw),
+		       o.source_id, o.source_url
 		FROM %s%s ORDER BY %s LIMIT ? OFFSET ?`, from_, where, order)
 
 	rows, err := s.warehouse.DB().QueryContext(ctx, querySQL, append(args, limit, offset)...)
@@ -148,6 +198,7 @@ func (s *Server) handleObservations(w http.ResponseWriter, r *http.Request) {
 			&o.ObservationID, &o.IndicatorID, &o.Period, &start, &end,
 			&o.Resolution, &o.Value, &o.Unit, &o.Status,
 			&o.ValueUnambiguous, &o.GeoID, &o.GeoName, &o.GeoType,
+			&o.CommodityID, &o.CommodityName,
 			&o.SourceID, &o.SourceURL,
 		); err != nil {
 			internalError(w, s.log, "scan observation", err)
@@ -175,10 +226,22 @@ func (s *Server) handleObservations(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// observationFilter is what a caller asked to narrow the result to. A struct
+// rather than a positional list: the fields are all strings and string slices,
+// and at seven of them a transposed pair is a silent wrong answer rather than a
+// compile error.
+type observationFilter struct {
+	Indicators  []string
+	Geos        []string
+	GeoTypes    []string
+	Commodities []string
+	From        string
+	Until       string
+	Search      string
+}
+
 // observationFilters builds the WHERE clause with every value bound.
-func observationFilters(
-	indicators, geos, geoTypes []string, from, until, search string,
-) (string, []any) {
+func observationFilters(f observationFilter) (string, []any) {
 	var clauses []string
 	var args []any
 
@@ -195,26 +258,29 @@ func observationFilters(
 		args = append(args, values2...)
 	}
 
-	addIn("o.indicator_id", indicators)
-	addIn("o.geo_id", geos)
-	addIn("g.geo_type", geoTypes)
+	addIn("o.indicator_id", f.Indicators)
+	addIn("o.geo_id", f.Geos)
+	addIn("g.geo_type", f.GeoTypes)
+	addIn("coalesce(c.canonical_name, o.commodity_name_raw)", f.Commodities)
 	// Compared as canonical labels rather than dates: `2026-Q1` and `2026-01`
 	// both sort correctly as text, and a caller filtering on a label should not
 	// have to know which resolution the series uses.
-	if from != "" {
-		add("o.period >= ?", from)
+	if f.From != "" {
+		add("o.period >= ?", f.From)
 	}
-	if until != "" {
-		add("o.period <= ?", until)
+	if f.Until != "" {
+		add("o.period <= ?", f.Until)
 	}
 
 	// Free text searches the columns a reader would recognise a row by, rather
 	// than every column: matching a hash or a URL fragment returns rows nobody
 	// was looking for.
-	if search != "" {
-		clauses = append(clauses, "(g.name ILIKE ? OR o.geo_id ILIKE ? OR o.indicator_id ILIKE ?)")
-		pattern := "%" + search + "%"
-		args = append(args, pattern, pattern, pattern)
+	if f.Search != "" {
+		clauses = append(clauses, "(coalesce(g.name, o.geo_name_raw) ILIKE ? "+
+			"OR o.geo_id ILIKE ? OR o.indicator_id ILIKE ? "+
+			"OR coalesce(c.canonical_name, o.commodity_name_raw) ILIKE ?)")
+		pattern := "%" + f.Search + "%"
+		args = append(args, pattern, pattern, pattern, pattern)
 	}
 
 	if len(clauses) == 0 {

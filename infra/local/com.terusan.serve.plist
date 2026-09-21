@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The published stack, as a launchd user agent.
+
+  A template: `make serve-install` substitutes __PROJECT_ROOT__ and the shell's
+  PATH, then loads it. It runs scripts/serve.sh — the built portal and the API,
+  both on the loopback — which is what the tunnel's ingress rules point at.
+
+  The connector is a separate service (`sudo cloudflared service install`).
+  Two services rather than one: the tunnel should stay up while the stack is
+  rebuilt or restarted, so that a request during a restart gets a 502 from
+  Cloudflare rather than a DNS name that has stopped resolving.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.terusan.serve</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__PROJECT_ROOT__/scripts/serve.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__PROJECT_ROOT__</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- launchd starts with a minimal PATH that holds neither go, node nor
+             Homebrew, and the script's first act is to build with all three. -->
+        <key>PATH</key>
+        <string>__PATH__</string>
+        <key>PUBLIC_URL</key>
+        <string>__PUBLIC_URL__</string>
+    </dict>
+
+    <!-- At load and after a reboot: the hostname is permanent, so the thing
+         answering it should not need somebody to log in first. -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <!-- serve.sh rebuilds before it listens. Without a throttle, a build that
+         fails would be retried in a tight loop. -->
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
+
+    <key>StandardOutPath</key>
+    <string>__PROJECT_ROOT__/.cache/logs/serve.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__PROJECT_ROOT__/.cache/logs/serve.err.log</string>
+</dict>
+</plist>

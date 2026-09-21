@@ -41,6 +41,11 @@ from .seki_index import SekiTable, extract_tables
 
 INDEX_URL = "https://www.bi.go.id/id/statistik/ekonomi-keuangan/seki/Default.aspx"
 
+#: The collection the workbooks belong to. Named rather than left as
+#: `tables`, because the name becomes the dataset slug the whole lake
+#: identifies these figures by, and every source has tables.
+TABLES_DATASET = "seki-tables"
+
 #: Below this share of tables the run fails. One dead link is noise; half the
 #: site failing is an outage, and a partial month must not look like a full one.
 MIN_SUCCESS_RATIO = 0.90
@@ -127,7 +132,7 @@ class Seki(Source):
                 yield Artifact(
                     content=response.content,
                     filename=f"{table.table_id}.xls",
-                    dataset="tables",
+                    dataset=TABLES_DATASET,
                     source_url=str(response.url),
                     media_type="application/vnd.ms-excel",
                     metadata={

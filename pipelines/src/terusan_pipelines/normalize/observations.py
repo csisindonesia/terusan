@@ -18,12 +18,14 @@ import json
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import structlog
 
 from .dimensions import CommodityRegistry, GeographyRegistry
-from .periods import Period, UnparseablePeriod, parse_period
+from .periods import Period, UnparseablePeriod, parse_period, try_parse_period
+from .schema import VALUE_SCALE
 from .values import NumberFormat, ParsedValue, ValueStatus, parse_value
 
 log = structlog.get_logger(__name__)
@@ -48,11 +50,36 @@ class ColumnMapping:
     period_column: str | None = None
     value_column: str | None = None
 
+    #: Long form where the period is split across columns — a month in one and
+    #: a year in another, which is how a spreadsheet usually holds it. Joined
+    #: with a space, which reads as a period label the parser already knows.
+    period_parts: tuple[str, ...] = ()
+
     #: Wide form: each named column is a period, and its cell is the value.
     value_columns: tuple[str, ...] = ()
 
+    #: Wide form where the columns are not known in advance. Any column whose
+    #: header reads as a period becomes a value column.
+    #:
+    #: Needed because a daily table's columns *are* the dates, so they change
+    #: with every release — listing them would mean editing the mapping each
+    #: run, and getting it wrong the first time nobody did.
+    value_columns_are_periods: bool = False
+
     geo_column: str | None = None
     commodity_column: str | None = None
+
+    #: The commodity every row is about, where no column says so.
+    #:
+    #: A commodity is a row dimension in one shape and the series' identity in
+    #: another: Bank Indonesia prices thirty-one foods in one table, so the
+    #: commodity is a column, while Yahoo prices gold in a series of its own and
+    #: no column in the file names it. Without this the second kind never
+    #: reaches the dimension, and a reader looking for gold finds only
+    #: groceries. Resolved through the registry like a column value, so the
+    #: figure carries a `commodity_id` rather than a label.
+    commodity: str | None = None
+
     unit_column: str | None = None
     unit: str | None = None
 
@@ -62,17 +89,24 @@ class ColumnMapping:
     #: totals and subtotals that would double-count if kept.
     exclude_where: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
+    #: Rows are kept only where the column matches. One file often carries
+    #: several series — a survey workbook holds three confidence indices — and
+    #: each is its own indicator, so a mapping needs to say which it is reading
+    #: rather than excluding all the others by name.
+    include_where: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
     def __post_init__(self) -> None:
-        long_form = self.period_column and self.value_column
-        if not long_form and not self.value_columns:
+        long_form = (self.period_column or self.period_parts) and self.value_column
+        wide_form = self.value_columns or self.value_columns_are_periods
+        if not long_form and not wide_form:
             raise MappingError(
                 f"mapping for {self.indicator_id} declares neither a period/value pair "
-                "nor value_columns; one of the two is needed"
+                "nor value columns; one of the two is needed"
             )
 
     @property
     def is_wide(self) -> bool:
-        return bool(self.value_columns)
+        return bool(self.value_columns) or self.value_columns_are_periods
 
 
 @dataclass(slots=True)
@@ -83,6 +117,13 @@ class NormalizationResult:
     skipped_no_period: int = 0
     unresolved_geo: int = 0
     unresolved_commodity: int = 0
+    #: Rows that restated an observation already seen, identically. A source
+    #: that repeats a line, not a mapping that lost a dimension — the latter
+    #: is refused rather than counted.
+    duplicate_rows: int = 0
+    #: Rows superseded by a later retrieval of the same observation. A daily
+    #: series re-pulled before its session closed revises its last figure.
+    revised_rows: int = 0
     ambiguous_values: int = 0
     #: Kept rather than dropped: a value that failed to parse is a signal about
     #: the source, and discarding it hides the problem (program.md §42).
@@ -90,15 +131,25 @@ class NormalizationResult:
 
 
 def observation_id(
-    indicator_id: str, period: str, geo_id: str | None, commodity_id: str | None
+    indicator_id: str,
+    period: str,
+    geo: str | None,
+    commodity: str | None,
 ) -> str:
     """A stable identifier for one observation.
 
     Derived from what identifies the observation rather than assigned, so
     re-running normalization produces the same ids and a revision can be
     matched to the figure it revises.
+
+    Each dimension is passed as its resolved identifier where there is one and
+    its raw label otherwise. An unresolved dimension is still a dimension: a
+    file of daily prices for forty commodities, none of them in the registry,
+    is forty series and not one. Keying on the identifier alone would collapse
+    them onto a single id and leave forty different figures claiming to be the
+    same observation.
     """
-    key = "|".join([indicator_id, period, geo_id or "", commodity_id or ""])
+    key = "|".join([indicator_id, period, geo or "", commodity or ""])
     return f"obs_{hashlib.sha256(key.encode()).hexdigest()[:20]}"
 
 
@@ -137,6 +188,10 @@ class ObservationNormalizer:
     # ---- internals -----------------------------------------------------
 
     def _excluded(self, columns: dict[str, str]) -> bool:
+        for column, wanted in self._mapping.include_where.items():
+            value = (columns.get(column) or "").strip().lower()
+            if value not in {w.lower() for w in wanted}:
+                return True
         for column, unwanted in self._mapping.exclude_where.items():
             value = (columns.get(column) or "").strip().lower()
             if value in {u.lower() for u in unwanted}:
@@ -151,14 +206,26 @@ class ObservationNormalizer:
         commodity_id, commodity_raw = self._resolve_commodity(columns, outcome)
 
         if mapping.is_wide:
-            pairs = [(name, columns.get(name)) for name in mapping.value_columns]
+            names = (
+                # Every column whose header reads as a period. The other
+                # columns — a name, a code, a row number — do not, which is
+                # what makes this safe to do by inspection.
+                [name for name in columns if try_parse_period(name) is not None]
+                if mapping.value_columns_are_periods
+                else list(mapping.value_columns)
+            )
+            pairs = [(name, columns.get(name)) for name in names]
         else:
-            pairs = [
-                (
-                    columns.get(mapping.period_column or ""),
-                    columns.get(mapping.value_column or ""),
+            period = (
+                " ".join(
+                    part
+                    for name in mapping.period_parts
+                    if (part := (columns.get(name) or "").strip())
                 )
-            ]
+                if mapping.period_parts
+                else columns.get(mapping.period_column or "")
+            )
+            pairs = [(period or None, columns.get(mapping.value_column or ""))]
 
         for period_text, raw_value in pairs:
             if period_text is None:
@@ -198,14 +265,17 @@ class ObservationNormalizer:
         )
         return {
             "observation_id": observation_id(
-                mapping.indicator_id, period.label, geo_id, commodity_id
+                mapping.indicator_id,
+                period.label,
+                geo_id or geo_raw,
+                commodity_id or commodity_raw,
             ),
             "indicator_id": mapping.indicator_id,
             "period": period.label,
             "period_start": period.start,
             "period_end": period.end,
             "temporal_resolution": str(period.resolution),
-            "value": parsed.value,
+            "value": _fit(parsed.value),
             "unit": unit,
             "status": str(parsed.status),
             "value_unambiguous": parsed.unambiguous,
@@ -246,16 +316,39 @@ class ObservationNormalizer:
     def _resolve_commodity(
         self, columns: dict[str, str], outcome: NormalizationResult
     ) -> tuple[str | None, str | None]:
-        column = self._mapping.commodity_column
-        if not column:
-            return None, None
-        raw = (columns.get(column) or "").strip()
+        mapping = self._mapping
+        # The column wins where a mapping declares both: a table that names a
+        # commodity per row is saying something the series-wide constant
+        # cannot, and silently overriding it would collapse thirty-one foods
+        # into one.
+        raw = ""
+        if mapping.commodity_column:
+            raw = (columns.get(mapping.commodity_column) or "").strip()
+        if not raw and mapping.commodity:
+            raw = mapping.commodity.strip()
         if not raw:
             return None, None
         resolved = self._commodities.resolve(raw)
         if not resolved.resolved:
             outcome.unresolved_commodity += 1
         return resolved.identifier, raw
+
+
+def _fit(value: Decimal | None) -> Decimal | None:
+    """Round a figure to the precision Silver stores.
+
+    Arrow refuses to rescale a decimal rather than rounding it away, which is
+    the right default — but a spreadsheet that divides two numbers produces
+    twenty decimal places, and refusing the whole table over that helps nobody.
+    """
+    if value is None:
+        return None
+    try:
+        return value.quantize(Decimal(1).scaleb(-VALUE_SCALE))
+    except InvalidOperation:
+        # Too large to represent at all, which is a different problem and one
+        # the caller should see rather than have rounded away.
+        return value
 
 
 def _columns_of(record: dict[str, Any]) -> dict[str, str]:

@@ -61,6 +61,10 @@ class RunResult:
     finished_at: datetime | None = None
     landed_paths: list[str] = field(default_factory=list)
 
+    #: A dry run fetches and lands nothing. Recorded so its zero artifacts do
+    #: not read, in the run history, as an ingestion that stopped working.
+    dry_run: bool = False
+
     @property
     def duration_seconds(self) -> float | None:
         if self.started_at is None or self.finished_at is None:
@@ -109,7 +113,11 @@ class Runner:
         exception, and one bad source does not abort a batch of fifty.
         """
         context = ctx or ScrapeContext()
-        result = RunResult(source_slug=source.meta.slug, status=RunStatus.RUNNING)
+        result = RunResult(
+            source_slug=source.meta.slug,
+            status=RunStatus.RUNNING,
+            dry_run=context.dry_run,
+        )
         result.started_at = datetime.now(UTC)
         bound = log.bind(source=source.meta.slug, dry_run=context.dry_run)
         bound.info("run.started")

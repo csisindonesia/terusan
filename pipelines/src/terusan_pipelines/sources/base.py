@@ -32,6 +32,9 @@ class SourceType(StrEnum):
     NEWS = "news"
     RESEARCH_REPOSITORY = "research_repository"
     INTERNAL = "internal"
+    #: A commercial aggregator: Yahoo Finance carries the exchange's figures
+    #: without publishing on its behalf, which is not a government API.
+    MARKET_DATA = "market_data"
 
 
 class CollectionMethod(StrEnum):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Annotated
 
 import typer
@@ -20,6 +21,7 @@ from terusan_pipelines.extract import ExtractionRunner
 from terusan_pipelines.normalize import (
     ColumnMapping,
     NumberFormat,
+    SilverResult,
     SilverRunner,
     commodity_registry,
     geography_registry,
@@ -38,7 +40,14 @@ from terusan_pipelines.storage import (
     resolve_path,
     slugify,
 )
-from terusan_pipelines.warehouse import Warehouse, compact_layer
+from terusan_pipelines.warehouse import (
+    RunLog,
+    RunRecord,
+    Warehouse,
+    compact_layer,
+    read_runs,
+)
+from terusan_pipelines.warehouse.runlog import now as _now
 
 app = typer.Typer(help="Terusan research data warehouse pipelines.", no_args_is_help=True)
 storage_app = typer.Typer(help="Inspect and prepare data-lake storage.", no_args_is_help=True)
@@ -183,6 +192,30 @@ def sources_run(
     limit: Annotated[
         int | None, typer.Option("--limit", help="Stop after this many artifacts per source.")
     ] = None,
+    since: Annotated[
+        datetime | None,
+        typer.Option(
+            "--since",
+            formats=["%Y-%m-%d"],
+            help=(
+                "Only material published or updated on or after this date. What a "
+                "backfill is driven by: a source that pages by date reads it as the "
+                "far end of the span to walk, and without it takes its own default, "
+                "which is generally the last few days."
+            ),
+        ),
+    ] = None,
+    param: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--param",
+            help=(
+                "key=value passed through to the source, repeatable. For the knobs "
+                "that are one source's own — PIHPS reads `scope=national` to stay off "
+                "the 34-province walk — and so do not deserve a flag of their own."
+            ),
+        ),
+    ] = None,
     workers: Annotated[int, typer.Option("--workers", help="Concurrent sources.")] = 4,
     rate: Annotated[
         float, typer.Option("--rate", help="Default requests per second, per host.")
@@ -209,12 +242,66 @@ def sources_run(
             trigger=trigger,
         )
         results = runner.run_many(
-            [cls() for cls in selected], ScrapeContext(dry_run=dry_run, limit=limit)
+            [cls() for cls in selected],
+            ScrapeContext(
+                dry_run=dry_run,
+                limit=limit,
+                since=since.date() if since else None,
+                params=_params(param),
+            ),
         )
     summary = summarize(results)
     typer.echo(json.dumps(summary, indent=2))
     if summary["failed"]:
         raise typer.Exit(code=1)
+
+
+# ---------------------------------------------------------------------------
+# runs
+# ---------------------------------------------------------------------------
+
+
+@app.command("runs")
+def runs(
+    pipeline: Annotated[
+        str | None, typer.Option("--pipeline", help="Only this pipeline, e.g. ingest-bps.")
+    ] = None,
+    source: Annotated[str | None, typer.Option("--source", help="Only this source's runs.")] = None,
+    failed: Annotated[bool, typer.Option("--failed", help="Only runs that failed.")] = False,
+    limit: Annotated[int, typer.Option("--limit")] = 20,
+) -> None:
+    """Show recent runs from the lake's journal, newest first.
+
+    The terminal's view of what the portal shows under Logs. Distinct from
+    `catalog runs`, which reads PostgreSQL: this one answers on a machine with
+    no database, which is where an unrecorded ingestion usually hides.
+    """
+    rows = read_runs(
+        _resolver(),
+        limit=limit,
+        pipeline=pipeline,
+        source_id=source,
+        status="failed" if failed else None,
+    )
+    if not rows:
+        typer.echo("no runs recorded in the journal")
+        raise typer.Exit()
+
+    for row in rows:
+        # Shown in the reader's timezone, like the portal does. The journal
+        # stores UTC, which is right for storage and wrong for a terminal
+        # where "did it run this morning" is the question.
+        started = row["started_at"].astimezone().strftime("%Y-%m-%d %H:%M")
+        line = (
+            f"{started}  {row['status']:<9} {row['pipeline']:<32} "
+            f"in {row['records_in']:>7} out {row['records_out']:>7}  "
+            f"{row['duration_seconds']:.1f}s"
+        )
+        if row["dry_run"]:
+            line += "  [dry run]"
+        typer.echo(line)
+        if row["error_message"]:
+            typer.echo(f"    {row['error_message']}")
 
 
 # ---------------------------------------------------------------------------
@@ -433,6 +520,71 @@ def catalog_datasets(
 # ---------------------------------------------------------------------------
 
 
+def _params(specs: list[str] | None) -> dict[str, str]:
+    """Read `key=value` source parameters off the command line."""
+    params: dict[str, str] = {}
+    for spec in specs or []:
+        key, sep, value = spec.partition("=")
+        if not sep or not key.strip():
+            raise typer.BadParameter("--param needs key=value", param_hint="--param")
+        params[key.strip()] = value.strip()
+    return params
+
+
+def _where_clauses(flag: str, specs: list[str] | None) -> dict[str, tuple[str, ...]]:
+    """Read `column=value,value` filters off the command line."""
+    clauses: dict[str, tuple[str, ...]] = {}
+    for spec in specs or []:
+        column, _, values = spec.partition("=")
+        wanted = tuple(v.strip() for v in values.split(",") if v.strip())
+        if not column or not wanted:
+            # An include naming no values matches nothing, which silently
+            # empties the result rather than failing — worth refusing.
+            raise typer.BadParameter(f"{flag} needs column=value[,value]", param_hint=flag)
+        # Repeating a column would otherwise drop the earlier values silently,
+        # leaving a narrower result than was asked for.
+        clauses[column] = clauses.get(column, ()) + wanted
+    return clauses
+
+
+def _first(records: list[dict], column: str | None) -> str | None:
+    """The first non-empty value of a column across a group of Bronze rows."""
+    if not column:
+        return None
+    for record in records:
+        value = (_column(record, column) or "").strip()
+        if value:
+            return value
+    return None
+
+
+def _about(describing: dict | None, rows: list[dict], column: str | None) -> str | None:
+    """One descriptive field, from the describing row or from the figures."""
+    if not column:
+        return None
+    if describing is not None and (value := (_column(describing, column) or "").strip()):
+        return value
+    return _first(rows, column)
+
+
+def _sole_source(records: list[dict]) -> str | None:
+    """The source every record came from, or None where they disagree."""
+    sources = {record.get("source_id") for record in records}
+    return next(iter(sources)) if len(sources) == 1 else None  # type: ignore[return-value]
+
+
+def _column(record: dict, name: str) -> str | None:
+    """One column off a Bronze record, whichever shape Arrow handed it back in."""
+    columns = record.get("columns")
+    if isinstance(columns, dict):
+        value = columns.get(name)
+    elif isinstance(columns, list):
+        value = next((v for k, v in columns if k == name), None)
+    else:
+        return None
+    return None if value is None else str(value)
+
+
 @silver_app.command("normalize")
 def silver_normalize(
     indicator: Annotated[str, typer.Argument(help="Indicator id to produce.")],
@@ -443,21 +595,68 @@ def silver_normalize(
         str | None, typer.Option("--source", help="Only this source's records.")
     ] = None,
     period_column: Annotated[str | None, typer.Option("--period-column")] = None,
+    period_parts: Annotated[
+        str | None,
+        typer.Option(
+            "--period-parts",
+            help="Columns holding one period between them, e.g. 'period,year'.",
+        ),
+    ] = None,
     value_column: Annotated[str | None, typer.Option("--value-column")] = None,
     value_columns: Annotated[
         str | None,
         typer.Option("--value-columns", help="Comma-separated period columns (wide tables)."),
     ] = None,
+    period_columns: Annotated[
+        bool,
+        typer.Option(
+            "--period-columns",
+            help="Wide table whose value columns are periods, discovered per row.",
+        ),
+    ] = False,
     geo_column: Annotated[str | None, typer.Option("--geo-column")] = None,
     commodity_column: Annotated[str | None, typer.Option("--commodity-column")] = None,
+    commodity: Annotated[
+        str | None,
+        typer.Option(
+            "--commodity",
+            help=(
+                "The commodity every row is about, where no column names it — "
+                "a price series for one instrument. Resolved through "
+                "reference/commodities/commodities.csv."
+            ),
+        ),
+    ] = None,
     unit: Annotated[str | None, typer.Option("--unit")] = None,
+    unit_column: Annotated[
+        str | None,
+        typer.Option(
+            "--unit-column",
+            help=(
+                "Column holding each row's unit, where the source states it. "
+                "Yahoo quotes coffee in US cents and copper in dollars; asserting "
+                "one unit for both would be wrong by a hundred."
+            ),
+        ),
+    ] = None,
     number_format: Annotated[
         NumberFormat,
         typer.Option("--number-format", help="id | en | auto. Explicit removes ambiguity."),
     ] = NumberFormat.AUTO,
     exclude: Annotated[
-        str | None,
+        list[str] | None,
         typer.Option("--exclude", help="column=value,value — drops totals and subtotals."),
+    ] = None,
+    include: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--include",
+            help=(
+                "column=value,value — keeps only these rows, for a file holding several "
+                "series. Repeatable: a file can need narrowing on more than one column, "
+                "as DJPK's APBD export does on both the account and the fiscal month."
+            ),
+        ),
     ] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
 ) -> None:
@@ -467,21 +666,25 @@ def silver_normalize(
     is a period in a wide table and a value in a long one, and nothing in the
     data settles which (program.md §7).
     """
-    exclusions: dict[str, tuple[str, ...]] = {}
-    if exclude:
-        column, _, values = exclude.partition("=")
-        exclusions[column] = tuple(v.strip() for v in values.split(",") if v.strip())
+
+    exclusions = _where_clauses("--exclude", exclude)
+    inclusions = _where_clauses("--include", include)
 
     mapping = ColumnMapping(
         indicator_id=indicator,
         period_column=period_column,
+        period_parts=tuple(c.strip() for c in period_parts.split(",")) if period_parts else (),
         value_column=value_column,
         value_columns=tuple(c.strip() for c in value_columns.split(",")) if value_columns else (),
+        value_columns_are_periods=period_columns,
         geo_column=geo_column,
         commodity_column=commodity_column,
+        commodity=commodity,
         unit=unit,
+        unit_column=unit_column,
         number_format=number_format,
         exclude_where=exclusions,
+        include_where=inclusions,
     )
 
     runner = SilverRunner(
@@ -489,12 +692,30 @@ def silver_normalize(
         geography=geography_registry(),
         commodities=commodity_registry(),
     )
-    result = runner.normalize(mapping, dataset=dataset, source_id=source, dry_run=dry_run)
+
+    # Recorded whichever way it ends. A mapping that raises is the failure a
+    # reader most needs to see in the history — the series simply stops being
+    # refreshed, and nothing about the data itself says so.
+    started = _now()
+    with reporter() as catalog:
+        try:
+            result = runner.normalize(mapping, dataset=dataset, source_id=source, dry_run=dry_run)
+        except Exception as exc:
+            catalog.normalize_run(
+                SilverResult(indicator_id=indicator, started_at=started, finished_at=_now()),
+                source_id=source,
+                dataset=dataset,
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            raise
+        catalog.normalize_run(result, source_id=source, dataset=dataset)
+
     stats = result.stats
     typer.echo(
         json.dumps(
             {
                 "indicator": result.indicator_id,
+                "slug": result.slug,
                 "rows_in": stats.rows_in,
                 "observations": stats.observations,
                 "skipped_excluded": stats.skipped_excluded,
@@ -514,6 +735,312 @@ def silver_normalize(
             "have gone the other way. Pass --number-format id or en to settle them.",
             err=True,
         )
+
+
+@silver_app.command("normalize-each")
+def silver_normalize_each(
+    by: Annotated[
+        str,
+        typer.Option("--by", help="Bronze column whose value names the indicator to produce."),
+    ],
+    dataset: Annotated[
+        str | None, typer.Option("--dataset", help="Bronze dataset to read.")
+    ] = None,
+    source: Annotated[
+        str | None, typer.Option("--source", help="Only this source's records.")
+    ] = None,
+    period_column: Annotated[str | None, typer.Option("--period-column")] = None,
+    period_columns: Annotated[
+        bool,
+        typer.Option(
+            "--period-columns",
+            help=(
+                "Wide tables: any column whose header reads as a period is a value "
+                "column. For a table whose columns are the dates, which change with "
+                "every release — listing them would mean editing the call each run."
+            ),
+        ),
+    ] = False,
+    value_column: Annotated[str | None, typer.Option("--value-column")] = None,
+    geo_column: Annotated[str | None, typer.Option("--geo-column")] = None,
+    commodity_column: Annotated[str | None, typer.Option("--commodity-column")] = None,
+    commodity: Annotated[
+        str | None,
+        typer.Option(
+            "--commodity",
+            help=(
+                "The commodity every row is about, where no column names it — "
+                "a price series for one instrument. Resolved through "
+                "reference/commodities/commodities.csv."
+            ),
+        ),
+    ] = None,
+    unit: Annotated[str | None, typer.Option("--unit")] = None,
+    unit_column: Annotated[str | None, typer.Option("--unit-column")] = None,
+    name_column: Annotated[
+        str | None,
+        typer.Option(
+            "--name-column",
+            help=(
+                "Column holding what the series is called. Published into the "
+                "Silver indicators table, which is the only thing standing "
+                "between a reader and a table of bare identifiers."
+            ),
+        ),
+    ] = None,
+    code_column: Annotated[
+        str | None,
+        typer.Option(
+            "--code-column",
+            help="Column holding the publisher's own identifier, e.g. a FRED series id.",
+        ),
+    ] = None,
+    describe_dataset: Annotated[
+        str | None,
+        typer.Option(
+            "--describe-dataset",
+            help=(
+                "A second Bronze dataset, one row per indicator, holding what "
+                "describes it. Keeps a paragraph of notes off every observation."
+            ),
+        ),
+    ] = None,
+    description_column: Annotated[
+        str | None,
+        typer.Option("--description-column", help="Column holding what the series counts."),
+    ] = None,
+    publisher_column: Annotated[
+        str | None,
+        typer.Option(
+            "--publisher-column",
+            help=(
+                "Column naming who produced the figures — distinct from the "
+                "source we collected them from."
+            ),
+        ),
+    ] = None,
+    release_column: Annotated[
+        str | None,
+        typer.Option("--release-column", help="Column naming the release the figures arrive in."),
+    ] = None,
+    number_format: Annotated[
+        NumberFormat,
+        typer.Option("--number-format", help="id | en | auto. Explicit removes ambiguity."),
+    ] = NumberFormat.AUTO,
+    exclude: Annotated[
+        list[str] | None,
+        typer.Option("--exclude", help="column=value,value — drops totals and subtotals."),
+    ] = None,
+    include: Annotated[
+        list[str] | None,
+        typer.Option("--include", help="column=value,value — keeps only these rows."),
+    ] = None,
+    limit: Annotated[
+        int | None,
+        typer.Option("--limit", help="Stop after this many indicators, for a smoke run."),
+    ] = None,
+    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
+) -> None:
+    """Normalize one indicator per distinct value of a Bronze column.
+
+    For a dataset that holds many series under one shape. FRED's Indonesian
+    crawl is seven hundred of them, all read by the same mapping and differing
+    only in which series a row belongs to — running `normalize` once per series
+    would scan the whole of Bronze seven hundred times to say the same thing.
+    Here Bronze is read once and each series' rows are normalized from memory.
+
+    The column must already name the indicator. That is deliberate: composing
+    an identifier is the extractor's business, where the source's own titles and
+    codes are still at hand, and a flag that built one here would be a second
+    place for it to be decided differently.
+
+    With `--name-column`, the indicators table is published too, so the portal
+    has something to print beside an identifier that is only a code.
+    `--describe-dataset` says those descriptions live in a second Bronze
+    dataset, keyed by the same column — which is where a paragraph of notes
+    belongs, rather than copied onto every observation that shares it.
+    """
+    runner = SilverRunner(
+        _resolver(),
+        geography=geography_registry(),
+        commodities=commodity_registry(),
+    )
+    started = _now()
+    records = runner.read_bronze(dataset=dataset, source_id=source)
+    if not records:
+        # Recorded rather than only printed: a normalization that finds no
+        # Bronze is how an extraction that quietly stopped becomes visible.
+        RunLog(_resolver()).record(
+            RunRecord(
+                pipeline=f"normalize-each-{slugify(dataset or by)}",
+                kind="normalize",
+                status="failed",
+                started_at=started,
+                finished_at=_now(),
+                source_id=source,
+                dataset=dataset,
+                error_message="no Bronze records match; nothing to normalize",
+            )
+        )
+        typer.echo("no Bronze records match; nothing to normalize", err=True)
+        raise typer.Exit(code=1)
+
+    # One describing row per indicator, where a second dataset holds them.
+    # First wins: a re-crawl lands a second copy of a series page, and the two
+    # describe the same series.
+    describing: dict[str, dict] = {}
+    for record in (
+        runner.read_bronze(dataset=describe_dataset, source_id=source) if describe_dataset else []
+    ):
+        key = (_column(record, by) or "").strip()
+        if key:
+            describing.setdefault(key, record)
+    if describe_dataset and not describing:
+        typer.echo(
+            f"--describe-dataset {describe_dataset!r} holds no rows carrying {by!r}",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    exclusions = _where_clauses("--exclude", exclude)
+    inclusions = _where_clauses("--include", include)
+
+    groups: dict[str, list[dict]] = {}
+    for record in records:
+        indicator = (_column(record, by) or "").strip()
+        if not indicator:
+            # A row that does not say which indicator it belongs to cannot be
+            # normalized into one, and guessing would file it under a
+            # neighbour's series.
+            continue
+        groups.setdefault(indicator, []).append(record)
+
+    if not groups:
+        typer.echo(f"no Bronze record carries a {by!r} column; nothing to normalize", err=True)
+        raise typer.Exit(code=1)
+
+    observations = 0
+    failures: dict[str, str] = {}
+    normalized: list[str] = []
+    described: list[dict] = []
+
+    for indicator in sorted(groups)[: limit if limit is not None else None]:
+        rows = groups[indicator]
+        mapping = ColumnMapping(
+            indicator_id=indicator,
+            period_column=period_column,
+            value_columns_are_periods=period_columns,
+            value_column=value_column,
+            geo_column=geo_column,
+            commodity_column=commodity_column,
+            commodity=commodity,
+            unit=unit,
+            unit_column=unit_column,
+            number_format=number_format,
+            exclude_where=exclusions,
+            include_where=inclusions,
+        )
+        try:
+            if name_column:
+                # Two names under one identifier means two series were given
+                # the same one — a derived code that collided, or a `--by`
+                # column that does not identify a series. Normalizing anyway
+                # would write one series' figures over the other's.
+                names = {n for row in rows if (n := (_column(row, name_column) or "").strip())}
+                if len(names) > 1:
+                    raise ValueError(
+                        f"identifier {indicator!r} is claimed by {len(names)} different "
+                        f"series: {sorted(names)[:3]}"
+                    )
+            result = runner.normalize(mapping, records=rows, dry_run=dry_run)
+        except Exception as exc:  # noqa: BLE001 - one bad series must not stop the rest
+            failures[indicator] = f"{type(exc).__name__}: {exc}"
+            continue
+        observations += result.stats.observations
+        normalized.append(result.indicator_id)
+
+        if name_column and result.stats.observations:
+            # What describes a series comes from its describing row where there
+            # is one, and from the figures themselves otherwise.
+            about = describing.get(indicator)
+            described.append(
+                {
+                    "indicator_id": result.indicator_id,
+                    "slug": result.slug,
+                    "name": _about(about, rows, name_column) or indicator,
+                    "code": _about(about, rows, code_column),
+                    "description": _about(about, rows, description_column),
+                    "publisher": _about(about, rows, publisher_column),
+                    "release": _about(about, rows, release_column),
+                    "unit": (_first(rows, unit_column) if unit_column else None) or unit,
+                    # The resolution the figures actually landed at, not the one
+                    # the publisher declares: a series FRED calls five-yearly is
+                    # dated by the day it publishes, and the table should say
+                    # what the observations say.
+                    "frequency": result.resolution,
+                }
+            )
+
+    indicators_written = 0
+    if described and not dry_run:
+        # One source at a time, and only where the caller named the source:
+        # the table is replaced per source, and replacing it under a guessed
+        # name would delete another source's indicators.
+        source_id = source or _sole_source(records)
+        if source_id is None:
+            typer.echo(
+                "--name-column needs --source: the indicators table is replaced "
+                "one source at a time",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        indicators_written = runner.write_indicators(
+            described, source_id=source_id, dataset=dataset
+        )
+
+    # One journal row for the command rather than one per series: FRED's crawl
+    # is seven hundred indicators, and seven hundred rows saying the same thing
+    # would bury every other run in the history. Which series failed is in the
+    # row's detail.
+    RunLog(_resolver()).record(
+        RunRecord(
+            pipeline=f"normalize-each-{slugify(dataset or by)}",
+            kind="normalize",
+            status="failed" if failures else "succeeded",
+            started_at=started,
+            finished_at=_now(),
+            source_id=source,
+            dataset=dataset,
+            records_in=len(records),
+            records_out=observations,
+            dry_run=dry_run,
+            error_message=(
+                f"{len(failures)} of {len(groups)} series failed to normalize" if failures else None
+            ),
+            detail={
+                "by": by,
+                "series_seen": len(groups),
+                "series_normalized": len(normalized),
+                "indicators_named": indicators_written,
+                "failures": dict(list(failures.items())[:20]),
+            },
+        )
+    )
+
+    typer.echo(
+        json.dumps(
+            {
+                "by": by,
+                "indicators": len(normalized),
+                "observations": observations,
+                "named": indicators_written,
+                "failed": failures,
+            },
+            indent=2,
+        )
+    )
+    if failures:
+        raise typer.Exit(code=1)
 
 
 @silver_app.command("check")
@@ -594,7 +1121,77 @@ def silver_dimensions(
             {
                 "geography": runner.write_geography(geographies),
                 "commodities": runner.write_commodities(load_commodities()),
+                # The registry too: it is reference data about how the figures
+                # are collected, and the serving layer has no other way to read
+                # it — the catalog database that also holds it is optional.
+                "sources": runner.write_sources(list(_registry().metas())),
+                # And the dataset catalogue: what a collection is called, what
+                # it holds and what a reader would search it by is nowhere in
+                # the figures, so it is published rather than derived.
+                "datasets": runner.write_datasets(
+                    runner.collected_datasets(),
+                    member_tags=runner.indicator_tags_by_dataset(),
+                ),
                 "scope": "all reference members" if everything else "in use, plus Indonesia",
+            },
+            indent=2,
+        )
+    )
+
+
+@silver_app.command("documents")
+def silver_documents() -> None:
+    """Publish the document catalogue into Silver (program.md §13).
+
+    One row per artifact landed in RAW: what it is, who published it, where it
+    came from, and how many indicators and observations rest on it. Built from
+    the provenance sidecar written beside every landed file, so it describes
+    everything collected rather than only what a parser has since read.
+
+    Re-runnable, and cheap enough to run after every scrape: the table is
+    rebuilt from the sidecars each time, so a document landed this morning
+    appears without anyone remembering to add it.
+
+    Run it after `silver dimensions`, not before — the observation counts come
+    from the figures, and a lake normalized after this ran reports zeroes until
+    it runs again.
+    """
+    runner = SilverRunner(_resolver())
+    written = runner.write_documents()
+    typer.echo(json.dumps({"documents": written}, indent=2))
+
+
+@silver_app.command("recode")
+def silver_recode(
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Report what would move, and write nothing."),
+    ] = False,
+) -> None:
+    """Move a lake off slug identifiers and onto derived codes.
+
+    A migration for lakes written before series and datasets were identified
+    by a code (program.md §10). Normalization produces codes now, so a lake
+    built from scratch never needs this, and running it twice is a no-op.
+
+    It rewrites the observations — their indicator, their dataset, and the
+    observation ids derived from the first — and republishes the indicators
+    table and the dataset catalogue beside them. The figures do not change.
+    """
+    from terusan_pipelines.normalize.recode import recode
+
+    runner = SilverRunner(_resolver())
+    result = recode(runner, dry_run=dry_run)
+    typer.echo(
+        json.dumps(
+            {
+                "recoded": result.indicators_recoded,
+                "already_coded": result.indicators_already_coded,
+                "observations": result.observations_rewritten,
+                "indicators": result.indicator_rows,
+                "datasets": result.dataset_rows,
+                "dry_run": dry_run,
+                "mapping": result.mapping,
             },
             indent=2,
         )

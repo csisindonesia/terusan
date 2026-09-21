@@ -15,7 +15,24 @@ import (
 // there is no point advertising an indicator with nothing behind it, and the
 // coverage range is the first thing anyone asks about a series.
 type Indicator struct {
-	IndicatorID  string  `json:"indicator_id"`
+	IndicatorID string `json:"indicator_id"`
+	// What the series is called, from the Silver indicators table, and the
+	// publisher's own identifier for it. Both are absent until a source
+	// publishes them — most series here carry a readable identifier and need
+	// neither, but a bulk source cannot: FRED's identifiers are eight-character
+	// codes, and without the name there is nothing to print but the code.
+	Name *string `json:"name,omitempty"`
+	Code *string `json:"code,omitempty"`
+	// The readable key the series was declared under. The identifier is a
+	// derived code, so this is what a reader recognises and what a search
+	// matches; it is deliberately not what the URL carries (program.md §10).
+	Slug *string `json:"slug,omitempty"`
+	// What the series counts, in the publisher's own words, and who publishes
+	// it: FRED redistributes the Treasury's and the OECD's figures, so the
+	// source we collected from is not who produced them.
+	Description  *string `json:"description,omitempty"`
+	Publisher    *string `json:"publisher,omitempty"`
+	Release      *string `json:"release,omitempty"`
 	Resolution   string  `json:"temporal_resolution"`
 	Unit         *string `json:"unit,omitempty"`
 	Observations int64   `json:"observations"`
@@ -25,6 +42,11 @@ type Indicator struct {
 	// The sources behind the series, named rather than counted: "bps" tells a
 	// reader where a figure came from, "1" tells them nothing.
 	Sources []string `json:"sources"`
+	// The collection this series belongs to, and the words it is found by.
+	// Both come from the indicators table, where they are derived when the
+	// series is published rather than typed by anyone.
+	DatasetID *string  `json:"dataset_id,omitempty"`
+	Tags      []string `json:"tags"`
 	// When the pipeline last wrote these rows. Distinct from `period_end`,
 	// which is how recent the *figures* are — a series can cover 2025 and have
 	// been refreshed this morning, or last year.
@@ -45,7 +67,7 @@ func (s *Server) handleIndicator(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	indicators, err := s.indicatorRows(ctx, w, id)
+	indicators, err := s.indicatorRows(ctx, w, "WHERE o.indicator_id = ?", []any{id}, id)
 	if err != nil {
 		return // already reported
 	}
@@ -57,50 +79,94 @@ func (s *Server) handleIndicator(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIndicators(w http.ResponseWriter, r *http.Request) {
-	indicators, err := s.indicatorRows(r.Context(), w, "")
+	indicators, err := s.indicatorRows(r.Context(), w, "", nil)
 	if err != nil {
 		return // already reported
 	}
 	writeData(w, indicators, &Meta{Total: int64(len(indicators)), Layer: "silver"})
 }
 
-// indicatorRows summarises the series, or one of them when `only` is set.
+// indicatorRows summarises the series, narrowed by `where` against the
+// observations aliased `o` — "" for all of them.
 //
 // Derived from the observations rather than read from an indicators table:
 // there is no point advertising an indicator with nothing behind it, and the
 // coverage range is the first thing anyone asks about a series.
+//
+// The filter is a clause the caller supplies rather than an id, because the
+// interesting questions about a series are not all "which one": the document
+// endpoints ask which series a source document produced, and that is the same
+// summary over a different slice of the same table.
 func (s *Server) indicatorRows(
-	ctx context.Context, w http.ResponseWriter, only string,
+	ctx context.Context, w http.ResponseWriter, where string, args []any,
+	only ...string,
 ) ([]Indicator, error) {
 	if !s.warehouse.Exists(ctx, storage.LayerSilver, "observations") {
 		return nil, nil
 	}
 
-	observations, err := s.source(storage.LayerSilver, "observations")
+	// `only` narrows the scan to one series' own partition where the caller
+	// knows which one it wants. The WHERE still does the filtering — this
+	// spares the listing, which is what the query actually costs.
+	observations, err := s.warehouse.SourceIn(
+		storage.LayerSilver, "observations", "indicator_id", only,
+	)
 	if err != nil {
 		internalError(w, s.log, "resolve observations", err)
 		return nil, err
 	}
 
-	where, args := "", []any{}
-	if only != "" {
-		where = " WHERE indicator_id = ?"
-		args = append(args, only)
+	// A LEFT JOIN onto the names, and a table that may not be published at all:
+	// an indicator with no name row is still a real series, and dropping it
+	// here would hide figures rather than a missing label.
+	named := "(SELECT NULL AS indicator_id, NULL AS name, NULL AS code, " +
+		"NULL AS description, NULL AS publisher, NULL AS release, " +
+		"NULL AS slug, NULL AS dataset_id, NULL AS tags) n ON false"
+	if s.warehouse.Exists(ctx, storage.LayerSilver, "indicators") {
+		catalogue, err := s.source(storage.LayerSilver, "indicators")
+		if err != nil {
+			internalError(w, s.log, "resolve indicator names", err)
+			return nil, err
+		}
+		// The slug, the dataset and the tags arrived after the first lakes
+		// were written. Each is selected where the files carry it and read as
+		// null where they do not, so an older lake serves names without them
+		// rather than failing to bind and serving nothing.
+		columns := []string{"indicator_id", "name", "code", "description", "publisher", "release"}
+		for _, column := range []string{"slug", "dataset_id", "tags"} {
+			if s.warehouse.HasColumn(ctx, storage.LayerSilver, "indicators", column) {
+				columns = append(columns, column)
+			} else {
+				columns = append(columns, "NULL AS "+column)
+			}
+		}
+		named = "(SELECT " + strings.Join(columns, ", ") + " FROM " + catalogue +
+			") n ON n.indicator_id = o.indicator_id"
 	}
 
 	rows, err := s.warehouse.DB().QueryContext(ctx, fmt.Sprintf(`
-		SELECT indicator_id,
-		       any_value(temporal_resolution),
-		       any_value(unit),
+		SELECT o.indicator_id,
+		       any_value(n.name),
+		       any_value(n.code),
+		       any_value(n.slug),
+		       any_value(n.description),
+		       any_value(n.publisher),
+		       any_value(n.release),
+		       any_value(o.temporal_resolution),
+		       any_value(o.unit),
 		       count(*),
-		       count(DISTINCT geo_id),
-		       min(period),
-		       max(period),
-		       list_sort(list(DISTINCT source_id)),
-		       strftime(max(processed_at), '%%Y-%%m-%%dT%%H:%%M:%%SZ')
-		FROM %s%s
-		GROUP BY indicator_id
-		ORDER BY indicator_id`, observations, where), args...)
+		       count(DISTINCT o.geo_id),
+		       min(o.period),
+		       max(o.period),
+		       list_sort(list(DISTINCT o.source_id)),
+		       strftime(max(o.processed_at), '%%Y-%%m-%%dT%%H:%%M:%%SZ'),
+		       any_value(o.dataset_id),
+		       any_value(n.tags)
+		FROM %s o
+		LEFT JOIN %s
+		%s
+		GROUP BY o.indicator_id
+		ORDER BY o.indicator_id`, observations, named, where), args...)
 	if err != nil {
 		internalError(w, s.log, "query indicators", err)
 		return nil, err
@@ -110,15 +176,24 @@ func (s *Server) indicatorRows(
 	indicators := make([]Indicator, 0, 16)
 	for rows.Next() {
 		var i Indicator
-		var sources any
+		var sources, tags any
 		if err := rows.Scan(
-			&i.IndicatorID, &i.Resolution, &i.Unit, &i.Observations,
+			&i.IndicatorID, &i.Name, &i.Code, &i.Slug, &i.Description, &i.Publisher,
+			&i.Release, &i.Resolution, &i.Unit, &i.Observations,
 			&i.Geographies, &i.PeriodStart, &i.PeriodEnd, &sources, &i.LastUpdated,
+			&i.DatasetID, &tags,
 		); err != nil {
 			internalError(w, s.log, "scan indicator", err)
 			return nil, err
 		}
 		i.Sources = asStrings(sources)
+		// Never null in the response: a reader filtering on tags should get an
+		// empty list from a series published before tagging, not a null they
+		// have to guard every access with.
+		i.Tags = asStrings(tags)
+		if i.Tags == nil {
+			i.Tags = []string{}
+		}
 		indicators = append(indicators, i)
 	}
 	if err := rows.Err(); err != nil {
@@ -238,19 +313,24 @@ func (s *Server) handleGeography(w http.ResponseWriter, r *http.Request) {
 }
 
 // Dataset is one queryable table in the lake (program.md §19).
-type Dataset struct {
+// LakeTable is one physical table in the lake.
+//
+// An operational view, not a research one: these rows are the same in every
+// warehouse this code runs, and say nothing about what has been collected. What
+// a reader means by "dataset" is in datasets.go.
+type LakeTable struct {
 	Slug  string `json:"slug"`
 	Layer string `json:"layer"`
 	Name  string `json:"name"`
 	Rows  int64  `json:"rows"`
 }
 
-// handleDatasets lists what is actually in the lake.
+// handleStorage lists what is actually in the lake.
 //
 // Read from storage rather than from the PostgreSQL catalog, so the endpoint
 // answers on a deployment with no database — and so it cannot disagree with
 // what is on disk, which a catalog can.
-func (s *Server) handleDatasets(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleStorage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	known := []struct {
 		layer   storage.Layer
@@ -260,11 +340,17 @@ func (s *Server) handleDatasets(w http.ResponseWriter, r *http.Request) {
 		{storage.LayerSilver, "observations", "Observations"},
 		{storage.LayerSilver, "geography", "Geography dimension"},
 		{storage.LayerSilver, "commodities", "Commodity dimension"},
+		{storage.LayerSilver, "sources", "Source registry"},
+		{storage.LayerSilver, "documents", "Document catalogue"},
+		{storage.LayerSilver, "regulations", "Regulations"},
+		{storage.LayerSilver, "regulation_sections", "Regulation sections"},
+		{storage.LayerSilver, "regulation_citations", "Regulation citations"},
+		{storage.LayerSilver, "regulation_tags", "Regulation tags"},
 		{storage.LayerBronze, "records", "Bronze records"},
 		{storage.LayerBronze, "documents", "Bronze documents"},
 	}
 
-	datasets := make([]Dataset, 0, len(known))
+	tables := make([]LakeTable, 0, len(known))
 	for _, entry := range known {
 		if !s.warehouse.Exists(ctx, entry.layer, entry.dataset) {
 			continue
@@ -277,10 +363,10 @@ func (s *Server) handleDatasets(w http.ResponseWriter, r *http.Request) {
 		if err := s.warehouse.DB().QueryRowContext(
 			ctx, "SELECT count(*) FROM "+expression,
 		).Scan(&rows); err != nil {
-			s.log.Warn("datasets.count_failed", "dataset", entry.dataset, "error", err)
+			s.log.Warn("storage.count_failed", "dataset", entry.dataset, "error", err)
 			continue
 		}
-		datasets = append(datasets, Dataset{
+		tables = append(tables, LakeTable{
 			Slug:  fmt.Sprintf("%s-%s", entry.layer, entry.dataset),
 			Layer: entry.layer.String(),
 			Name:  entry.name,
@@ -288,7 +374,7 @@ func (s *Server) handleDatasets(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeData(w, datasets, &Meta{Total: int64(len(datasets))})
+	writeData(w, tables, &Meta{Total: int64(len(tables))})
 }
 
 // asStrings reads a DuckDB list column into a slice.

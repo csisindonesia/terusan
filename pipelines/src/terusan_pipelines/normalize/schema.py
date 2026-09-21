@@ -18,6 +18,13 @@ import pyarrow as pa
 #: exchange rates are quoted to four and trade volumes run to twelve digits.
 VALUE_TYPE = pa.decimal128(38, 9)
 
+#: Decimal places `VALUE_TYPE` can hold. A figure carrying more is quantized to
+#: this before it is written — Arrow refuses to rescale rather than round
+#: silently, which is the right default but means the rounding has to be
+#: deliberate. Nine places is far beyond the precision of any published
+#: statistic; the extra digits come from a spreadsheet's own arithmetic.
+VALUE_SCALE = 9
+
 #: Provenance carried from Bronze so a Silver row still answers "where did this
 #: come from" without a join (program.md §17).
 SILVER_PROVENANCE_FIELDS: list[pa.Field] = [
@@ -39,15 +46,42 @@ SILVER_PROVENANCE_FIELDS: list[pa.Field] = [
 SILVER_INDICATORS = pa.schema(
     [
         pa.field("indicator_id", pa.string(), nullable=False),
+        # The readable key the mapping was declared with — `retail_sales_index`
+        # — kept beside the derived identifier rather than instead of it. It is
+        # what a maintainer greps for and what a reader recognises, but it is
+        # not the identifier: a publisher renaming a series must not orphan the
+        # partitions and links written under the old name.
+        pa.field("slug", pa.string()),
         pa.field("name", pa.string(), nullable=False),
+        # The publisher's own identifier for the series — FRED's
+        # `NASDAQNQID55LMN`, BPS's table number. Kept because it is what a
+        # reader takes back to the source, and because our own identifier is a
+        # derived code for sources whose titles cannot be one.
+        pa.field("code", pa.string()),
         pa.field("canonical_name", pa.string()),
+        # What the series counts, in the publisher's own words. A figure whose
+        # definition is missing is a figure nobody can use safely, and FRED's
+        # notes are where that definition lives.
         pa.field("description", pa.string()),
+        # Who produced the figures, and in which release they arrive. Distinct
+        # from `source_id`, which is where we collected them: FRED redistributes
+        # the Treasury's, the OECD's and the IMF's series under its own roof,
+        # and crediting FRED for a Treasury figure would be wrong.
+        pa.field("publisher", pa.string()),
+        pa.field("release", pa.string()),
         pa.field("category", pa.string()),
         pa.field("subcategory", pa.string()),
         pa.field("unit", pa.string()),
         pa.field("frequency", pa.string()),
         pa.field("methodology", pa.string()),
         pa.field("source_id", pa.string()),
+        # The collection the series belongs to, so a dataset can list what is
+        # inside it without a scan of a quarter of a million observations.
+        pa.field("dataset_id", pa.string()),
+        # What a reader searches by. Derived from the facts already in this row
+        # — the source, the cadence, the unit — plus the topics the title reads
+        # for, so they are rebuilt with the series and cannot drift from it.
+        pa.field("tags", pa.list_(pa.string())),
         pa.field("processed_at", pa.timestamp("us", tz="UTC"), nullable=False),
     ]
 )
@@ -83,21 +117,70 @@ SILVER_OBSERVATIONS = pa.schema(
     ]
 )
 
-#: Documents: unstructured material, normalized (program.md §13).
+#: Documents: the source material behind the figures (program.md §13).
+#:
+#: One row per artifact landed in RAW, built from the provenance sidecar every
+#: landing writes. The grain is the retrieval, not the publication: two
+#: editions of one handbook are two documents, because they are two files with
+#: two content hashes and the figures point at one or the other.
+#:
+#: The provenance columns are spelled out rather than spliced in from
+#: `SILVER_PROVENANCE_FIELDS`, which carries `document_id` and `source_url` of
+#: its own — here those are the row's identity and its own address, not a
+#: pointer to somewhere else, and Arrow would otherwise hold two fields by each
+#: name and let a writer fill either one.
+#:
+#: Full text is deliberately absent. Bronze holds it for the documents an
+#: extractor has read, and copying it here would make the catalogue too heavy
+#: to list while saying nothing a reader scanning for a document needs.
 SILVER_DOCUMENTS = pa.schema(
     [
         pa.field("document_id", pa.string(), nullable=False),
-        pa.field("document_type", pa.string()),
-        pa.field("title", pa.string()),
+        # regulation, report, publication, web_page, data_file — see
+        # `normalize.documents.classify`. Never null: an unrecognised artifact
+        # is a `data_file`, which is what an unread download is.
+        pa.field("document_type", pa.string(), nullable=False),
+        pa.field("title", pa.string(), nullable=False),
         pa.field("subtitle", pa.string()),
-        pa.field("content", pa.string()),
         pa.field("language", pa.string()),
         pa.field("author", pa.string()),
+        # Who issued it, which is not who we collected it from: FRED
+        # redistributes the Treasury's releases, and crediting FRED for a
+        # Treasury document would be wrong (see SILVER_INDICATORS.publisher).
         pa.field("publisher", pa.string()),
         pa.field("published_at", pa.date32()),
-        pa.field("word_count", pa.int32()),
+        # Where the publisher put it. `raw_path` is our preserved copy; this is
+        # the address that breaks when an agency reorganises its site, which is
+        # the whole reason the copy exists (program.md §2.1).
         pa.field("source_url", pa.string()),
-        *SILVER_PROVENANCE_FIELDS,
+        pa.field("original_filename", pa.string()),
+        pa.field("media_type", pa.string()),
+        pa.field("size_bytes", pa.int64()),
+        # Known only for what an extractor has actually read, so null for most.
+        pa.field("page_count", pa.int32()),
+        pa.field("word_count", pa.int32()),
+        # What the document contributed, counted at build time. Derived from
+        # the observations' own `document_id`, so it cannot claim a link the
+        # figures do not make — and so a document that backs nothing is
+        # visibly a document that backs nothing.
+        pa.field("indicator_count", pa.int32(), nullable=False),
+        pa.field("observation_count", pa.int64(), nullable=False),
+        # The collection it was landed under, as a code matching
+        # SILVER_DATASETS.dataset_id.
+        pa.field("dataset_id", pa.string()),
+        pa.field("dataset_slug", pa.string()),
+        # The RAW partition it landed in — ("edition=2025",). Kept because it
+        # is how a publisher's own editions are told apart, and the filename
+        # often does not say.
+        pa.field("partition", pa.list_(pa.string())),
+        pa.field("source_id", pa.string(), nullable=False),
+        pa.field("content_hash", pa.string()),
+        # Relative to the lake root, so the catalogue survives the lake moving
+        # between a mount and a bucket (program.md §45.4).
+        pa.field("raw_path", pa.string()),
+        pa.field("retrieved_at", pa.timestamp("us", tz="UTC")),
+        pa.field("processed_at", pa.timestamp("us", tz="UTC"), nullable=False),
+        pa.field("pipeline_version", pa.string()),
     ]
 )
 
@@ -137,10 +220,60 @@ SILVER_COMMODITIES = pa.schema(
     ]
 )
 
+#: The source registry, published so the serving layer can read it.
+#:
+#: These are the settings a source is collected under — when it runs, how hard
+#: it may be hit, what licence its figures carry — and they live in code, in
+#: `SourceMeta`. Writing them into the lake means the read-only API can answer
+#: "how is this series kept up to date" without a connection to the catalog
+#: database, which is optional (program.md §16).
+SILVER_SOURCES = pa.schema(
+    [
+        pa.field("source_id", pa.string(), nullable=False),
+        pa.field("name", pa.string(), nullable=False),
+        pa.field("organization", pa.string()),
+        pa.field("category", pa.string(), nullable=False),
+        pa.field("source_type", pa.string(), nullable=False),
+        pa.field("collection_method", pa.string(), nullable=False),
+        pa.field("base_url", pa.string()),
+        pa.field("country", pa.string()),
+        pa.field("license", pa.string()),
+        pa.field("update_frequency", pa.string(), nullable=False),
+        #: Cron, or null for manual-only.
+        pa.field("schedule", pa.string()),
+        pa.field("active", pa.bool_(), nullable=False),
+        pa.field("max_requests_per_second", pa.float64(), nullable=False),
+        pa.field("notes", pa.string()),
+        pa.field("tags", pa.list_(pa.string())),
+    ]
+)
+
+#: Datasets: a collection as its publisher issues it (program.md §9).
+#:
+#: Published as a table of its own rather than derived from the observations,
+#: because the things a reader wants of a collection — what it is called, what
+#: it holds, what it may be used for — are nowhere in the figures. The figures
+#: carry `dataset_id` and nothing else.
+SILVER_DATASETS = pa.schema(
+    [
+        pa.field("dataset_id", pa.string(), nullable=False),
+        # The name extraction gives it, which Bronze records still carry. Kept
+        # so a Bronze record can be traced to the catalogue entry it feeds.
+        pa.field("slug", pa.string(), nullable=False),
+        pa.field("title", pa.string(), nullable=False),
+        pa.field("description", pa.string()),
+        pa.field("source_id", pa.string()),
+        pa.field("tags", pa.list_(pa.string())),
+        pa.field("processed_at", pa.timestamp("us", tz="UTC"), nullable=False),
+    ]
+)
+
 SILVER_SCHEMAS: dict[str, pa.Schema] = {
     "indicators": SILVER_INDICATORS,
     "observations": SILVER_OBSERVATIONS,
     "documents": SILVER_DOCUMENTS,
     "geography": SILVER_GEOGRAPHY,
     "commodities": SILVER_COMMODITIES,
+    "sources": SILVER_SOURCES,
+    "datasets": SILVER_DATASETS,
 }

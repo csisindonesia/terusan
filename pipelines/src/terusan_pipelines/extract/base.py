@@ -32,7 +32,63 @@ from typing import Any
 #:
 #: 2: World Bank value column renamed from `gdp_usd` to `value`, so one
 #:    extractor could serve every series.
-PARSER_VERSION = "2"
+#: 3: Workbooks and archives are read rather than skipped, and Bank Indonesia's
+#:    surveys go through their own parsers instead of the generic cell reader.
+#: 4: SpreadsheetML is read rather than skipped, and it carries the landing
+#:    metadata onto each row — DJPK's APBD export names no fiscal year inside
+#:    the file, so rows extracted before this have no period at all.
+#: 5: Trading Economics indicator pages are read as records — latest, previous,
+#:    all-time high and low, and the release calendar — instead of landing as
+#:    one blob of prose through the generic HTML reader.
+#: 6: Trading Economics pages that carry no summary block — the manufacturing
+#:    PMI among them — are read from their own row in the category table, and
+#:    the credit rating page's agencies, outlooks and dates are read at all.
+#: 7: Trading Economics rows were meant to carry the country the page is for,
+#:    without which they cannot be resolved to a place in Silver. The bump
+#:    landed; the column did not, so 7 holds nothing 6 did not.
+#: 8: Trading Economics rows carry that country, and the index lands under a
+#:    dataset a reader would recognise. Extraction is idempotent on document
+#:    and parser version, so the renamed dataset needs this bump to be read at
+#:    all: the bytes are the ones already extracted under the old name.
+#: 11: HDX's two districts called `Banjar` are told apart by their GADM code.
+#:     GADM gives Kabupaten Banjar and Kota Banjar the same name, and with the
+#:     code no longer in the label they resolved to one place — which Silver
+#:     refuses, so the source normalized to nothing at all.
+#: 10: HDX's movement distribution names its district by the name GADM gives
+#:     it, without the GADM code folded into the label. The code is already
+#:     its own column, and the geography registry now holds the regencies and
+#:     cities the names belong to — so the label resolves instead of being
+#:     preserved unresolved.
+#: 9: FRED's series downloads are read as observations — the figure, the date
+#:    restated at the series' own frequency, and the title, units and
+#:    frequency the search listing carried — instead of landing through the
+#:    generic CSV reader, which names the value column after the series and so
+#:    cannot be mapped.
+#: 12: PIHPS food prices are read by their own extractor, which carries the
+#:     province and the market type — traditional, modern, wholesale,
+#:     farmgate — onto every row. Both were query parameters rather than
+#:     columns, so rows extracted before this cannot say which place or
+#:     which market they describe, and all four markets' prices for a food
+#:     were indistinguishable from four readings of one series.
+#: 13: PIHPS rows name the indicator they belong to and what it is called,
+#:     so the four markets are split and named by `normalize-each` — which
+#:     is what publishes the indicators table. Without it the series have
+#:     figures and no name, and a reader searching for food prices finds
+#:     nothing.
+#: 14: BNPB's disaster tables are read from the CKAN datastore pages that
+#:     carry them, instead of landing through the generic JSON reader — which
+#:     sees CKAN's envelope as one object and makes a whole table of province
+#:     figures into a single Bronze row.
+#: 15: BNPB's province-by-hazard impact tables are read as one record per
+#:     province and hazard, naming the series each figure belongs to. Read as
+#:     cells they were a row of nine numbers meaning nine different things, and
+#:     neither the measure — which is in the resource's title — nor the year —
+#:     which is in the CKAN dataset, not the file — was on the row at all.
+#: 16: BNPB's Papua province codes are corrected to BPS's. BNPB numbers the
+#:     six provinces created in 2022 in an order of its own, so every one of
+#:     them resolved to a neighbour rather than failing — Papua Tengah's
+#:     casualties were filed under Papua.
+PARSER_VERSION = "16"
 
 
 class ExtractionError(Exception):
@@ -60,10 +116,19 @@ class Landed:
     content_hash: str
     source_slug: str
     source_type: str | None = None
+    #: Who issued the material, as the source registry names them. Carried
+    #: because it is the document's publisher, which is not the same fact as
+    #: where we collected it from.
+    source_organization: str | None = None
     source_url: str | None = None
     media_type: str | None = None
     original_filename: str | None = None
     dataset: str | None = None
+    #: The RAW partition the artifact landed under — ("edition=2025",). How a
+    #: publisher's own editions are told apart, which the filename often does
+    #: not say.
+    partition: tuple[str, ...] = ()
+    size_bytes: int | None = None
     published_at: date | None = None
     retrieved_at: datetime | None = None
     extra: dict[str, Any] = field(default_factory=dict)
@@ -82,10 +147,13 @@ class Landed:
             content_hash=record["content_hash"],
             source_slug=record["source"]["slug"],
             source_type=record["source"].get("source_type"),
+            source_organization=record["source"].get("organization"),
             source_url=record.get("source_url"),
             media_type=record.get("media_type"),
             original_filename=filename,
             dataset=record.get("dataset"),
+            partition=tuple(record.get("partition") or ()),
+            size_bytes=record.get("size_bytes"),
             published_at=_parse_date(record.get("published_at")),
             retrieved_at=_parse_datetime(record.get("retrieved_at")),
             extra=record.get("extra", {}),

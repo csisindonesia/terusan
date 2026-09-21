@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -23,10 +24,25 @@ from ..warehouse import (
     Warehouse,
     table_from_rows,
 )
+from .bank_indonesia import ConsumerSurveyExtractor, RetailSalesExtractor
 from .base import PARSER_VERSION, ExtractionError, Extractor, Landed
+from .bnpb import BnpbDatastoreExtractor
 from .documents import HtmlExtractor, PdfExtractor, TextExtractor
+from .fred import FredExtractor, FredSeriesPageExtractor
+from .hdx_mobility import MovementDistributionExtractor
+from .heesi import HeesiExtractor
+from .pihps import PihpsPricesExtractor
+from .seki import SekiExtractor
+from .sipri import SipriMilexExtractor
 from .tabular import CsvExtractor, JsonExtractor
+from .trading_economics import TradingEconomicsExtractor
+from .workbooks import (
+    SpreadsheetMLExtractor,
+    WorkbookExtractor,
+    ZippedWorkbookExtractor,
+)
 from .worldbank import WorldBankExtractor
+from .yahoo_finance import YahooChartExtractor
 
 if TYPE_CHECKING:
     from ..catalog import Reporter
@@ -41,6 +57,37 @@ PIPELINE_VERSION = "1"
 #: a generic one — then formats, then the catch-all text reader.
 DEFAULT_EXTRACTORS: tuple[Extractor, ...] = (
     WorldBankExtractor(),
+    YahooChartExtractor(),
+    FredExtractor(),
+    FredSeriesPageExtractor(),
+    ConsumerSurveyExtractor(),
+    RetailSalesExtractor(),
+    # Before the workbook readers: a SEKI table read cell-by-cell says nothing
+    # about which row is which series.
+    SekiExtractor(),
+    TradingEconomicsExtractor(),
+    # Before the PDF reader, which would land two hundred pages of prose
+    # where the handbook's tables were wanted.
+    HeesiExtractor(),
+    # Before the generic CSV reader, which would put every country Meta
+    # reports on into an Indonesian warehouse's Bronze.
+    MovementDistributionExtractor(),
+    # Before the workbook readers: the generic one would claim the Milex
+    # workbook and turn two hundred countries into cells keyed by column
+    # letter.
+    SipriMilexExtractor(),
+    # Before the generic JSON reader, which reads the price grid faithfully
+    # and loses the province and the market type — both of which were query
+    # parameters and appear nowhere in the returned bytes.
+    PihpsPricesExtractor(),
+    # Before the generic JSON reader, which sees CKAN's envelope as one object
+    # and turns a whole table of disaster figures into a single row.
+    BnpbDatastoreExtractor(),
+    ZippedWorkbookExtractor(),
+    WorkbookExtractor(),
+    # Before the generic readers: an `.xml` workbook would otherwise be
+    # claimed by the text extractor and land as one blob of prose.
+    SpreadsheetMLExtractor(),
     PdfExtractor(),
     HtmlExtractor(),
     JsonExtractor(),
@@ -67,6 +114,11 @@ class ExtractionResult:
     #: has written a reader for yet, which is worth seeing rather than
     #: silently dropping.
     unhandled: dict[str, str] = field(default_factory=dict)
+    #: When the walk began and ended. Recorded for the run history: an
+    #: extraction that takes ten times as long as yesterday's is a signal
+    #: before it is a failure.
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
 
 
 def walk_raw(resolver: StorageResolver, *segments: str) -> Iterator[Landed]:
@@ -126,7 +178,7 @@ class ExtractionRunner:
         run over ten thousand small documents produces two Parquet files rather
         than ten thousand (program.md §47).
         """
-        result = ExtractionResult()
+        result = ExtractionResult(started_at=datetime.now(UTC))
         raw_root = self._resolver.resolve(Layer.RAW)
         batches: dict[str, list[dict]] = {name: [] for name in TARGET_SCHEMAS}
         already = set() if reprocess else self._already_extracted()
@@ -172,6 +224,8 @@ class ExtractionRunner:
                     continue
                 written = self._write(target, rows, run_id)
                 result.files_written += written
+
+        result.finished_at = datetime.now(UTC)
 
         if not dry_run and self._reporter is not None:
             try:

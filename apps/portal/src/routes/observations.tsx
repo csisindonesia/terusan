@@ -1,15 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { IconCopy, IconDownload, IconExternalLink } from "@tabler/icons-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { z } from "zod";
 
+import { ClampedText } from "~/components/clamped-text";
 import { DataTable, StackedCell } from "~/components/data-table";
 import { PageHeader } from "~/components/page-header";
+import { StickyHeader } from "~/components/sticky-header";
 import { SearchInput } from "~/components/search-input";
 import { TableToolbar } from "~/components/table-toolbar";
 import { RowActions, copyToClipboard } from "~/components/row-actions";
+import { SaveQueryButton } from "~/components/save-query-button";
 import { TablePagination } from "~/components/table-pagination";
 import {
   ObservationFilterBar,
@@ -17,10 +20,11 @@ import {
 } from "~/components/observation-filters";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { api, type Observation } from "~/lib/api";
+import { api, type Indicator, type Observation } from "~/lib/api";
 import { downloadCsv, toCsv } from "~/lib/csv";
 import { asText, asTextList, listParam, textParam } from "~/lib/search-params";
 import { formatCount, formatDecimal, statusLabel } from "~/lib/format";
+import { indicatorLabel } from "~/lib/labels";
 
 // Filters live in the URL so a filtered view is a link someone can send —
 // which for a research portal is most of the point.
@@ -37,6 +41,11 @@ const searchSchema = z.object({
   indicator: listParam,
   geo: z.union([z.string(), z.number()]).optional(),
   geo_type: listParam,
+  // Matched on the printed name, which is the commodity's identity here: the
+  // reference registry resolves almost none of them, so the identifier is null
+  // and the name is what the API filters on. This is what the commodities page
+  // links to.
+  commodity: listParam,
   q: textParam,
   period_start: period,
   period_end: period,
@@ -50,107 +59,163 @@ export const Route = createFileRoute("/observations")({
   component: Observations,
 });
 
-const columns: ColumnDef<Observation>[] = [
-  {
-    accessorKey: "geo_name",
-    header: "Place",
-    cell: ({ row }) => (
-      <StackedCell
-        primary={row.original.geo_name ?? "—"}
-        secondary={row.original.geo_id ?? "unresolved"}
-      />
-    ),
-  },
-  {
-    accessorKey: "period",
-    header: "Period",
-    cell: ({ row }) => (
-      <StackedCell
-        primary={row.original.period}
-        secondary={row.original.temporal_resolution}
-      />
-    ),
-  },
-  {
-    accessorKey: "value",
-    header: "Value",
-    meta: { align: "right" },
-    cell: ({ row }) => {
-      const { value, unit, status, value_unambiguous } = row.original;
-      if (value === null) {
-        // A blank cell cannot tell "not collected" from "collected and zero".
-        return <span className="text-muted-foreground">{statusLabel(status)}</span>;
-      }
-      return (
-        <StackedCell
-          primary={
-            <span className="inline-flex items-center justify-end gap-1.5">
-              {!value_unambiguous ? (
-                // Read under an assumption that could have gone the other way.
-                <Badge variant="outline" title="Read under an assumption">
-                  ?
-                </Badge>
-              ) : null}
-              {formatDecimal(value)}
-            </span>
-          }
-          secondary={unit}
-        />
-      );
+// The series a row belongs to is looked up rather than carried on the row:
+// the observations endpoint returns `indicator_id` and nothing readable, and
+// the indicator list is already in the cache for the filter bar.
+function columnsFor(indicators: Map<string, Indicator>): ColumnDef<Observation>[] {
+  return [
+    {
+      // This table spans every series in the warehouse, and a place, a period
+      // and a bare number read the same whichever series they came from. Without
+      // the series named on the row, the reader cannot attribute a single figure
+      // — 3.2 is an inflation rate or a tonnage or a price, and nothing here
+      // says which.
+      accessorKey: "indicator_id",
+      header: "Indicator",
+      cell: ({ row }) => {
+        const id = row.original.indicator_id;
+        const indicator = indicators.get(id);
+        return (
+          <Link
+            to="/indicators/$indicatorId"
+            params={{ indicatorId: id }}
+            className="underline-offset-4 hover:underline"
+          >
+            <div className="leading-tight">
+              {/* Titles run long; the whole of one is a hover away. */}
+              <ClampedText className="max-w-[18rem] font-medium">
+                {indicatorLabel(indicator ?? { indicator_id: id })}
+              </ClampedText>
+              {/* The publisher's own code where there is one, and otherwise the
+                identifier the filters and the CSV are keyed on. */}
+              <div className="text-xs text-muted-foreground">
+                {indicator?.code ?? id}
+              </div>
+            </div>
+          </Link>
+        );
+      },
     },
-  },
-  {
-    accessorKey: "source_id",
-    header: "Source",
-    cell: ({ row }) =>
-      row.original.source_url ? (
-        <a
-          href={row.original.source_url}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="underline underline-offset-4 hover:text-foreground"
-        >
-          {row.original.source_id}
-        </a>
-      ) : (
-        row.original.source_id
+    {
+      // This table spans every indicator, and they do not all vary along the same
+      // dimension: a provincial figure is identified by its place, a food price
+      // by its commodity. One column headed "Place" would print an em-dash for
+      // every one of Bank Indonesia's thirty-one commodities and leave the reader
+      // with thirty-one rows they cannot tell apart.
+      id: "member",
+      header: "Place or commodity",
+      cell: ({ row }) => {
+        const { geo_name, geo_id, commodity_name, commodity_id } = row.original;
+        if (geo_name || geo_id) {
+          return (
+            <StackedCell primary={geo_name ?? "—"} secondary={geo_id ?? "unresolved"} />
+          );
+        }
+        if (commodity_name || commodity_id) {
+          return (
+            <StackedCell
+              primary={commodity_name ?? "—"}
+              secondary={commodity_id ?? "commodity"}
+            />
+          );
+        }
+        // Neither: a national series, which is a fact about the row rather than
+        // a gap in it.
+        return <span className="text-muted-foreground">National</span>;
+      },
+    },
+    {
+      accessorKey: "period",
+      header: "Period",
+      cell: ({ row }) => (
+        <StackedCell
+          primary={row.original.period}
+          secondary={row.original.temporal_resolution}
+        />
       ),
-  },
-  {
-    id: "actions",
-    header: "",
-    enableSorting: false,
-    meta: { align: "right" },
-    cell: ({ row }) => (
-      <RowActions
-        actions={[
-          {
-            label: "Copy value",
-            icon: IconCopy,
-            // The stored decimal, not the formatted one: a figure lifted out
-            // of here should be the figure, not its rendering.
-            onSelect: row.original.value
-              ? () => void copyToClipboard(row.original.value as string)
-              : undefined,
-            hint: row.original.value ? undefined : "This figure has no value",
-          },
-          {
-            label: "Open source",
-            icon: IconExternalLink,
-            onSelect: row.original.source_url
-              ? () => window.open(row.original.source_url, "_blank", "noopener")
-              : undefined,
-            hint: row.original.source_url ? undefined : "No source URL recorded",
-          },
-        ]}
-      />
-    ),
-  },
-];
+    },
+    {
+      accessorKey: "value",
+      header: "Value",
+      meta: { align: "right" },
+      cell: ({ row }) => {
+        const { value, unit, status, value_unambiguous } = row.original;
+        if (value === null) {
+          // A blank cell cannot tell "not collected" from "collected and zero".
+          return <span className="text-muted-foreground">{statusLabel(status)}</span>;
+        }
+        return (
+          <StackedCell
+            primary={
+              <span className="inline-flex items-center justify-end gap-1.5">
+                {!value_unambiguous ? (
+                  // Read under an assumption that could have gone the other way.
+                  <Badge variant="outline" title="Read under an assumption">
+                    ?
+                  </Badge>
+                ) : null}
+                {formatDecimal(value)}
+              </span>
+            }
+            secondary={unit}
+          />
+        );
+      },
+    },
+    {
+      accessorKey: "source_id",
+      header: "Source",
+      cell: ({ row }) =>
+        row.original.source_url ? (
+          <a
+            href={row.original.source_url}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="underline underline-offset-4 hover:text-foreground"
+          >
+            {row.original.source_id}
+          </a>
+        ) : (
+          row.original.source_id
+        ),
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      meta: { align: "right" },
+      cell: ({ row }) => (
+        <RowActions
+          actions={[
+            {
+              label: "Copy value",
+              icon: IconCopy,
+              // The stored decimal, not the formatted one: a figure lifted out
+              // of here should be the figure, not its rendering.
+              onSelect: row.original.value
+                ? () => void copyToClipboard(row.original.value as string)
+                : undefined,
+              hint: row.original.value ? undefined : "This figure has no value",
+            },
+            {
+              label: "Open source",
+              icon: IconExternalLink,
+              onSelect: row.original.source_url
+                ? () => window.open(row.original.source_url, "_blank", "noopener")
+                : undefined,
+              hint: row.original.source_url ? undefined : "No source URL recorded",
+            },
+          ]}
+        />
+      ),
+    },
+  ];
+}
 
 const EXPORT_COLUMNS = [
   { key: "observation_id" as const, header: "observation_id" },
   { key: "indicator_id" as const, header: "indicator_id" },
+  { key: "indicator_name" as const, header: "indicator_name" },
   { key: "period" as const, header: "period" },
   { key: "period_start" as const, header: "period_start" },
   { key: "period_end" as const, header: "period_end" },
@@ -159,6 +224,8 @@ const EXPORT_COLUMNS = [
   { key: "status" as const, header: "status" },
   { key: "geo_id" as const, header: "geo_id" },
   { key: "geo_name" as const, header: "geo_name" },
+  { key: "commodity_id" as const, header: "commodity_id" },
+  { key: "commodity_name" as const, header: "commodity_name" },
   { key: "source_id" as const, header: "source_id" },
   { key: "source_url" as const, header: "source_url" },
 ];
@@ -174,6 +241,7 @@ function Observations() {
         indicator: asTextList(search.indicator),
         geo: asText(search.geo),
         geo_type: asTextList(search.geo_type),
+        commodity: asTextList(search.commodity),
         q: asText(search.q),
         period_start: asText(search.period_start),
         period_end: asText(search.period_end),
@@ -181,6 +249,17 @@ function Observations() {
         offset: page * PAGE_SIZE,
       }),
   });
+
+  // Same query key as the filter bar's, so the two share one fetch.
+  const indicators = useQuery({
+    queryKey: ["indicators"],
+    queryFn: () => api.indicators(),
+  });
+  const indicatorsById = useMemo(
+    () => new Map((indicators.data?.data ?? []).map((i) => [i.indicator_id, i])),
+    [indicators.data],
+  );
+  const columns = useMemo(() => columnsFor(indicatorsById), [indicatorsById]);
 
   const meta = query.data?.meta;
   const total = meta?.total ?? 0;
@@ -195,9 +274,17 @@ function Observations() {
   const [selected, setSelected] = useState<Observation[]>([]);
 
   function exportRows(rows: Observation[], suffix: string) {
+    // The identifier alone leaves a downloaded file unreadable, so the series
+    // name rides along with it.
+    const named = rows.map((row) => ({
+      ...row,
+      indicator_name: indicatorLabel(
+        indicatorsById.get(row.indicator_id) ?? { indicator_id: row.indicator_id },
+      ),
+    }));
     downloadCsv(
       `observations-${suffix}.csv`,
-      toCsv(rows as unknown as Record<string, unknown>[], EXPORT_COLUMNS),
+      toCsv(named as unknown as Record<string, unknown>[], EXPORT_COLUMNS),
     );
   }
 
@@ -205,21 +292,69 @@ function Observations() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title="Observations"
-        count={total}
-        isLoading={query.isLoading}
-        description="Statistical figures with bounded periods and resolved geography."
-        actions={
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!rows.length}
-            onClick={() => exportRows(rows, `page-${page + 1}`)}
-          >
-            <IconDownload className="size-4" />
-            Export page
-          </Button>
+      {/* Title and filters ride together: ten screens into a table the
+          reader has lost sight of which filters are on, and a figure read
+          under a filter nobody can see is a figure read wrong. */}
+      <StickyHeader
+        heading={
+          <PageHeader
+            title="Observations"
+            count={total}
+            isLoading={query.isLoading}
+            description="Statistical figures with bounded periods and resolved geography."
+            actions={
+              <>
+                {/* Kept as filters rather than as rows: a question asked of
+                    this warehouse is worth re-asking next month, and the
+                    combiner on the saved-queries page can line it up against
+                    another one. */}
+                <SaveQueryButton
+                  kind="observations"
+                  path="/observations"
+                  search={{ ...search, page: undefined }}
+                  suggestion={asText(search.q)}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!rows.length}
+                  onClick={() => exportRows(rows, `page-${page + 1}`)}
+                >
+                  <IconDownload className="size-4" />
+                  Export page
+                </Button>
+              </>
+            }
+          />
+        }
+        filters={
+          <TableToolbar
+            filters={
+              <>
+                <ObservationFilterBar
+                  value={{
+                    indicator: asTextList(search.indicator),
+                    geo: asText(search.geo),
+                    geo_type: asTextList(search.geo_type),
+                    commodity: asTextList(search.commodity),
+                    period_start: asText(search.period_start),
+                    period_end: asText(search.period_end),
+                  }}
+                  onChange={setSearch}
+                  onClear={() => navigate({ search: {} })}
+                />
+              </>
+            }
+            search={
+              <SearchInput
+                value={asText(search.q)}
+                placeholder="Search places, commodities and indicators"
+                onSearch={(q) =>
+                  navigate({ search: (prev) => ({ ...prev, q, page: 0 }) })
+                }
+              />
+            }
+          />
         }
       />
 
@@ -228,31 +363,6 @@ function Observations() {
           {(query.error as Error).message}
         </p>
       ) : null}
-
-      <TableToolbar
-        filters={
-          <>
-            <ObservationFilterBar
-              value={{
-                indicator: asTextList(search.indicator),
-                geo: asText(search.geo),
-                geo_type: asTextList(search.geo_type),
-                period_start: asText(search.period_start),
-                period_end: asText(search.period_end),
-              }}
-              onChange={setSearch}
-              onClear={() => navigate({ search: {} })}
-            />
-          </>
-        }
-        search={
-          <SearchInput
-            value={asText(search.q)}
-            placeholder="Search places and indicators"
-            onSearch={(q) => navigate({ search: (prev) => ({ ...prev, q, page: 0 }) })}
-          />
-        }
-      />
 
       <DataTable
         columns={columns}

@@ -64,13 +64,142 @@ db-reset: db-rollback db-migrate ## Rebuild the schema from scratch
 dev-portal: ## Run the data portal on :3000
 	$(PNPM) --filter @terusan/portal dev
 
+.PHONY: auth-user
+auth-user: ## Create or reset a portal account (EMAIL=you@example.org). Stop the API first.
+	@test -n "$(EMAIL)" || (echo "usage: make auth-user EMAIL=you@example.org" >&2; exit 1)
+	cd services/api && go run ./cmd/authctl create -email "$(EMAIL)" -name "$(NAME)" -role "$(ROLE)"
+
+.PHONY: auth-users
+auth-users: ## List the portal accounts
+	cd services/api && go run ./cmd/authctl list
+
 .PHONY: dev-api
 dev-api: ## Run the serving layer on :8080
 	cd services/api && go run ./cmd/api
 
 .PHONY: dev
-dev: ## Run the API and the portal together (Ctrl-C stops both)
+dev: ## Run the API and the portal together, both reloading on change (Ctrl-C stops both)
 	@./scripts/dev.sh
+
+.PHONY: tunnel
+tunnel: ## Run the stack and publish it on a public https URL (needs cloudflared)
+	@./scripts/tunnel.sh
+
+.PHONY: serve
+serve: ## Build and run the stack the way the public hostname expects it
+	@./scripts/serve.sh
+
+.PHONY: tunnel-install
+tunnel-install: ## One-time: put the portal on terusan.csis.or.id via a named tunnel
+	@./scripts/tunnel-install.sh
+
+TUNNEL_AGENT       := com.terusan.tunnel
+TUNNEL_AGENT_PLIST := $(HOME)/Library/LaunchAgents/$(TUNNEL_AGENT).plist
+
+.PHONY: tunnel-service
+tunnel-service: ## Keep the Cloudflare connector running across reboots (launchd)
+	@mkdir -p $(HOME)/Library/LaunchAgents .cache/logs
+	@sed -e 's#__CLOUDFLARED__#$(shell command -v cloudflared)#g' \
+	  -e 's#__CONFIG__#$(HOME)/.cloudflared/config.yml#g' \
+	  -e 's#__PROJECT_ROOT__#$(CURDIR)#g' \
+	  infra/local/$(TUNNEL_AGENT).plist > $(TUNNEL_AGENT_PLIST)
+	@launchctl bootout gui/$$(id -u)/$(TUNNEL_AGENT) 2>/dev/null || true
+	@launchctl bootstrap gui/$$(id -u) $(TUNNEL_AGENT_PLIST)
+	@echo "installed $(TUNNEL_AGENT_PLIST)"
+
+.PHONY: tunnel-service-remove
+tunnel-service-remove: ## Stop the connector and remove its agent
+	@launchctl bootout gui/$$(id -u)/$(TUNNEL_AGENT) 2>/dev/null || true
+	@rm -f $(TUNNEL_AGENT_PLIST)
+	@echo "removed $(TUNNEL_AGENT)"
+
+SERVE_AGENT       := com.terusan.serve
+SERVE_AGENT_PLIST := $(HOME)/Library/LaunchAgents/$(SERVE_AGENT).plist
+PUBLIC_URL        ?= https://terusan.csis.or.id
+PUBLIC_HOST       := $(patsubst https://%,%,$(PUBLIC_URL))
+
+.PHONY: serve-install
+serve-install: ## Keep the published stack running across reboots (launchd)
+	@mkdir -p $(HOME)/Library/LaunchAgents .cache/logs
+	@sed -e 's#__PROJECT_ROOT__#$(CURDIR)#g' -e 's#__PATH__#$(PATH)#g' \
+	  -e 's#__PUBLIC_URL__#$(PUBLIC_URL)#g' \
+	  infra/local/$(SERVE_AGENT).plist > $(SERVE_AGENT_PLIST)
+	@launchctl bootout gui/$$(id -u)/$(SERVE_AGENT) 2>/dev/null || true
+	@launchctl bootstrap gui/$$(id -u) $(SERVE_AGENT_PLIST)
+	@echo "installed $(SERVE_AGENT_PLIST); serving $(PUBLIC_URL)"
+
+.PHONY: serve-uninstall
+serve-uninstall: ## Stop the published stack and remove its agent
+	@launchctl bootout gui/$$(id -u)/$(SERVE_AGENT) 2>/dev/null || true
+	@rm -f $(SERVE_AGENT_PLIST)
+	@echo "removed $(SERVE_AGENT)"
+
+.PHONY: serve-status
+serve-status: ## Show whether the published stack and its tunnel are up
+	@launchctl print gui/$$(id -u)/$(SERVE_AGENT) 2>/dev/null \
+	  | grep -E 'state|last exit code' || echo "$(SERVE_AGENT) is not loaded"
+	@cloudflared tunnel info terusan 2>/dev/null | head -8 || true
+	@# Resolved against 1.1.1.1 rather than this machine's resolver, which
+	@# holds the record this hostname had before the tunnel took it and would
+	@# report the old server's health as ours until that entry expires.
+	@ip=$$(dig +short @1.1.1.1 $(PUBLIC_HOST) | head -1); \
+	  curl -s -o /dev/null --resolve $(PUBLIC_HOST):443:$$ip \
+	    -w "$(PUBLIC_URL)/healthz -> %{http_code}\n" $(PUBLIC_URL)/healthz || true
+
+.PHONY: restart
+restart: ## Restart the published stack (rebuilds first; loads the agent if it is not)
+	@if launchctl print gui/$$(id -u)/$(SERVE_AGENT) >/dev/null 2>&1; then \
+	  launchctl kickstart -k gui/$$(id -u)/$(SERVE_AGENT); \
+	  echo "restarted $(SERVE_AGENT); it rebuilds before it listens"; \
+	else \
+	  $(MAKE) serve-install; \
+	fi
+
+.PHONY: start
+start: ## Start the published stack, and keep it running across reboots
+	@$(MAKE) serve-install
+
+.PHONY: stop
+stop: ## Stop the published stack, freeing :8080 and :3000 for `make dev`
+	@launchctl bootout gui/$$(id -u)/$(SERVE_AGENT) 2>/dev/null \
+	  && echo "stopped $(SERVE_AGENT)" \
+	  || echo "$(SERVE_AGENT) was not running"
+
+.PHONY: logs
+logs: ## Follow the published stack's log (Ctrl-C stops following, not the stack)
+	@mkdir -p .cache/logs && touch .cache/logs/serve.err.log .cache/logs/serve.out.log
+	@tail -n 50 -f .cache/logs/serve.err.log .cache/logs/serve.out.log
+
+# ---- scheduling -----------------------------------------------------------
+
+AGENT       := com.terusan.daily
+AGENT_PLIST := $(HOME)/Library/LaunchAgents/$(AGENT).plist
+
+.PHONY: daily
+daily: ## Run one day's ingestion now (fetch the daily sources, extract, normalize)
+	@./scripts/daily.sh
+
+.PHONY: schedule-install
+schedule-install: ## Install the launchd agent that runs `make daily` at 05:00
+	@mkdir -p $(HOME)/Library/LaunchAgents .cache/logs
+	@sed -e 's#__PROJECT_ROOT__#$(CURDIR)#g' -e 's#__PATH__#$(PATH)#g' \
+	  infra/local/$(AGENT).plist > $(AGENT_PLIST)
+	@launchctl bootout gui/$$(id -u)/$(AGENT) 2>/dev/null || true
+	@launchctl bootstrap gui/$$(id -u) $(AGENT_PLIST)
+	@echo "installed $(AGENT_PLIST); next run 05:00 local"
+
+.PHONY: schedule-uninstall
+schedule-uninstall: ## Remove the launchd agent
+	@launchctl bootout gui/$$(id -u)/$(AGENT) 2>/dev/null || true
+	@rm -f $(AGENT_PLIST)
+	@echo "removed $(AGENT)"
+
+.PHONY: schedule-status
+schedule-status: ## Show whether the agent is loaded, and when it last ran
+	@launchctl print gui/$$(id -u)/$(AGENT) 2>/dev/null \
+	  | grep -E 'state|last exit code|runs' || echo "$(AGENT) is not loaded"
+	@ls -t .cache/logs/daily-*.log 2>/dev/null | head -1 \
+	  | xargs -I{} sh -c 'echo; echo "last log: {}"; tail -5 {}' || true
 
 # ---- pipeline -------------------------------------------------------------
 
@@ -79,7 +208,15 @@ catalog-sync: ## Push the source registry into PostgreSQL
 	cd pipelines && uv run terusan catalog sync
 
 .PHONY: runs
-runs: ## Show recent pipeline runs
+runs: ## Show recent pipeline runs from the lake's journal
+	cd pipelines && uv run terusan runs
+
+.PHONY: failures
+failures: ## Show recent pipeline runs that failed
+	cd pipelines && uv run terusan runs --failed
+
+.PHONY: catalog-runs
+catalog-runs: ## Show recent pipeline runs from PostgreSQL
 	cd pipelines && uv run terusan catalog runs
 
 .PHONY: ingest
@@ -94,10 +231,29 @@ extract: ## Extract RAW into Bronze
 dimensions: ## Publish geography and commodity dimensions into Silver
 	cd pipelines && uv run terusan silver dimensions
 
+.PHONY: documents
+documents: ## Publish the catalogue of collected source material into Silver
+	cd pipelines && uv run terusan silver documents
+
 .PHONY: silver
 silver: ## Normalize Bronze into Silver (see `terusan silver normalize --help`)
 	@echo "Silver needs a column mapping per indicator; run:"
 	@echo "  cd pipelines && uv run terusan silver normalize --help"
+
+.PHONY: pihps-silver
+pihps-silver: ## Normalize PIHPS food prices into one Silver indicator per market
+	@./scripts/normalize-pihps.sh
+
+.PHONY: bnpb-silver
+bnpb-silver: ## Normalize BNPB disaster impact into one Silver indicator per measure and hazard
+	@./scripts/normalize-bnpb.sh
+
+.PHONY: pihps-backfill
+pihps-backfill: ## Fetch every PIHPS price back to March 2017 (long: ~16k requests)
+	@echo "35 places x 4 markets x a month per window since 2017-03."
+	@echo "Some 16,000 requests at 2/s. Expect a couple of hours."
+	cd pipelines && uv run terusan sources run bi-pihps-food-prices \
+	  --since 2017-03-01 --trigger backfill
 
 .PHONY: compact
 compact: ## Merge small Parquet files across the analytical layers

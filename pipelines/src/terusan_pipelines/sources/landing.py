@@ -70,9 +70,10 @@ class Landing:
     def land(self, meta: SourceMeta, artifact: Artifact) -> Landed:
         """Write an artifact and its provenance into RAW.
 
-        RAW is immutable (program.md §5), so an existing directory with the
-        same content hash is left alone. The path is content-addressed, so a
-        collision means the same bytes, not a conflict.
+        RAW is immutable (program.md §5), so an existing file with the same
+        content hash is left alone — only its provenance sidecar is brought up
+        to date, which `_refresh_sidecar` explains. The path is
+        content-addressed, so a collision means the same bytes, not a conflict.
 
         Raises `ContentMismatch` if the bytes are not the format the filename
         claims. That check belongs here rather than downstream: RAW is
@@ -86,6 +87,7 @@ class Landing:
         target = Path(directory) / _safe_filename(artifact.filename)
 
         if target.exists() and _hash_matches(target, artifact.content_hash):
+            self._refresh_sidecar(meta, artifact, target)
             return Landed(
                 path=str(target),
                 content_hash=artifact.content_hash,
@@ -110,6 +112,37 @@ class Landing:
             bytes_written=len(artifact.content),
             deduplicated=False,
         )
+
+    def _refresh_sidecar(self, meta: SourceMeta, artifact: Artifact, target: Path) -> None:
+        """Rewrite the provenance of an artifact that was already here.
+
+        Immutability protects the source bytes, not our description of them.
+        A scraper that learns to read a document's real title off the listing
+        page improves the provenance of every edition it has ever landed, and
+        without this the improvement reaches only material collected after it —
+        the archive keeps whatever was known the day it arrived, forever.
+
+        `retrieved_at` is the exception and is preserved: these are the bytes
+        that arrived the first time, and restamping them with today would
+        misdate the archive on every re-run.
+        """
+        sidecar = target.parent / METADATA_FILENAME
+        record = self._provenance(meta, artifact, target)
+
+        if sidecar.exists():
+            try:
+                previous = json.loads(sidecar.read_text())
+            except (OSError, json.JSONDecodeError):
+                previous = {}
+            first = previous.get("retrieved_at")
+            if first:
+                record["retrieved_at"] = first
+            if previous == record:
+                return
+
+        segments = self.segments_for(meta, artifact)
+        self._resolver.resolve_for_write(Layer.RAW, *segments, overwrite_immutable=True)
+        sidecar.write_text(json.dumps(record, indent=2, sort_keys=True))
 
     @staticmethod
     def _provenance(meta: SourceMeta, artifact: Artifact, target: Path) -> dict:

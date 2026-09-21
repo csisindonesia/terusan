@@ -125,6 +125,27 @@ Landing verifies magic bytes, so a binary artifact whose content does not match
 its extension is refused before it reaches RAW. That is the single commonest
 silent failure in scraping, and RAW is permanent.
 
+## When the portal will not serve the file
+
+Some portals answer their API and refuse their own downloads. BNPB's CKAN is
+one: `/api/3/action/` answers a plain client, and every `/download/...xlsx`
+comes back as a Cloudflare challenge — an HTML page carrying a `.xlsx` name,
+which landing refuses on sight and should.
+
+Where the publisher exposes the same material through an interface that does
+answer, collect that and say in the module what it costs. BNPB's tables come
+from CKAN's datastore: the agency's own parse of each workbook rather than the
+workbook, so a merged header it dropped cannot be recovered by re-reading RAW
+later. That is a real loss against §2.1 and worth stating rather than glossing.
+
+Keep attempting the original, once per run. A challenge is site-wide, so the
+first refusal answers for every file in the run — and the day the rule is
+relaxed, the published bytes start landing beside the fallback without anyone
+editing the scraper. See [bnpb/disaster.py](../pipelines/src/terusan_pipelines/sources/bnpb/disaster.py).
+
+Do not work around the challenge itself. A scraper that pretends to be a
+browser is a scraper that breaks silently and rudely.
+
 ## Fan-out sources
 
 A source fetching many files needs to distinguish one flaky endpoint from an
@@ -215,6 +236,18 @@ the command exits non-zero.
 Always `--dry-run --limit 5` first against a live source. It exercises the real
 fetch path without writing to RAW.
 
+Every run records itself, dry runs included:
+
+```bash
+terusan runs --source bps-inflation        # what it did, and when
+terusan runs --failed                      # only what broke
+```
+
+The same rows are what the portal's **Logs** tab shows on each indicator page,
+so a scraper that quietly stopped working is visible from the series it feeds
+rather than only from a terminal. See
+[running-it.md](running-it.md#run-history).
+
 ## Where things land
 
 ```text
@@ -228,6 +261,100 @@ already on disk and a re-run is a no-op. A stable archive should re-run as
 almost entirely deduplications — if it does not, something upstream is
 changing, which is worth knowing.
 
+## Credentials
+
+Most sources need none. Where one does, it goes in
+`pipelines/src/terusan_pipelines/sources/credentials.py` as a `SecretStr`
+field, read from the project's `.env` with a real environment variable taking
+precedence — the same mechanism storage configuration uses, so a scheduled run
+on a server and a command in a terminal resolve the same credential:
+
+```python
+hdx_api_token: SecretStr | None = Field(default=None, alias="HDX_API_TOKEN")
+```
+
+```python
+headers = bearer(credentials().hdx_api_token)
+with fetcher(timeout=TIMEOUT_SECONDS, headers=headers) as http:
+    ...
+```
+
+Three rules. The name goes in `.env.example` with no value, so the next person
+knows it exists. `SecretStr` rather than `str`, so a credential cannot reach a
+log line or a traceback by being interpolated into one — `.get_secret_value()`
+is a thing you write on purpose. And absent stays supported wherever the source
+can still collect something: HDX's CSVs are public, so an unset token is a run
+that logs `authenticated=False` and collects the same bytes, not a crash.
+
+httpx drops an `Authorization` header on a cross-origin redirect, which is what
+you want when a portal redirects a download to an object store: the credential
+reaches the portal, not the bucket.
+
+## Naming the collection
+
+The `dataset` a scraper yields is a slug — `consumer-survey` — and it becomes a
+RAW path segment, a Bronze column and, once normalized, a derived code in the
+catalogue. The code is what the portal and the API address it by; the slug is
+what the pipeline uses. Neither is a title, so add one to
+`pipelines/src/terusan_pipelines/datasets.py`:
+
+```python
+DatasetMeta(
+    slug="consumer-survey",
+    title="Consumer survey",
+    source="bi-consumer-survey",
+    description="Bank Indonesia's Survei Konsumen: the confidence index and its components.",
+    tags=("sentiment", "surveys", "consumption", "households", "monetary"),
+)
+```
+
+Skipping it is not fatal — an undeclared collection is described from its slug
+and still reaches the catalogue — but the portal then shows "Consumer survey"
+only because the slug happened to read well, and the topics nobody can infer
+from a slug are missing. The rest of the tags (the source, its organization,
+the cadence, the place) are derived; `tags` here is only what the title and the
+slug cannot be read for.
+
+Run `terusan silver dimensions` afterwards to publish the catalogue.
+
+## Naming the documents
+
+Each artifact also becomes a row in the document catalogue, built from the
+provenance sidecar landing writes beside it. Most of that row comes from the
+`Artifact` for free — the source, the licence, the URL, the size, the partition
+— but the title does not, and a catalogue of fifteen hundred files is only
+usable if they are named.
+
+So state it where the scraper knows it:
+
+```python
+Artifact(
+    ...,
+    metadata={
+        "title": f"Handbook of Energy and Economic Statistics of Indonesia {year}",
+        # One of program.md §13's types, plus `data_file`. Optional: a PDF is
+        # a publication and an HTML page is a web_page without being told.
+        "document_type": "publication",
+    },
+)
+```
+
+`document_type` decides whether the artifact is catalogued at all: `data_file`
+and `web_page` are left out, and everything else becomes a row on the portal's
+Documents page. A PDF is a publication and a spreadsheet is a data file without
+being told, so state it only when the source knows better — a scraped news
+article is `news` however the page was served, and saying so is what puts it in
+front of a reader.
+
+Without it the catalogue falls back to the filename, humanised — which is fine
+for `handbook-of-energy-2025.pdf` and useless for a CKAN resource served under
+its UUID. It will not dress an identifier up as a title; it names the document
+for its collection instead, which is honest and unhelpful.
+
+Improving this later is worth doing: re-landing unchanged bytes refreshes the
+sidecar without rewriting the file, so a better title reaches every edition the
+scraper has ever landed rather than only the next one.
+
 ## Checklist
 
 - [ ] `collect` fetches and yields; no parsing
@@ -238,3 +365,6 @@ changing, which is worth knowing.
 - [ ] `schedule` set if it should run unattended
 - [ ] `max_requests_per_second` reflects what the source tolerates
 - [ ] `license` recorded — it propagates to the catalog and the citation
+- [ ] the collection declared in `datasets.py`, so it has a title and topics
+- [ ] `metadata["title"]` set where the source names its documents, so the
+      document catalogue lists them by name rather than by filename

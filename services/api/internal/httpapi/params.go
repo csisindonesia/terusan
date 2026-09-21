@@ -112,6 +112,25 @@ func stringParam(r *http.Request, name string, pattern *regexp.Regexp) (string, 
 	return value, nil
 }
 
+// boolParam returns a flag, or false when absent.
+//
+// A bare `?dry_run` counts as true: that is how a person writes a flag by hand,
+// and refusing it would be pedantry rather than safety.
+func boolParam(r *http.Request, name string) (bool, error) {
+	if !r.URL.Query().Has(name) {
+		return false, nil
+	}
+	raw := r.URL.Query().Get(name)
+	if raw == "" {
+		return true, nil
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, &paramError{param: name, reason: "must be true or false"}
+	}
+	return value, nil
+}
+
 // intParam returns a bounded integer, or the fallback when absent.
 func intParam(r *http.Request, name string, fallback, min, max int) (int, error) {
 	raw := r.URL.Query().Get(name)
@@ -161,4 +180,22 @@ func sortOrder(r *http.Request, allowed map[string]string, fallback string) (str
 		return "", &paramError{param: "order", reason: "is not a sortable field"}
 	}
 	return clause, nil
+}
+
+// pathIdentifier reads a path segment and holds it to the same shape as a
+// query identifier.
+//
+// A path value reaches SQL bound, like every other input, but an unvalidated
+// one still buys a full scan for a string that could never match — and a
+// caller who fat-fingered a key deserves "that is not a key" rather than an
+// empty result.
+func pathIdentifier(r *http.Request, name string) (string, error) {
+	value := r.PathValue(name)
+	if value == "" {
+		return "", &paramError{param: name, reason: "is required"}
+	}
+	if !identifierPattern.MatchString(value) {
+		return "", &paramError{param: name, reason: "is not a valid identifier"}
+	}
+	return value, nil
 }

@@ -8,6 +8,7 @@ import { z } from "zod";
 import { DataTable, StackedCell } from "~/components/data-table";
 import { ChoiceList, FilterChip, summarise } from "~/components/filter-chip";
 import { PageHeader } from "~/components/page-header";
+import { StickyHeader } from "~/components/sticky-header";
 import { SearchInput } from "~/components/search-input";
 import { TableToolbar } from "~/components/table-toolbar";
 import { RowActions, copyToClipboard } from "~/components/row-actions";
@@ -36,6 +37,9 @@ export const Route = createFileRoute("/geography")({
 const PLACE_TYPES = [
   { value: "country", label: "Countries" },
   { value: "province", label: "Provinces" },
+  // Kabupaten and kota: the level most Indonesian figures are published at,
+  // and five hundred of the five hundred and fifty-five places here.
+  { value: "regency", label: "Regencies & cities" },
   // Aggregates are sums of the countries beside them, so a total over
   // everything counts most places more than once.
   { value: "region", label: "Aggregates" },
@@ -146,76 +150,86 @@ function GeographyPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title="Geography"
-        count={total}
-        isLoading={query.isLoading}
-        description="The places the figures refer to, plus Indonesia's provinces. Aggregates are marked as regions: they are real published figures, but every country sits inside several of them, so a total over everything counts most places more than once."
-        actions={
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!rows.length}
-            onClick={() => exportRows(rows, `page-${page + 1}`)}
-          >
-            <IconDownload className="size-4" />
-            Export page
-          </Button>
+      {/* Title and filters ride together: ten screens into a table the
+          reader has lost sight of which filters are on, and a figure read
+          under a filter nobody can see is a figure read wrong. */}
+      <StickyHeader
+        heading={
+          <PageHeader
+            title="Geography"
+            count={total}
+            isLoading={query.isLoading}
+            description="The places the figures refer to, plus Indonesia's provinces. Aggregates are marked as regions: they are real published figures, but every country sits inside several of them, so a total over everything counts most places more than once."
+            actions={
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!rows.length}
+                onClick={() => exportRows(rows, `page-${page + 1}`)}
+              >
+                <IconDownload className="size-4" />
+                Export page
+              </Button>
+            }
+          />
         }
-      />
-
-      <TableToolbar
         filters={
-          <>
-            <FilterChip
-              label="Type"
-              value={summarise(
-                chosen,
-                (v) => PLACE_TYPES.find((t) => t.value === v)?.label ?? v,
-              )}
-              onClear={() =>
-                navigate({
-                  search: (prev) => ({ ...prev, geo_type: undefined, page: 0 }),
-                })
-              }
-            >
-              <ChoiceList
-                options={PLACE_TYPES}
-                selected={chosen}
-                onToggle={(type) =>
-                  navigate({
-                    search: (prev) => ({
-                      ...prev,
-                      geo_type: toggle(chosen, type),
-                      page: 0,
-                    }),
-                  })
-                }
-                onClear={() =>
-                  navigate({
-                    search: (prev) => ({ ...prev, geo_type: undefined, page: 0 }),
-                  })
+          <TableToolbar
+            filters={
+              <>
+                <FilterChip
+                  label="Type"
+                  value={summarise(
+                    chosen,
+                    (v) => PLACE_TYPES.find((t) => t.value === v)?.label ?? v,
+                  )}
+                  onClear={() =>
+                    navigate({
+                      search: (prev) => ({ ...prev, geo_type: undefined, page: 0 }),
+                    })
+                  }
+                >
+                  <ChoiceList
+                    options={PLACE_TYPES}
+                    selected={chosen}
+                    onToggle={(type) =>
+                      navigate({
+                        search: (prev) => ({
+                          ...prev,
+                          geo_type: toggle(chosen, type),
+                          page: 0,
+                        }),
+                      })
+                    }
+                    onClear={() =>
+                      navigate({
+                        search: (prev) => ({ ...prev, geo_type: undefined, page: 0 }),
+                      })
+                    }
+                  />
+                </FilterChip>
+
+                {chosen.length || search.q ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8"
+                    onClick={() => navigate({ search: {} })}
+                  >
+                    Clear all
+                  </Button>
+                ) : null}
+              </>
+            }
+            search={
+              <SearchInput
+                value={asText(search.q)}
+                placeholder="Search places and codes"
+                onSearch={(q) =>
+                  navigate({ search: (prev) => ({ ...prev, q, page: 0 }) })
                 }
               />
-            </FilterChip>
-
-            {chosen.length || search.q ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8"
-                onClick={() => navigate({ search: {} })}
-              >
-                Clear all
-              </Button>
-            ) : null}
-          </>
-        }
-        search={
-          <SearchInput
-            value={asText(search.q)}
-            placeholder="Search places and codes"
-            onSearch={(q) => navigate({ search: (prev) => ({ ...prev, q, page: 0 }) })}
+            }
           />
         }
       />

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Daily ingestion, as a launchd user agent.
+
+  A template: `make schedule-install` substitutes __PROJECT_ROOT__ and the
+  shell's PATH, then loads it. Kept in the repository rather than written by
+  hand into ~/Library/LaunchAgents so that what runs at 05:00 is reviewable.
+
+  launchd, not cron: on a laptop that is asleep at 05:00, cron simply skips the
+  run, while launchd fires it once the machine wakes. A source that publishes
+  once a day and is read the next morning cannot afford a silently skipped day.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.terusan.daily</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__PROJECT_ROOT__/scripts/daily.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__PROJECT_ROOT__</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- launchd starts with a minimal PATH that holds neither uv nor
+             Homebrew, and the script's first act is to call uv. -->
+        <key>PATH</key>
+        <string>__PATH__</string>
+    </dict>
+
+    <!-- 05:00 local, matching the schedule the source declares in its registry
+         record. Bank Indonesia and BPS release in the morning; a run before the
+         working day means the warehouse holds yesterday's revisions before
+         anyone reads them. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>5</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- Not at load: installing the agent should not start fetching. -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>__PROJECT_ROOT__/.cache/logs/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__PROJECT_ROOT__/.cache/logs/launchd.err.log</string>
+</dict>
+</plist>

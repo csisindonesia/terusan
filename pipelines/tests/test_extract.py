@@ -13,7 +13,9 @@ from terusan_pipelines.extract import (
     JsonExtractor,
     Landed,
     PdfExtractor,
+    SpreadsheetMLExtractor,
     TextExtractor,
+    YahooChartExtractor,
     collapse,
     decode,
     walk_raw,
@@ -433,3 +435,151 @@ def test_delimiter_detection_on_empty_input():
     from terusan_pipelines.extract.tabular import detect_delimiter
 
     assert detect_delimiter("") == ","
+
+
+# ---- SpreadsheetML --------------------------------------------------------
+
+
+def _landed(path: Path, dataset: str) -> Landed:
+    return Landed(
+        path=path,
+        document_id="doc_test",
+        content_hash="0" * 64,
+        source_slug="djpk-apbd",
+        dataset=dataset,
+    )
+
+
+SPREADSHEETML = b"""<?xml version="1.0"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+          xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+  <Worksheet ss:Name="Data APBD">
+    <Table>
+      <Row><Cell><Data ss:Type="String">Akun</Data></Cell>
+           <Cell><Data ss:Type="String">Anggaran</Data></Cell></Row>
+      <Row><Cell><Data ss:Type="String">Pendapatan</Data></Cell>
+           <Cell><Data ss:Type="Number">4.79E+14</Data></Cell></Row>
+      <Row><Cell><Data ss:Type="String">PAD</Data></Cell>
+           <Cell><Data ss:Type="Number">90393257912492</Data></Cell></Row>
+    </Table>
+  </Worksheet>
+</Workbook>"""
+
+
+def test_spreadsheetml_is_read_as_rows(tmp_path):
+    """DJPK serves APBD as SpreadsheetML 2003 — XML that Excel opens, that
+    openpyxl cannot, and that the text extractor would land as one blob."""
+    path = tmp_path / "apbd-2011-01.xml"
+    path.write_bytes(SPREADSHEETML)
+    landed = _landed(path, "apbd-national")
+
+    extractor = SpreadsheetMLExtractor()
+    assert extractor.handles(landed)
+
+    rows = list(extractor.extract(landed))
+    assert len(rows) == 2
+    assert rows[0]["columns"]["Akun"] == "Pendapatan"
+    assert rows[0]["columns"]["Anggaran"] == "4.79E+14"
+    assert rows[0]["columns"]["__sheet__"] == "Data APBD"
+    assert [row["row_number"] for row in rows] == [1, 2]
+
+
+def test_an_ordinary_xml_file_is_left_to_the_text_reader(tmp_path):
+    """`.xml` is also what a sitemap and an RSS feed are called. Claiming one
+    here would yield nothing and stop the reader that could have handled it."""
+    path = tmp_path / "sitemap.xml"
+    path.write_bytes(b'<?xml version="1.0"?><urlset><url><loc>/a</loc></url></urlset>')
+
+    assert not SpreadsheetMLExtractor().handles(_landed(path, "pages"))
+
+
+def test_the_landing_metadata_rides_along(tmp_path):
+    """DJPK's export names no fiscal year inside the file: the year is what was
+    asked for. Without carrying it, the period is lost between RAW and Bronze
+    and the rows cannot be normalized at all."""
+    path = tmp_path / "apbd-2011-01.xml"
+    path.write_bytes(SPREADSHEETML)
+    landed = Landed(
+        path=path,
+        document_id="doc_test",
+        content_hash="0" * 64,
+        source_slug="djpk-apbd",
+        dataset="apbd-national",
+        extra={"tahun": 2011, "periode": 1, "scope": "national"},
+    )
+
+    rows = list(SpreadsheetMLExtractor().extract(landed))
+    assert all(row["columns"]["tahun"] == "2011" for row in rows)
+    assert rows[0]["columns"]["periode"] == "1"
+
+
+def test_the_file_wins_a_collision_with_the_metadata(tmp_path):
+    """What the document says about itself outranks what we asked for."""
+    path = tmp_path / "apbd.xml"
+    path.write_bytes(SPREADSHEETML)
+    landed = Landed(
+        path=path,
+        document_id="doc_test",
+        content_hash="0" * 64,
+        source_slug="djpk-apbd",
+        dataset="apbd-national",
+        extra={"Akun": "whatever we asked for"},
+    )
+
+    rows = list(SpreadsheetMLExtractor().extract(landed))
+    assert rows[0]["columns"]["Akun"] == "Pendapatan"
+
+
+# ---- Yahoo Finance chart ---------------------------------------------------
+
+YAHOO_CHART = b"""{"chart":{"result":[{"meta":{"symbol":"^JKSE","currency":"IDR"},
+"timestamp":[1632096000,1632182400,1632268800],
+"indicators":{"quote":[{"open":[6132.0,6049.7,null],"high":[6133.1,6068.7,null],
+"low":[6053.9,5996.4,null],"close":[6076.3,6060.7,null],
+"volume":[176619400,179600700,null]}]}}],"error":null}}"""
+
+
+def test_yahoo_columns_are_transposed_into_rows(tmp_path):
+    """Yahoo answers column-wise — one array of timestamps beside parallel
+    arrays of prices — so a generic JSON reader yields five rows of a thousand
+    numbers rather than a thousand rows of five figures."""
+    path = tmp_path / "ihsg.json"
+    path.write_bytes(YAHOO_CHART)
+    landed = Landed(
+        path=path,
+        document_id="doc_test",
+        content_hash="0" * 64,
+        source_slug="yahoo-ihsg",
+        dataset="ihsg",
+    )
+
+    extractor = YahooChartExtractor()
+    assert extractor.handles(landed)
+
+    rows = list(extractor.extract(landed))
+    assert len(rows) == 3
+    assert rows[0]["columns"]["date"] == "2021-09-20"
+    assert rows[0]["columns"]["open"] == "6132.0"
+    assert rows[0]["columns"]["close"] == "6076.3"
+    assert rows[0]["columns"]["symbol"] == "^JKSE"
+    assert rows[0]["columns"]["currency"] == "IDR"
+
+
+def test_a_closed_session_keeps_its_date_and_loses_its_prices(tmp_path):
+    """Yahoo lists a market holiday as a dated row with null prices. Dropping it
+    would close the gap and quietly shorten the year; blanking the figures says
+    the exchange was shut."""
+    path = tmp_path / "ihsg.json"
+    path.write_bytes(YAHOO_CHART)
+    landed = Landed(
+        path=path,
+        document_id="doc_test",
+        content_hash="0" * 64,
+        source_slug="yahoo-ihsg",
+        dataset="ihsg",
+    )
+
+    holiday = list(YahooChartExtractor().extract(landed))[2]
+    assert holiday["columns"]["date"] == "2021-09-22"
+    assert holiday["columns"]["open"] == ""
+    assert holiday["columns"]["close"] == ""

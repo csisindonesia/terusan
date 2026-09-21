@@ -33,6 +33,9 @@ echo "API $API"
 check "health"                  "$(status "$API/healthz")"          200
 check "readiness"               "$(status "$API/readyz")"           200
 check "datasets"                "$(status "$API/v1/datasets")"      200
+check "dataset detail"          "$(status "$API/v1/datasets/gdp")"   200
+check "sources"                 "$(status "$API/v1/sources")"       200
+check "storage"                 "$(status "$API/v1/storage")"       200
 check "observations"            "$(status "$API/v1/observations?limit=1")" 200
 check "rejects a bad parameter" "$(status "$API/v1/observations?limit=999999")" 400
 

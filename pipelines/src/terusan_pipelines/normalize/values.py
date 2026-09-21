@@ -58,6 +58,11 @@ _MARKERS: dict[str, ValueStatus] = {
     "n.a.": ValueStatus.NOT_APPLICABLE,
     "tidak ada": ValueStatus.NOT_APPLICABLE,
     "...": ValueStatus.MISSING,
+    # FRED writes a lone dot for an observation that does not exist — a
+    # holiday in a daily series, a month before the series began. Read as a
+    # number it is nothing at all, so without this it lands as unparseable and
+    # every gap in a daily series reads as a parsing failure.
+    ".": ValueStatus.MISSING,
     "…": ValueStatus.MISSING,
     "..": ValueStatus.MISSING,
     "x": ValueStatus.SUPPRESSED,
@@ -105,6 +110,11 @@ class ParsedValue:
         return float(self.value) if self.value is not None else None
 
 
+#: A number written with an exponent, matched whole. Anything less strict would
+#: claim `1.2E` or a cell that merely ends in a letter.
+_SCIENTIFIC = re.compile(r"[+-]?\d+(?:\.\d+)?[Ee][+-]?\d+")
+
+
 def parse_value(raw: str, number_format: NumberFormat = NumberFormat.AUTO) -> ParsedValue:
     """Read one published cell."""
     text = (raw or "").strip()
@@ -144,6 +154,22 @@ def parse_value(raw: str, number_format: NumberFormat = NumberFormat.AUTO) -> Pa
 
     if not stripped or stripped in {"-", "+"}:
         return ParsedValue(None, ValueStatus.MISSING, raw)
+
+    # Scientific notation, before the grouping logic sees it. DJPK's APBD
+    # export writes its largest figures this way — `4.7909816610247E+14` is
+    # 479 trillion rupiah — and the separator rules below would read that `.`
+    # as an Indonesian thousands mark and give up. Matched whole, so it can
+    # never be confused with `1.234,56`: a literal with an exponent has no
+    # grouping to disambiguate.
+    if _SCIENTIFIC.fullmatch(stripped):
+        try:
+            # `Decimal` keeps every digit; `float` would round 479 trillion.
+            exponential = Decimal(stripped)
+        except InvalidOperation:
+            return ParsedValue(None, ValueStatus.UNPARSEABLE, raw, unit=unit)
+        # The brackets were stripped above; without this a `(1.5E+3)` would come
+        # back positive.
+        return ParsedValue(-exponential if negated else exponential, status, raw, unit=unit)
 
     sign = -1 if _LEADING_SIGN.match(stripped) and stripped[0] in "-−" else 1
     stripped = _LEADING_SIGN.sub("", stripped)

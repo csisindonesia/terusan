@@ -41,6 +41,21 @@ __pycache__/
 /services/api/bin/
 /services/api/api
 
+# ---- Scratch ----
+# Downloads a person made while working — a UN report, a GeoJSON archive.
+# Source material belongs in RAW with its provenance, not loose in the repo.
+/tmp/
+
+# Earlier marks, kept on disk while the new one settled in. `logo.png` is the
+# seal the portal's assets are generated from and stays.
+/logo_old.png
+/terusan.png
+
+# Upstream scrapers arrived as GitHub source archives while they were being
+# vendored. What was kept lives unpacked under `sources/<agency>/legacy/`; the
+# archives are 27 MB of duplicate and belong in nobody's clone.
+/pipelines/src/terusan_pipelines/*.zip
+
 # ---- OS / editor ----
 .DS_Store
 .idea/

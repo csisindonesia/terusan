@@ -1,0 +1,33 @@
+# Terusan behind a named Cloudflare Tunnel.
+#
+# A template: `make tunnel-install` substitutes __TUNNEL_ID__, __HOSTNAME__ and
+# the ports, then writes the result to ~/.cloudflared/config.yml — which is
+# where `cloudflared service install` looks. Kept in the repository rather than
+# written by hand, so what is published is reviewable.
+#
+# Unlike a quick tunnel (`make tunnel`), this one has a name, a credentials
+# file and a DNS record, so it survives a restart and keeps the same hostname.
+
+tunnel: __TUNNEL_ID__
+credentials-file: __CREDENTIALS_FILE__
+
+# Requests reaching this machine, in order. The first rule that matches wins.
+#
+# One hostname serves both halves. The portal is a built Node server in
+# production and has no dev-server proxy to forward `/v1` with, so the split
+# happens here instead: Cloudflare decides by path which local port a request
+# belongs to. The browser still sees one origin, which is what keeps the
+# session cookie same-site and CORS out of the picture.
+ingress:
+  # The serving layer: the data API, and the probes a monitor calls.
+  - hostname: __HOSTNAME__
+    path: ^/(v1|healthz|readyz)(/|$)
+    service: http://127.0.0.1:__API_PORT__
+
+  # Everything else is a page: the portal renders it.
+  - hostname: __HOSTNAME__
+    service: http://127.0.0.1:__PORTAL_PORT__
+
+  # Required: the last rule must match everything. A request that arrives for
+  # some other hostname is not ours to answer.
+  - service: http_status:404
