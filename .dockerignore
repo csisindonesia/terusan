@@ -1,0 +1,43 @@
+# What never belongs in a build context.
+#
+# The lake first: it is measured in gigabytes and is mounted at runtime, so
+# sending it to the daemon would be a slow way to build the same image.
+.data/
+.cache/
+tmp/
+
+.git/
+.gitignore
+
+node_modules/
+**/node_modules/
+**/dist/
+**/.output/
+**/.vinxi/
+**/.nitro/
+**/.tanstack/
+*.tsbuildinfo
+
+__pycache__/
+**/__pycache__/
+**/*.py[cod]
+.venv/
+**/.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+**/*.egg-info/
+
+services/api/bin/
+services/api/api
+
+# Secrets are passed in at run time, never baked into a layer.
+.env
+.env.*
+!.env.example
+
+*.parquet
+*.duckdb
+*.duckdb.wal
+
+.DS_Store

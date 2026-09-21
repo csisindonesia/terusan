@@ -18,6 +18,10 @@ subdirectory you run from.
 make storage-info     # where the lake actually is
 ```
 
+Running it in containers instead, with the lake on a shared folder, is
+[docs/docker.md](docker.md). Everything below is the same either way — the
+commands are the same CLI.
+
 ## The pipeline
 
 Four stages, each independently runnable:

@@ -335,6 +335,15 @@ uv run terusan warehouse tables                      # what is in the lake
 uv run terusan warehouse query "SELECT * FROM silver_observations LIMIT 5"
 ```
 
+Or in containers, with the lake on a shared folder — see
+[docs/docker.md](docs/docker.md):
+
+```bash
+cp .env.example .env        # set DATA_DIR to the share
+make docker-up              # the portal on :3000, the API on :8080
+make docker-ingest CMD="sources run bnpb-disaster"
+```
+
 ## Setup
 
 Requires Go 1.26+, Python 3.12+ with [uv](https://docs.astral.sh/uv/),

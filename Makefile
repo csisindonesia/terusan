@@ -170,6 +170,40 @@ logs: ## Follow the published stack's log (Ctrl-C stops following, not the stack
 	@mkdir -p .cache/logs && touch .cache/logs/serve.err.log .cache/logs/serve.out.log
 	@tail -n 50 -f .cache/logs/serve.err.log .cache/logs/serve.out.log
 
+# ---- docker ---------------------------------------------------------------
+
+COMPOSE := docker compose
+
+.PHONY: docker-build
+docker-build: ## Build the API, portal and pipelines images
+	$(COMPOSE) --profile tools build
+
+.PHONY: docker-up
+docker-up: ## Run the portal and the API against the shared lake (DATA_DIR in .env)
+	$(COMPOSE) up -d --build
+	@echo "portal http://localhost:$${PORTAL_PORT:-3000}  api http://localhost:$${API_PORT:-8080}"
+
+.PHONY: docker-down
+docker-down: ## Stop the stack, keeping the lake and the database volume
+	$(COMPOSE) --profile tools --profile catalog --profile cache down
+
+.PHONY: docker-logs
+docker-logs: ## Follow the containers' logs
+	$(COMPOSE) logs -f
+
+.PHONY: docker-ps
+docker-ps: ## Show what is running, and whether the API is healthy
+	$(COMPOSE) ps
+
+.PHONY: docker-ingest
+docker-ingest: ## Run one pipeline command in a container, e.g. make docker-ingest CMD="sources run bnpb-disaster"
+	@test -n "$(CMD)" || (echo 'usage: make docker-ingest CMD="sources list"' >&2; exit 1)
+	$(COMPOSE) run --rm pipelines $(CMD)
+
+.PHONY: docker-shell
+docker-shell: ## A shell in the pipelines image, for poking at the lake
+	$(COMPOSE) run --rm --entrypoint /bin/bash pipelines
+
 # ---- scheduling -----------------------------------------------------------
 
 AGENT       := com.terusan.daily

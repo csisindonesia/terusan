@@ -1,0 +1,137 @@
+# The stack, containerised.
+#
+# Three images and one shared lake. The lake is a bind mount rather than a
+# Docker volume, because it is the point: the figures are meant to be readable
+# by people and other machines on the share, not sealed inside Docker's own
+# storage.
+#
+#   DATA_DIR   the host path holding raw/ bronze/ silver/ gold/ — the Shared
+#              Folder. Set it in .env; there is no default worth guessing, so
+#              compose refuses to start without one.
+#
+# Scratch is deliberately *not* on the share. DuckDB spills there, and a spill
+# over SMB or NFS is slow enough that the storage layer refuses the arrangement
+# outright (program.md §45.6) — so each service keeps its own local volume.
+#
+#   docker compose up -d --build            the portal and the API
+#   docker compose run --rm pipelines ...    one pipeline command
+#   docker compose --profile catalog up -d   with PostgreSQL
+#   docker compose --profile cache up -d     with Redis
+
+name: terusan
+
+x-lake: &lake
+  # `nas` rather than `local`: the root is a mount that something else owns,
+  # which is the case this backend exists to describe, and it refuses a
+  # relative path so an automount cannot silently become the working directory.
+  STORAGE_PROFILE: shared-dev
+  STORAGE_BACKEND: nas
+  STORAGE_ROOT: /data
+  SCRATCH_DIR: /scratch
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    environment:
+      <<: *lake
+      API_HOST: 0.0.0.0
+      API_PORT: 8080
+      # The portal's origin, as the browser sees it. A wildcard is never right
+      # here: the session cookie rides on these requests.
+      API_CORS_ORIGINS: ${API_CORS_ORIGINS:-http://localhost:3000}
+      # The shelf and the accounts. On the share so a collection survives the
+      # container, which is the only copy of anything a person wrote here.
+      APP_DB: /data/app.duckdb
+      DUCKDB_MEMORY_LIMIT: ${DUCKDB_MEMORY_LIMIT:-4GB}
+      DATABASE_URL: ${DATABASE_URL:-}
+      REDIS_URL: ${REDIS_URL:-}
+      # Left off: this endpoint starts scrapers on the host and has nothing in
+      # front of it (program.md §34). Run them through the pipelines service.
+      PIPELINES_ENABLED: "false"
+    volumes:
+      # Long syntax, because the short one splits on `:` and a Windows host
+      # writes this path as `D:/Shared Folder/terusan`.
+      - type: bind
+        source: ${DATA_DIR:?set DATA_DIR in .env to the shared folder, e.g. /Volumes/Shared Folder/terusan}
+        target: /data
+      - api-scratch:/scratch
+    ports:
+      - "${API_PORT:-8080}:8080"
+    restart: unless-stopped
+
+  portal:
+    build:
+      context: .
+      dockerfile: apps/portal/Dockerfile
+      args:
+        # Baked into the client bundle at build time, so changing it means
+        # rebuilding rather than restarting. It is the URL the *browser* uses,
+        # which is not `http://api:8080` — that name resolves only in here.
+        VITE_API_URL: ${PUBLIC_API_URL:-http://localhost:8080}
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+    ports:
+      - "${PORTAL_PORT:-3000}:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  pipelines:
+    build:
+      context: .
+      dockerfile: pipelines/Dockerfile
+    environment:
+      <<: *lake
+      # The guard the shared profile puts in front of writes, lifted for the
+      # one service whose job is writing. It stays off everywhere else, so an
+      # API container cannot quietly mutate the lake.
+      STORAGE_ALLOW_SHARED_WRITES: "true"
+      DATABASE_URL: ${DATABASE_URL:-}
+    volumes:
+      - type: bind
+        source: ${DATA_DIR:?set DATA_DIR in .env to the shared folder, e.g. /Volumes/Shared Folder/terusan}
+        target: /data
+      - pipelines-scratch:/scratch
+    # Run a command at a time rather than left running: this is a CLI.
+    profiles: ["tools"]
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-terusan}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-terusan}
+      POSTGRES_DB: ${POSTGRES_DB:-terusan}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Read by the init script beside it, which applies only the up
+      # migrations — see infra/docker/postgres-init.sh for why that cannot
+      # just be mounted into the init directory.
+      - ./db/migrations:/migrations:ro
+      - ./infra/docker/postgres-init.sh:/docker-entrypoint-initdb.d/10-migrate.sh:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-terusan}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles: ["catalog"]
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    profiles: ["cache"]
+    restart: unless-stopped
+
+volumes:
+  # Named rather than bind-mounted: scratch is rebuildable by definition, and
+  # keeping it off the share is the whole point.
+  api-scratch:
+  pipelines-scratch:
+  postgres-data:
