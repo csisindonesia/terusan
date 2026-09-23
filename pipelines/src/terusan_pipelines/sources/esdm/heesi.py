@@ -1,5 +1,16 @@
 """HEESI — the Handbook of Energy and Economic Statistics of Indonesia.
 
+Collected as a document, and only as a document. The handbook is the reference
+an Indonesian energy question is answered from — production, consumption,
+generation, reserves, trade and prices, by fuel and by sector — and holding the
+PDF is worth doing on its own: it is searchable, citable, and served back with
+its licence beside it.
+
+No figures are published from it. Reading its fourteen tables needs a parser
+written for them one table at a time; that parser was begun, was not finished,
+and has been taken out rather than left half-working. So this lands editions
+and stops there, and nothing downstream claims to have read them.
+
 ESDM publishes one PDF a year, and every edition back to 2010 is linked from
 the same publication page. So the editions are read off that page rather than
 taken from a tracker spreadsheet somebody maintains by hand: the page is what
@@ -118,7 +129,10 @@ class Handbook(Source):
         # check monthly rather than guessing a release date. Landing is
         # content-addressed, so an unchanged month writes nothing.
         schedule="0 4 5 * *",
-        notes="One PDF per edition. Tables are read by the HEESI extractor.",
+        notes=(
+            "One PDF per edition, collected as a document. Nothing reads its "
+            "tables: no figures are published from this source."
+        ),
     )
 
     def collect(self, ctx: ScrapeContext) -> Iterator[Artifact]:

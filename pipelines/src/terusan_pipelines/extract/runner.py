@@ -30,12 +30,13 @@ from .bnpb import BnpbDatastoreExtractor
 from .documents import HtmlExtractor, PdfExtractor, TextExtractor
 from .fred import FredExtractor, FredSeriesPageExtractor
 from .hdx_mobility import MovementDistributionExtractor
-from .heesi import HeesiExtractor
 from .pihps import PihpsPricesExtractor
 from .seki import SekiExtractor
 from .sipri import SipriMilexExtractor
 from .tabular import CsvExtractor, JsonExtractor
 from .trading_economics import TradingEconomicsExtractor
+from .ucdp import UcdpOrganizedViolenceExtractor
+from .vews import VewsCollectiveViolenceExtractor
 from .workbooks import (
     SpreadsheetMLExtractor,
     WorkbookExtractor,
@@ -66,9 +67,6 @@ DEFAULT_EXTRACTORS: tuple[Extractor, ...] = (
     # about which row is which series.
     SekiExtractor(),
     TradingEconomicsExtractor(),
-    # Before the PDF reader, which would land two hundred pages of prose
-    # where the handbook's tables were wanted.
-    HeesiExtractor(),
     # Before the generic CSV reader, which would put every country Meta
     # reports on into an Indonesian warehouse's Bronze.
     MovementDistributionExtractor(),
@@ -83,6 +81,14 @@ DEFAULT_EXTRACTORS: tuple[Extractor, ...] = (
     # Before the generic JSON reader, which sees CKAN's envelope as one object
     # and turns a whole table of disaster figures into a single row.
     BnpbDatastoreExtractor(),
+    # Before the archive reader, which claims every `.zip` and finds no
+    # workbook in this one — and before the generic CSV reader, which would
+    # land every country UCDP reports on as rows of seventy unnamed numbers.
+    UcdpOrganizedViolenceExtractor(),
+    # Before the workbook and CSV readers, which would land a year of
+    # incidents as cells keyed by column letter — and before anything
+    # counts them, which is the only place the counting can happen.
+    VewsCollectiveViolenceExtractor(),
     ZippedWorkbookExtractor(),
     WorkbookExtractor(),
     # Before the generic readers: an `.xml` workbook would otherwise be

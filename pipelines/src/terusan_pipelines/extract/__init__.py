@@ -11,7 +11,6 @@ from .bnpb import BnpbDatastoreExtractor
 from .documents import HtmlExtractor, PdfExtractor, TextExtractor, collapse
 from .fred import FredExtractor, FredSeriesPageExtractor
 from .hdx_mobility import MovementDistributionExtractor
-from .heesi import HeesiExtractor
 from .pihps import PihpsPricesExtractor
 from .runner import (
     DEFAULT_EXTRACTORS,
@@ -24,6 +23,8 @@ from .seki import SekiExtractor
 from .sipri import SipriMilexExtractor
 from .tabular import CsvExtractor, JsonExtractor, decode
 from .trading_economics import TradingEconomicsExtractor
+from .ucdp import UcdpOrganizedViolenceExtractor
+from .vews import VewsCollectiveViolenceExtractor
 from .workbooks import (
     SpreadsheetMLExtractor,
     WorkbookExtractor,
@@ -45,7 +46,6 @@ __all__ = [
     "Extractor",
     "FredExtractor",
     "FredSeriesPageExtractor",
-    "HeesiExtractor",
     "HtmlExtractor",
     "JsonExtractor",
     "Landed",
@@ -57,6 +57,8 @@ __all__ = [
     "RetailSalesExtractor",
     "TextExtractor",
     "TradingEconomicsExtractor",
+    "UcdpOrganizedViolenceExtractor",
+    "VewsCollectiveViolenceExtractor",
     "SpreadsheetMLExtractor",
     "WorkbookExtractor",
     "WorldBankExtractor",
