@@ -112,7 +112,9 @@ function Help() {
           there is no room for a column beside a column of prose on a phone. */}
       <aside className="lg:sticky lg:top-[calc(var(--app-header)+1.5rem)] lg:self-start">
         <nav aria-label="On this page" className="space-y-1">
-          <div className="px-2 pb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+          {/* Bold and in the text colour: muted grey at the links' own weight
+              reads as the first item of the list rather than its heading. */}
+          <div className="px-2 pt-1 pb-3 text-xs font-bold tracking-widest text-foreground uppercase">
             On this page
           </div>
           {SECTIONS.map((section) => (
@@ -318,6 +320,16 @@ function Help() {
                 tell us
               </Link>
               .
+            </Entry>
+            <Entry term="How is any of this actually built?">
+              This page is about using the portal. How the warehouse is run, how a
+              source is added, and which Indonesian portals are collected — and which
+              cannot be, and what it would take — are in the{" "}
+              <Link to="/docs" className="underline underline-offset-4">
+                documentation
+              </Link>
+              , which is the repository's own, published with the version you are
+              looking at.
             </Entry>
           </dl>
         </Section>

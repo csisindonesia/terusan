@@ -108,7 +108,7 @@ export const NAVIGATION: NavSection[] = [
         items: [
           { label: "API", icon: IconApi },
           { label: "Downloads", icon: IconDownload },
-          { label: "Documentation", icon: IconBook },
+          { label: "Documentation", icon: IconBook, to: "/docs" },
         ],
       },
     ],

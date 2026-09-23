@@ -21,6 +21,10 @@ COPY apps/portal/package.json apps/portal/
 RUN --mount=type=cache,target=/pnpm/store pnpm install --frozen-lockfile
 
 COPY apps/portal apps/portal
+# The documentation the portal serves at /docs. It is read at build time — see
+# apps/portal/src/lib/docs.ts — so the image needs the directory, not just the
+# app.
+COPY docs docs
 
 # Read at build time and baked into the client bundle, which is why it is an
 # argument here rather than an environment variable in compose: by the time the

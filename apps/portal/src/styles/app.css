@@ -150,3 +150,78 @@
     @apply font-sans;
     }
 }
+/*
+ * Rendered markdown, for the documentation pages.
+ *
+ * Written here rather than as classes on the elements because the HTML comes
+ * from the repository's own `.md` files and nothing in the render path can
+ * reach inside it. The type scale and the rules are the ones the rest of the
+ * portal already uses; what is new is only that a `<p>` inside `.markdown` has
+ * to be told, since Tailwind's preflight resets it.
+ */
+@layer components {
+  .markdown {
+    @apply text-[0.9375rem] leading-relaxed text-foreground;
+  }
+  .markdown > * + * {
+    @apply mt-4;
+  }
+  .markdown h2 {
+    @apply font-heading mt-10 scroll-mt-[calc(var(--app-header)+1.5rem)] border-b pb-2 text-xl font-semibold tracking-tight;
+  }
+  .markdown h3 {
+    @apply font-heading mt-8 scroll-mt-[calc(var(--app-header)+1.5rem)] text-base font-semibold tracking-tight;
+  }
+  .markdown h4 {
+    @apply mt-6 font-medium;
+  }
+  .markdown p,
+  .markdown li {
+    @apply text-muted-foreground;
+  }
+  .markdown strong {
+    @apply font-medium text-foreground;
+  }
+  .markdown a {
+    @apply text-foreground underline underline-offset-4 decoration-muted-foreground/50 hover:decoration-foreground;
+  }
+  .markdown ul {
+    @apply list-disc space-y-1.5 pl-5;
+  }
+  .markdown ol {
+    @apply list-decimal space-y-1.5 pl-5;
+  }
+  .markdown li > ul,
+  .markdown li > ol {
+    @apply mt-1.5;
+  }
+  .markdown code {
+    @apply rounded bg-muted px-1.5 py-0.5 font-mono text-[0.85em] text-foreground;
+  }
+  .markdown pre {
+    @apply overflow-x-auto rounded-lg border bg-muted/50 p-4 text-[0.8125rem] leading-relaxed;
+  }
+  .markdown pre code {
+    @apply bg-transparent p-0 text-inherit;
+  }
+  .markdown blockquote {
+    @apply border-l-2 pl-4 text-muted-foreground italic;
+  }
+  .markdown hr {
+    @apply my-8;
+  }
+  /* Tables carry real content in these documents — the source coverage page is
+     fifty rows of it — so they scroll rather than squeeze on a phone. */
+  .markdown table {
+    @apply block w-full overflow-x-auto border-separate border-spacing-0 text-sm;
+  }
+  .markdown th {
+    @apply border-b bg-muted/40 px-3 py-2 text-left font-medium whitespace-nowrap;
+  }
+  .markdown td {
+    @apply border-b px-3 py-2 align-top text-muted-foreground;
+  }
+  .markdown td code {
+    @apply whitespace-nowrap;
+  }
+}
