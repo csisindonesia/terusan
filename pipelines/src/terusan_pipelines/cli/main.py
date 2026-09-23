@@ -531,6 +531,16 @@ def _params(specs: list[str] | None) -> dict[str, str]:
     return params
 
 
+def _readable(key: str) -> str:
+    """A series key as a name, for the common case where it already reads.
+
+    `provincial_poverty_rate` becomes `Provincial poverty rate`. It is not a
+    title somebody wrote, and it is far better than the identifier — which is
+    what the portal shows otherwise.
+    """
+    return key.replace("_", " ").replace("-", " ").strip().capitalize()
+
+
 def _where_clauses(flag: str, specs: list[str] | None) -> dict[str, tuple[str, ...]]:
     """Read `column=value,value` filters off the command line."""
     clauses: dict[str, tuple[str, ...]] = {}
@@ -615,6 +625,17 @@ def silver_normalize(
         ),
     ] = False,
     geo_column: Annotated[str | None, typer.Option("--geo-column")] = None,
+    geo: Annotated[
+        str | None,
+        typer.Option(
+            "--geo",
+            help=(
+                "The place every row is about, where no column names it — a "
+                "national series whose publisher had no reason to repeat the "
+                "country. Resolved through reference/geography."
+            ),
+        ),
+    ] = None,
     commodity_column: Annotated[str | None, typer.Option("--commodity-column")] = None,
     commodity: Annotated[
         str | None,
@@ -658,6 +679,18 @@ def silver_normalize(
             ),
         ),
     ] = None,
+    name: Annotated[
+        str | None,
+        typer.Option(
+            "--name",
+            help=(
+                "What to call this series in the catalogue. Without it the name "
+                "is derived from the indicator key, which reads passably — "
+                "`gold_price_high` becomes `Gold price high` — and badly for a "
+                "key that was never meant to be read."
+            ),
+        ),
+    ] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
 ) -> None:
     """Normalize a Bronze dataset into Silver observations.
@@ -665,6 +698,10 @@ def silver_normalize(
     The column mapping is declared rather than inferred: a column headed `2026`
     is a period in a wide table and a value in a long one, and nothing in the
     data settles which (program.md §7).
+
+    The series is named in the catalogue as well as normalized. A figure whose
+    name lives nowhere is a figure the portal lists by its identifier, which is
+    eight characters of base32.
     """
 
     exclusions = _where_clauses("--exclude", exclude)
@@ -678,6 +715,7 @@ def silver_normalize(
         value_columns=tuple(c.strip() for c in value_columns.split(",")) if value_columns else (),
         value_columns_are_periods=period_columns,
         geo_column=geo_column,
+        geo=geo,
         commodity_column=commodity_column,
         commodity=commodity,
         unit=unit,
@@ -709,6 +747,23 @@ def silver_normalize(
             )
             raise
         catalog.normalize_run(result, source_id=source, dataset=dataset)
+
+    # Merged rather than replacing: a wide table is normalized one column at a
+    # time, and replacing would leave only the last column named.
+    if source and not dry_run and result.stats.observations:
+        runner.write_indicators(
+            [
+                {
+                    "indicator_id": result.indicator_id,
+                    "slug": result.slug,
+                    "name": name or _readable(result.slug or indicator),
+                    "unit": unit,
+                }
+            ],
+            source_id=source,
+            dataset=dataset,
+            merge=True,
+        )
 
     stats = result.stats
     typer.echo(
@@ -763,6 +818,17 @@ def silver_normalize_each(
     ] = False,
     value_column: Annotated[str | None, typer.Option("--value-column")] = None,
     geo_column: Annotated[str | None, typer.Option("--geo-column")] = None,
+    geo: Annotated[
+        str | None,
+        typer.Option(
+            "--geo",
+            help=(
+                "The place every row is about, where no column names it — a "
+                "national series whose publisher had no reason to repeat the "
+                "country. Resolved through reference/geography."
+            ),
+        ),
+    ] = None,
     commodity_column: Annotated[str | None, typer.Option("--commodity-column")] = None,
     commodity: Annotated[
         str | None,
@@ -932,6 +998,7 @@ def silver_normalize_each(
             value_columns_are_periods=period_columns,
             value_column=value_column,
             geo_column=geo_column,
+            geo=geo,
             commodity_column=commodity_column,
             commodity=commodity,
             unit=unit,

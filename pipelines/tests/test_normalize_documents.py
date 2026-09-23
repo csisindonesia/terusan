@@ -22,13 +22,15 @@ from terusan_pipelines.normalize.documents import (
 
 def landed(**kw) -> Landed:
     defaults = {
-        "path": Path("/lake/raw/statistics/esdm-heesi/handbook/edition=2025/doc_abc/file.pdf"),
+        "path": Path(
+            "/lake/raw/statistics/esdm-publications/esdm-statistics/year=2025/doc_abc/file.pdf"
+        ),
         "document_id": "doc_abc",
         "content_hash": "abc123",
-        "source_slug": "esdm-heesi",
+        "source_slug": "esdm-publications",
         "media_type": "application/pdf",
         "original_filename": "file.pdf",
-        "dataset": "handbook",
+        "dataset": "esdm-statistics",
     }
     defaults.update(kw)
     return Landed(**defaults)
@@ -138,7 +140,7 @@ def test_a_filename_is_humanised_as_a_last_resort():
 def test_an_identifier_filename_is_not_dressed_up_as_a_title():
     """A UUID humanised looks like a title, so a reader stops asking what it is."""
     document = landed(original_filename="7321e08f-eac6-46e8-ba43-98b2bcce04b4.csv", extra={})
-    assert title_for(document) == "Handbook (doc_abc)"
+    assert title_for(document) == "ESDM Statistics (doc_abc)"
 
 
 def test_a_document_with_nothing_to_go_on_is_still_named():
@@ -199,15 +201,18 @@ def test_the_row_carries_what_the_sidecar_recorded():
     assert built["size_bytes"] == 10_962_809
     assert built["indicator_count"] == 666
     assert built["observation_count"] == 1595
-    assert built["dataset_slug"] == "handbook"
-    assert built["dataset_id"] == dataset_code("handbook")
+    assert built["dataset_slug"] == "esdm-statistics"
+    assert built["dataset_id"] == dataset_code("esdm-statistics")
     assert built["partition"] == ["edition=2025"]
 
 
 def test_the_raw_path_is_stored_relative_to_the_lake_root():
     """So the catalogue survives the lake moving between a mount and a bucket."""
     built = row(landed(), raw_root="/lake/raw", pipeline_version="1")
-    assert built["raw_path"] == "statistics/esdm-heesi/handbook/edition=2025/doc_abc/file.pdf"
+    assert (
+        built["raw_path"]
+        == "statistics/esdm-publications/esdm-statistics/year=2025/doc_abc/file.pdf"
+    )
 
 
 def test_a_document_nothing_was_read_from_counts_zero_rather_than_null():
@@ -218,9 +223,9 @@ def test_a_document_nothing_was_read_from_counts_zero_rather_than_null():
 
 
 def test_a_pdfs_page_count_is_read_from_the_file(tmp_path):
-    """Extraction never sees HEESI's PDF — the handbook's own table parser
-    claims it — so the count comes from the file or the catalogue shows a dash
-    beside a viewer displaying 172 pages."""
+    """A source-specific extractor can claim a PDF before the generic reader
+    ever opens it, so the count comes from the file — otherwise the catalogue
+    shows a dash beside a viewer displaying 172 pages."""
     pypdf = pytest.importorskip("pypdf")
 
     pdf = tmp_path / "three-pages.pdf"

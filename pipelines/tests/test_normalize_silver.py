@@ -951,8 +951,8 @@ def test_one_snapshot_holding_two_figures_is_still_refused():
 def _land(resolver: StorageResolver, content: bytes, filename: str, media_type: str) -> None:
     Landing(resolver).land(
         SourceMeta(
-            slug="esdm-heesi",
-            name="HEESI",
+            slug="esdm-publications",
+            name="ESDM — Publikasi statistik",
             category=Category.STATISTICS,
             source_type=SourceType.OFFICIAL_PORTAL,
             collection_method=CollectionMethod.BULK_DOWNLOAD,
@@ -993,3 +993,43 @@ def test_a_lake_of_only_data_files_catalogues_no_documents(resolver):
     publish spreadsheets and have nothing anyone would sit down and read."""
     _land(resolver, b"year,value\n2026,1.2\n", "series.csv", "text/csv")
     assert SilverRunner(resolver).write_documents() == 0
+
+
+def test_a_constant_geo_fills_in_a_country_no_column_names(geography):
+    """UN Comtrade's public endpoint returns `reporterISO` empty on every row
+    of a table that is entirely about Indonesia. Without a constant, those
+    figures reach Silver with no geography at all."""
+    mapping = ColumnMapping(
+        indicator_id="COMTRADE_EXPORTS_TOTAL",
+        period_column="period",
+        value_column="value",
+        geo="IDN",
+    )
+
+    rows = list(
+        ObservationNormalizer(mapping, geography=geography).normalize(
+            [_record(period="2024", value="264000000000")]
+        )
+    )
+
+    assert [row["geo_id"] for row in rows] == ["ID"]
+
+
+def test_a_geo_column_wins_over_the_constant(geography):
+    """A table naming a place per row says something the series-wide constant
+    cannot, and overriding it would collapse the provinces into one country."""
+    mapping = ColumnMapping(
+        indicator_id="PROVINCIAL_POPULATION",
+        period_column="tahun",
+        value_column="nilai",
+        geo_column="provinsi",
+        geo="IDN",
+    )
+
+    rows = list(
+        ObservationNormalizer(mapping, geography=geography).normalize(
+            [_record(tahun="2025", nilai="1", provinsi="Jabar")]
+        )
+    )
+
+    assert [row["geo_id"] for row in rows] == ["ID-JB"]

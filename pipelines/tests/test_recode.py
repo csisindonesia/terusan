@@ -9,7 +9,7 @@ import pytest
 
 from terusan_pipelines.identifiers import dataset_code, indicator_code
 from terusan_pipelines.normalize.observations import observation_id
-from terusan_pipelines.normalize.recode import recode
+from terusan_pipelines.normalize.recode import _is_slug, recode
 from terusan_pipelines.normalize.runner import SilverRunner
 from terusan_pipelines.normalize.schema import SILVER_OBSERVATIONS
 from terusan_pipelines.storage import Layer, StorageConfig, StorageResolver
@@ -175,15 +175,19 @@ def test_the_indicators_table_is_rebuilt_with_slugs_and_tags(
     assert len(tags) >= 5
 
 
-def test_a_dataset_named_like_a_code_is_still_recoded(resolver: StorageResolver) -> None:
-    """ESDM's `handbook` is eight lowercase letters and is not a code."""
-    _lake(resolver, [_row("heesi_coal_production", "handbook", "2024")])
-    runner = SilverRunner(resolver)
+def test_a_dataset_named_like_a_code_is_read_as_a_name() -> None:
+    """A slug can look exactly like a derived code — `handbook` is eight
+    lowercase letters — so the registry decides, not the string's shape.
 
-    recode(runner)
-
-    _, dataset_id, _, _ = _observations(resolver)[0]
-    assert dataset_id == dataset_code("handbook")
+    Tested at the rule rather than through a migration, because whether any
+    declared dataset happens to be code-shaped changes as sources come and go,
+    and the rule has to hold either way.
+    """
+    assert _is_slug("handbook", {"handbook"})
+    # Nothing declares it: it is taken for the code it looks like.
+    assert not _is_slug("handbook", set())
+    # Not code-shaped, so a name whatever the registry says.
+    assert _is_slug("apbd-national", set())
 
 
 def test_the_catalogue_covers_every_dataset_the_figures_point_at(

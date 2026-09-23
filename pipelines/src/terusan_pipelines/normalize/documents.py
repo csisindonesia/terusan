@@ -122,7 +122,6 @@ _ACRONYMS = {
     "bps",
     "esdm",
     "gdp",
-    "heesi",
     "ihk",
     "ihsg",
     "imf",
@@ -265,7 +264,8 @@ def page_count(path: Path) -> int | None:
     """How many pages a PDF has, read from the file itself.
 
     Asked here rather than left to extraction, because extraction is about what
-    a document *says* and most documents here are never read: HEESI's PDF is
+    a document *says* and most documents here are never read: a ministry's
+    #: statistical handbook is
     claimed by the handbook's own table parser, so the generic PDF reader never
     sees it and the page count would be blank beside a viewer showing 172.
 

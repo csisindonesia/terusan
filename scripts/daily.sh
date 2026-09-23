@@ -98,10 +98,6 @@ trap 'rmdir "$lock" 2>/dev/null || true' EXIT
         echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: $source ==="
         ./scripts/normalize-seki.sh
         ;;
-      esdm-heesi)
-        echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: $source ==="
-        ./scripts/normalize-heesi.sh
-        ;;
       hdx-meta-movement-distribution)
         echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: $source ==="
         ./scripts/normalize-mobility.sh
@@ -109,6 +105,18 @@ trap 'rmdir "$lock" 2>/dev/null || true' EXIT
       bi-pihps-food-prices)
         echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: $source ==="
         ./scripts/normalize-pihps.sh
+        ;;
+      ucdp-organized-violence)
+        echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: $source ==="
+        ./scripts/normalize-ucdp.sh
+        ;;
+      kemendagri-wilayah)
+        echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: $source ==="
+        ./scripts/normalize-kemendagri.sh
+        ;;
+      comtrade-indonesia)
+        echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: $source ==="
+        ./scripts/normalize-comtrade.sh
         ;;
       yahoo-gold|yahoo-copper|yahoo-brent-crude|yahoo-thermal-coal|yahoo-palm-oil|yahoo-coffee|yahoo-cocoa)
         if [ "$yahoo_normalized" = "0" ]; then

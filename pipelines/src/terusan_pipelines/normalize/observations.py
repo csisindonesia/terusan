@@ -67,6 +67,20 @@ class ColumnMapping:
     value_columns_are_periods: bool = False
 
     geo_column: str | None = None
+
+    #: The place every row is about, where no column says so.
+    #:
+    #: The mirror of `commodity`, and needed for the same reason: a country's
+    #: own national series often names no country, because the publisher had
+    #: no reason to repeat it on every row. UN Comtrade is the plain case —
+    #: its public endpoint returns `reporterISO` empty on every row of a table
+    #: that is entirely about Indonesia. Without this those figures reach
+    #: Silver with no geography at all, and a map of Indonesian trade has a
+    #: hole where the country should be.
+    #:
+    #: The column wins where both are given; see `_resolve_geo`.
+    geo: str | None = None
+
     commodity_column: str | None = None
 
     #: The commodity every row is about, where no column says so.
@@ -300,10 +314,16 @@ class ObservationNormalizer:
     def _resolve_geo(
         self, columns: dict[str, str], outcome: NormalizationResult
     ) -> tuple[str | None, str | None]:
-        column = self._mapping.geo_column
-        if not column:
-            return None, None
-        raw = (columns.get(column) or "").strip()
+        mapping = self._mapping
+        # The column wins where a mapping declares both, for the same reason it
+        # does for commodities: a table naming a place per row is saying
+        # something the series-wide constant cannot, and overriding it would
+        # collapse thirty-eight provinces into one country.
+        raw = ""
+        if mapping.geo_column:
+            raw = (columns.get(mapping.geo_column) or "").strip()
+        if not raw and mapping.geo:
+            raw = mapping.geo.strip()
         if not raw:
             return None, None
         resolved = self._geography.resolve(raw)

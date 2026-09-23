@@ -291,9 +291,9 @@ def _is_slug(value: str, slug_like: set[str]) -> bool:
     """Whether a dataset identifier is a name rather than a code.
 
     Decided by what the lake and the registry actually call their datasets,
-    not by the string's shape: ESDM's `handbook` is eight lowercase letters
-    and would pass for a code, and treating it as one leaves its figures
-    pointing at a dataset the catalogue does not list.
+    not by the string's shape: a dataset called `handbook` is eight lowercase
+    letters and would pass for a code, and treating it as one leaves its
+    figures pointing at a dataset the catalogue does not list.
     """
     return value in slug_like or not is_code(value)
 

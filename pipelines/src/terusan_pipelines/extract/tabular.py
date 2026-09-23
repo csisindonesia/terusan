@@ -140,10 +140,38 @@ class JsonExtractor(Extractor):
         if isinstance(document, list):
             yield from document
         elif isinstance(document, dict):
-            lists = [v for v in document.values() if isinstance(v, list)]
-            yield from lists[0] if len(lists) == 1 else [document]
+            yield from _result_set(document)
         else:
             yield {"value": document}
+
+
+#: How deep to look for the list an API wrapped its rows in. Two is what the
+#: shapes seen here need — `{"Infogempa": {"gempa": [...]}}` is the deepest —
+#: and a bound is what stops a nested document being mined for any list at all,
+#: which would turn one record's stray array into the whole result set.
+_WRAPPER_DEPTH = 3
+
+
+def _result_set(document: dict[str, Any], depth: int = _WRAPPER_DEPTH) -> list[Any]:
+    """The rows inside an API's envelope, or the document as one row.
+
+    Most APIs wrap a result set in an object holding exactly one list, and some
+    wrap that object in another: BMKG answers `{"Infogempa": {"gempa": [...]}}`,
+    where the top level holds no list at all. Unwrapping only where the path is
+    unambiguous — one list, or one object to descend into — keeps this from
+    guessing: a document with two lists is a document whose rows nobody can
+    identify from its shape, and it stays one record for a reader to look at.
+    """
+    lists = [value for value in document.values() if isinstance(value, list)]
+    if len(lists) == 1:
+        return lists[0]
+    if lists:
+        return [document]
+
+    nested = [value for value in document.values() if isinstance(value, dict)]
+    if depth > 0 and len(nested) == 1:
+        return _result_set(nested[0], depth - 1)
+    return [document]
 
 
 def detect_delimiter(text: str) -> str:

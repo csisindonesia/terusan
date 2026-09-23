@@ -189,6 +189,7 @@ class SilverRunner:
         *,
         source_id: str,
         dataset: str | None = None,
+        merge: bool = False,
     ) -> int:
         """Publish what the indicators of one source are called (program.md §10).
 
@@ -199,6 +200,12 @@ class SilverRunner:
         Replaced one source at a time. The table is derived from Bronze, so a
         source's rows are rebuilt whenever it is normalized — but rebuilding
         FRED must not delete what Trading Economics published.
+
+        `merge` keeps the source's other series while replacing these. A source
+        whose series are normalized one command at a time — one per indicator,
+        because the published table is wide and each column is its own figure —
+        would otherwise end with only the last one named, every earlier name
+        deleted by the call after it.
 
         Each row is `{indicator_id, name, slug?, code?, unit?, frequency?,
         description?, publisher?, release?}`; the rest of the schema stays null
@@ -261,6 +268,16 @@ class SilverRunner:
                 }
             )
 
+        if merge:
+            # Newly written rows win: this run read the same Bronze the earlier
+            # one did, and a name that changed here changed on purpose.
+            fresh = {row["indicator_id"] for row in rows}
+            rows = [
+                held
+                for held in self._published_indicators(source_id)
+                if held["indicator_id"] not in fresh
+            ] + rows
+
         self._replace_partition(Layer.SILVER, "indicators", f"source_id={slugify(source_id)}")
         written = self._writer.write(
             Layer.SILVER,
@@ -292,6 +309,38 @@ class SilverRunner:
                 [pattern],
             ).fetchall()
         return [(str(row[0]), str(row[1]) if row[1] else None) for row in rows]
+
+    def _published_indicators(self, source_id: str) -> list[dict]:
+        """The rows this source already has in the indicators table.
+
+        Empty before the first write, which is the ordinary state and not a
+        failure: a source publishes its names the first time one of its series
+        is normalized.
+        """
+        partition = Path(
+            self._resolver.resolve(Layer.SILVER, "indicators", f"source_id={slugify(source_id)}")
+        )
+        if not any(partition.rglob("*.parquet")):
+            return []
+
+        with Warehouse(self._resolver) as warehouse:
+            # Through Arrow rather than as Python rows: the table carries a
+            # zoned timestamp, and DuckDB's own conversion of one needs `pytz`,
+            # which is not a dependency here and should not become one for the
+            # sake of reading back what we wrote.
+            held = (
+                warehouse.query(
+                    "SELECT * FROM read_parquet(?, union_by_name=true)",
+                    [str(partition / "**" / "*.parquet")],
+                )
+                .fetch_arrow_table()
+                .to_pylist()
+            )
+
+        # The partition column is not in the file; it is the directory name.
+        for row in held:
+            row["source_id"] = source_id
+        return held
 
     def indicator_tags_by_dataset(self) -> dict[str, list[list[str]]]:
         """The tags of the series inside each dataset, as published.

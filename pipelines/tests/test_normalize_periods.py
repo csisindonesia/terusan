@@ -139,3 +139,23 @@ def test_months_tile_the_year_without_gaps():
     months = [parse_period(f"2026-{m:02d}") for m in range(1, 13)]
     for earlier, later in itertools.pairwise(months):
         assert (later.start - earlier.end).days == 1
+
+
+def test_an_iso_timestamp_is_read_as_its_day():
+    """BMKG dates each earthquake to the second. A day is the finest period
+    Silver holds, and refusing the timestamp would lose the event."""
+    period = parse_period("2026-09-21T23:48:13+00:00")
+
+    assert period.label == "2026-09-21"
+    assert period.resolution is Resolution.DAILY
+
+
+def test_a_timestamp_with_a_space_or_a_zulu_zone_reads_the_same():
+    assert parse_period("2026-09-21 23:48:13").label == "2026-09-21"
+    assert parse_period("2026-09-21T23:48Z").label == "2026-09-21"
+
+
+def test_an_impossible_date_in_a_timestamp_is_still_refused():
+    """Dropping the time must not mean accepting anything shaped like one."""
+    with pytest.raises(UnparseablePeriod):
+        parse_period("2026-13-45T00:00:00Z")

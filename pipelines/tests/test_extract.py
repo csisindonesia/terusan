@@ -583,3 +583,23 @@ def test_a_closed_session_keeps_its_date_and_loses_its_prices(tmp_path):
     assert holiday["columns"]["date"] == "2021-09-22"
     assert holiday["columns"]["open"] == ""
     assert holiday["columns"]["close"] == ""
+
+
+def test_a_result_set_nested_inside_a_wrapper_object_is_found(resolver, meta):
+    """BMKG answers `{"Infogempa": {"gempa": [...]}}` — the list is two levels
+    down, and treating the envelope as one record makes the events unreadable."""
+    body = b'{"Infogempa":{"gempa":[{"Magnitude":"5.2"},{"Magnitude":"4.8"}]}}'
+    landed = landed_for(resolver, meta, body, "gempaterkini.json")
+
+    rows = list(JsonExtractor().extract(landed))
+
+    assert [r["columns"]["Magnitude"] for r in rows] == ["5.2", "4.8"]
+
+
+def test_an_ambiguous_document_stays_one_record(resolver, meta):
+    """Two lists, and nothing in the shape says which holds the rows. Guessing
+    would publish one as the dataset and silently drop the other."""
+    body = b'{"rows":[{"a":1}],"warnings":["stale"]}'
+    landed = landed_for(resolver, meta, body, "two.json")
+
+    assert len(list(JsonExtractor().extract(landed))) == 1

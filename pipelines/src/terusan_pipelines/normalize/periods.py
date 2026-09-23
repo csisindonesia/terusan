@@ -101,6 +101,12 @@ _PATTERNS: list[tuple[re.Pattern, Resolution]] = [
 
 _TRIWULAN = re.compile(rf"^(?:triwulan|tw|kuartal)\s*(?P<q>[1-4]|i{{1,3}}|iv)\s*[-/ ]?\s*{_YEAR}$")
 _SEMESTER = re.compile(rf"^(?:semester|smt)\s*(?P<h>[12]|i{{1,2}})\s*[-/ ]?\s*{_YEAR}$")
+#: `2026-09-21T23:48:13+00:00`, and the same without a zone or with a space
+#: where the `T` is. Only the date is taken; see `parse_period`.
+_ISO_TIMESTAMP = re.compile(
+    r"^(?P<date>\d{4}-\d{2}-\d{2})[t ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?"
+    r"(?:z|[+-]\d{2}:?\d{2})?$"
+)
 _MONTH_NAME = re.compile(rf"^(?P<name>[a-z]+)\.?\s+{_YEAR}$")
 _NAME_MONTH_REVERSED = re.compile(rf"^{_YEAR}\s+(?P<name>[a-z]+)\.?$")
 
@@ -141,6 +147,14 @@ def parse_period(raw: str) -> Period:
     text = re.sub(r"\s+", " ", text)
     if not text:
         raise UnparseablePeriod("empty period label")
+
+    # An ISO timestamp is an ISO date with a time nobody asked for: BMKG dates
+    # each earthquake to the second, and a day is the finest period Silver
+    # holds. The time is dropped rather than refused, because refusing it loses
+    # the event entirely — and it is kept in Bronze, where the second still
+    # matters to anyone who needs it.
+    if match := _ISO_TIMESTAMP.match(text):
+        text = match.group("date")
 
     if match := _TRIWULAN.match(text):
         quarter = _ROMAN.get(match.group("q")) or int(match.group("q"))
