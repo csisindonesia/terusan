@@ -535,10 +535,13 @@ uv --project pipelines run terusan sources run bi-seki
 uv --project pipelines run terusan warehouse extract statistics bi-seki
 ./scripts/normalize-seki.sh
 
-# ESDM's energy handbook — one PDF per edition, 14 tables read out of it
+# ESDM's statistical publications — oil and gas, electricity, minerals
+uv --project pipelines run terusan sources run esdm-publications
+uv --project pipelines run terusan warehouse extract statistics esdm-publications
+
+# ESDM's energy handbook — one PDF per edition, held as a document only
 uv --project pipelines run terusan sources run esdm-heesi   # --limit N for older editions
 uv --project pipelines run terusan warehouse extract statistics esdm-heesi
-./scripts/normalize-heesi.sh
 
 # Meta's movement distribution via HDX — ~100 MB per release, Indonesia kept
 uv --project pipelines run terusan sources run hdx-meta-movement-distribution
@@ -573,10 +576,13 @@ figures. Nickel is the current example: Indonesia's largest metal export,
 present only as Bank Indonesia's monthly export value, with no price series
 registered yet.
 
-**HEESI** is a PDF, and its table parsers are vendored under
-`extract/heesi/vendored/` with `sheets.yaml` beside them. A fifteenth table is
-an entry in that YAML. The parsers keep the shape they arrived in and are
-excluded from ruff, like the vendored agency scrapers.
+**ESDM's annual handbook** is collected as a document and nothing more. Its
+fourteen tables need a reader written for them one table at a time; that reader
+was begun and not finished, so it and the figures it had produced were taken
+out rather than left half-working. The PDFs still land, one per edition, and
+show up under Documents — searchable, citable, served back with their licence —
+while no series is published from them. `esdm-publications` excludes the
+handbook so the same PDF does not arrive twice.
 
 **Movement distribution** releases are global — every country Meta reports on,
 a hundred megabytes each — because HDX's datastore API, which could filter
@@ -842,7 +848,7 @@ underneath, for exactly that reason.
 curl localhost:8080/v1/suggestions                    # the queue, open ones first
 curl -X POST localhost:8080/v1/suggestions ...        # needs a session
 curl -X PATCH localhost:8080/v1/suggestions/<id> \
-  -d '{"status":"planned","note":"behind the HEESI backfill"}'
+  -d '{"status":"planned","note":"behind the SEKI backfill"}'
 ```
 
 Statuses are `open`, `planned`, `ingested` and `declined`; the note is where a
