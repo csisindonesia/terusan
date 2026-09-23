@@ -35,11 +35,11 @@ func serverOn(t *testing.T, root string) *Server {
 
 func TestCataloguedPathResolvesUnderRaw(t *testing.T) {
 	server := serverOn(t, "/lake")
-	got, err := server.rawFile("statistics/esdm-heesi/handbook/doc_abc/handbook.pdf")
+	got, err := server.rawFile("statistics/esdm-publications/esdm-statistics/doc_abc/statistik-migas.pdf")
 	if err != nil {
 		t.Fatalf("rawFile: %v", err)
 	}
-	want := filepath.FromSlash("/lake/raw/statistics/esdm-heesi/handbook/doc_abc/handbook.pdf")
+	want := filepath.FromSlash("/lake/raw/statistics/esdm-publications/esdm-statistics/doc_abc/statistik-migas.pdf")
 	if got != want {
 		t.Errorf("rawFile = %q, want %q", got, want)
 	}

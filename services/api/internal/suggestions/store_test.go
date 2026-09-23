@@ -87,7 +87,7 @@ func TestListPutsOpenFirst(t *testing.T) {
 	}
 	// The older one is dealt with; the list is read to find what is still
 	// outstanding, so that is what comes first.
-	if _, err := asked.SetStatus(ctx, first.ID, "ingested", "landed as esdm-heesi"); err != nil {
+	if _, err := asked.SetStatus(ctx, first.ID, "ingested", "landed as esdm-publications"); err != nil {
 		t.Fatalf("SetStatus: %v", err)
 	}
 
@@ -101,7 +101,7 @@ func TestListPutsOpenFirst(t *testing.T) {
 	if list[0].Title != "Asked second" || list[0].Status != "open" {
 		t.Fatalf("List put %q (%s) first", list[0].Title, list[0].Status)
 	}
-	if list[1].Note != "landed as esdm-heesi" {
+	if list[1].Note != "landed as esdm-publications" {
 		t.Errorf("the note did not survive: %q", list[1].Note)
 	}
 }
