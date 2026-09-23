@@ -315,6 +315,18 @@ DATASETS: tuple[DatasetMeta, ...] = (
         tags=("gold", "metals", "commodities", "markets", "prices"),
     ),
     DatasetMeta(
+        slug="handbook",
+        title="Handbook of Energy and Economic Statistics of Indonesia",
+        source="esdm-heesi",
+        description=(
+            "ESDM's annual handbook, one PDF per edition: energy production, "
+            "consumption, generation, reserves, trade and prices, by fuel and by "
+            "sector. Held as a document and nothing more — no series is published "
+            "from it, because nothing here reads its tables yet."
+        ),
+        tags=("energy", "electricity", "mining", "oil", "gas", "coal", "handbook"),
+    ),
+    DatasetMeta(
         slug="ihsg",
         title="Jakarta Composite Index (IHSG)",
         source="yahoo-ihsg",
@@ -365,14 +377,67 @@ DATASETS: tuple[DatasetMeta, ...] = (
         tags=("defence", "security", "military-spending", "fiscal", "international"),
     ),
     DatasetMeta(
-        slug="handbook",
-        title="Handbook of Energy and Economic Statistics of Indonesia",
-        source="esdm-heesi",
+        slug="organized-violence",
+        title="Organized violence and conflict deaths",
+        source="ucdp-organized-violence",
         description=(
-            "ESDM's annual handbook: energy production, consumption, generation, "
-            "reserves, trade and prices, by fuel and by sector."
+            "UCDP's country-year account of organized violence in Indonesia since 1989: "
+            "deaths in state-based, non-state and one-sided violence with the low and "
+            "high estimates that bound them, who the dead were, and how many pairs of "
+            "actors were fighting each year."
         ),
-        tags=("energy", "electricity", "mining", "oil", "gas", "coal", "heesi"),
+        tags=("conflict", "violence", "security", "casualties", "peace", "international"),
+    ),
+    # -- VEWS, the incidents and the series counted off them ---------------
+    #
+    # Two collections out of one set of exports, because they are two grains:
+    # the incidents are the dataset VEWS publishes, and the series are what
+    # Silver can hold. Only the second reaches the portal's catalogue, which
+    # is derived from the observations — the first has no series in it.
+    DatasetMeta(
+        slug="collective-violence-early-warning",
+        title="Collective violence early warning",
+        source="vews-collective-violence",
+        description=(
+            "Collective violence in Indonesia, counted off VEWS's verified yearly "
+            "releases: how many incidents each province saw, how many people were "
+            "killed and injured, how many of them were women and children, how much "
+            "was damaged and destroyed, and how often a third party intervened. "
+            "Indonesia carries the whole year rather than the sum of the provinces, "
+            "so adding the two levels counts the year twice. One year per release, "
+            "and only incidents dated to the year that release covers."
+        ),
+        tags=(
+            "conflict",
+            "violence",
+            "security",
+            "casualties",
+            "early-warning",
+            "social-conflict",
+            "subnational",
+        ),
+    ),
+    DatasetMeta(
+        slug="collective-violence-incidents",
+        title="Collective violence incidents, as coded",
+        source="vews-collective-violence",
+        description=(
+            "One row per incident VEWS coded and verified: the date, the district, "
+            "the two sides and whether either was a state actor, the form the "
+            "violence took, the weapon, the issue behind it, who was hurt, what was "
+            "damaged, who intervened and what came of it, with the coder's own "
+            "description. The detail the early warning series are counted from; no "
+            "series is published from it, because an incident is not an observation."
+        ),
+        tags=(
+            "conflict",
+            "violence",
+            "security",
+            "early-warning",
+            "social-conflict",
+            "microdata",
+            "events",
+        ),
     ),
     DatasetMeta(
         slug="palm-oil",
@@ -424,6 +489,443 @@ DATASETS: tuple[DatasetMeta, ...] = (
         source="yahoo-thermal-coal",
         description="Daily open, high, low and close for API2 CIF ARA thermal coal futures.",
         tags=("coal", "energy", "mining", "commodities", "prices"),
+    ),
+    # -- The Indonesian agency portals ------------------------------------
+    #
+    # One entry per collection the portal sources in `sources/` land. The
+    # sources that are registered but gated — a paid AIS feed, a portal behind
+    # a login, a host that stopped resolving — have no entry here, because
+    # this registry describes collections that exist in the lake and they do
+    # not yet. What they hold is in their `notes` instead.
+    DatasetMeta(
+        slug="agriculture-listing",
+        title="Satu Data Pertanian catalogue pages",
+        source="kementan-satudata",
+        description=(
+            "The agriculture ministry's dataset listing as it stood on the day of "
+            "collection: which datasets were published and what they were called."
+        ),
+        tags=("agriculture", "catalogue", "provenance", "open-data"),
+    ),
+    DatasetMeta(
+        slug="agriculture-statistics",
+        title="Agricultural production, area and yield",
+        source="kementan-satudata",
+        description=(
+            "What Indonesia grows and how much of it: production, harvested area "
+            "and yield by commodity and province, as the agriculture ministry "
+            "publishes them."
+        ),
+        tags=("agriculture", "production", "food", "commodities", "subnational"),
+    ),
+    DatasetMeta(
+        slug="apbn-kita",
+        title="APBN KiTa, the monthly state budget report",
+        source="kemenkeu-apbn-kita",
+        description=(
+            "Central government revenue, spending, deficit and financing against "
+            "the budget, month by month. DJPK's APBD covers the regional half."
+        ),
+        tags=("fiscal", "public-finance", "budget", "government", "central"),
+    ),
+    DatasetMeta(
+        slug="apbn-kita-listing",
+        title="APBN KiTa editions",
+        source="kemenkeu-apbn-kita",
+        description="The finance ministry's own listing of which monthly reports exist.",
+        tags=("fiscal", "catalogue", "provenance"),
+    ),
+    DatasetMeta(
+        slug="bawaslu-publications",
+        title="Election supervision publications",
+        source="bawaslu-publications",
+        description=(
+            "What the election supervisor published: violations, rulings and the "
+            "supervision of each stage of an election."
+        ),
+        tags=("elections", "oversight", "governance", "violations", "democracy"),
+    ),
+    DatasetMeta(
+        slug="bps-domain-catalogue",
+        title="BPS domains: every region BPS keys figures by",
+        source="bps-webapi",
+        description=(
+            "The region codes BPS files statistics under, from the national domain "
+            "down to the regency, as its web API answers them."
+        ),
+        tags=("statistics", "regions", "reference", "codes", "bps"),
+    ),
+    DatasetMeta(
+        slug="bps-subject-catalogue",
+        title="BPS subjects",
+        source="bps-webapi",
+        description="The subject tree BPS files its tables under.",
+        tags=("statistics", "catalogue", "reference", "bps"),
+    ),
+    DatasetMeta(
+        slug="bps-var-catalogue",
+        title="BPS variables, national domain",
+        source="bps-webapi",
+        description=(
+            "Every variable BPS publishes for the national domain: what can be "
+            "asked for, before asking for it."
+        ),
+        tags=("statistics", "catalogue", "reference", "indicators", "bps"),
+    ),
+    DatasetMeta(
+        slug="earthquake-latest",
+        title="Latest earthquake",
+        source="bmkg-earthquakes",
+        description=(
+            "The most recent earthquake of any magnitude, with its depth, "
+            "coordinates, felt intensities and shakemap, as BMKG reports it."
+        ),
+        tags=("earthquakes", "hazards", "geophysics", "realtime", "bmkg"),
+    ),
+    DatasetMeta(
+        slug="earthquakes-recent",
+        title="Recent earthquakes at M5.0 and above",
+        source="bmkg-earthquakes",
+        description=(
+            "The last fifteen earthquakes BMKG recorded at magnitude 5.0 or more, "
+            "with location, depth and tsunami potential."
+        ),
+        tags=("earthquakes", "hazards", "geophysics", "realtime", "bmkg"),
+    ),
+    DatasetMeta(
+        slug="earthquakes-felt",
+        title="Earthquakes reported felt",
+        source="bmkg-earthquakes",
+        description=(
+            "The last fifteen earthquakes people reported feeling, with the "
+            "modified Mercalli intensity recorded for each place."
+        ),
+        tags=("earthquakes", "hazards", "intensity", "realtime", "bmkg"),
+    ),
+    DatasetMeta(
+        slug="esdm-statistics",
+        title="ESDM sectoral statistics publications",
+        source="esdm-publications",
+        description=(
+            "Oil and gas, electricity, and mineral and coal statistics, as the "
+            "ministry publishes them. The annual energy handbook is not among "
+            "them: its tables need a reader that is not ready yet."
+        ),
+        tags=("energy", "oil", "gas", "electricity", "mining", "statistics"),
+    ),
+    DatasetMeta(
+        slug="esdm-statistics-listing",
+        title="ESDM publication shelf",
+        source="esdm-publications",
+        description="Which statistical publications the ministry listed on the day.",
+        tags=("energy", "catalogue", "provenance"),
+    ),
+    DatasetMeta(
+        slug="food-prices-consumer",
+        title="Food prices at consumer level",
+        source="badanpangan-panel-harga",
+        description=(
+            "Daily consumer prices for the strategic foods by province, from the "
+            "food agency's own enumerator panel — the second independent measure "
+            "beside Bank Indonesia's PIHPS survey."
+        ),
+        tags=("food", "prices", "inflation", "households", "agriculture"),
+    ),
+    DatasetMeta(
+        slug="food-prices-producer",
+        title="Food prices at producer level",
+        source="badanpangan-panel-harga",
+        description=(
+            "Daily farmgate prices for the strategic foods by province, as the "
+            "food agency's panel collects them."
+        ),
+        tags=("food", "prices", "agriculture", "farmgate", "producers"),
+    ),
+    DatasetMeta(
+        slug="food-prices-wholesale",
+        title="Food prices at wholesale level",
+        source="badanpangan-panel-harga",
+        description="Daily wholesale prices for the strategic foods by province.",
+        tags=("food", "prices", "wholesale", "agriculture", "markets"),
+    ),
+    DatasetMeta(
+        slug="gdelt-events",
+        title="GDELT coded events",
+        source="gdelt-events",
+        description=(
+            "World news coded into events every fifteen minutes: who did what to "
+            "whom, where, under CAMEO. Global; Indonesia is selected at extraction."
+        ),
+        tags=("news", "events", "conflict", "media", "international"),
+    ),
+    DatasetMeta(
+        slug="gdelt-mentions",
+        title="GDELT event mentions",
+        source="gdelt-events",
+        description=(
+            "Every article mentioning each coded event, with its source and tone — "
+            "how loudly something was reported, as distinct from that it happened."
+        ),
+        tags=("news", "media", "events", "coverage", "international"),
+    ),
+    DatasetMeta(
+        slug="gdelt-knowledge-graph",
+        title="GDELT global knowledge graph",
+        source="gdelt-events",
+        description=(
+            "Themes, people, organizations and tone extracted from the same news. "
+            "Collected only when a run asks for it: six megabytes a quarter-hour."
+        ),
+        tags=("news", "media", "themes", "entities", "international"),
+    ),
+    DatasetMeta(
+        slug="geoportal-pages",
+        title="Ina-Geoportal pages",
+        source="big-inageoportal",
+        description=(
+            "The national geospatial clearing house as served: what BIG publishes "
+            "under the One Map policy, and the state of its API."
+        ),
+        tags=("geospatial", "boundaries", "maps", "one-map", "reference"),
+    ),
+    DatasetMeta(
+        slug="gfw-catalogue",
+        title="Global Forest Watch dataset catalogue",
+        source="gfw-catalogue",
+        description=(
+            "Every dataset the GFW data API serves, with its licence, its fields "
+            "and what it was derived from."
+        ),
+        tags=("forests", "catalogue", "remote-sensing", "environment", "provenance"),
+    ),
+    DatasetMeta(
+        slug="gfw-dataset-versions",
+        title="Forest change dataset versions",
+        source="gfw-catalogue",
+        description=(
+            "The versions of the forest datasets an Indonesian deforestation "
+            "question is asked of — tree cover loss, cover density, carbon "
+            "emissions and integrated alerts. A GFW figure without its version "
+            "cannot be reproduced."
+        ),
+        tags=("forests", "deforestation", "versions", "remote-sensing", "environment"),
+    ),
+    DatasetMeta(
+        slug="jakarta-catalogue",
+        title="Jakarta Open Data catalogue",
+        source="jakarta-opendata",
+        description=(
+            "The capital's own figures — traffic, waste, flooding, permits and "
+            "district budgets — as its open data portal lists them."
+        ),
+        tags=("jakarta", "subnational", "open-data", "urban", "catalogue"),
+    ),
+    DatasetMeta(
+        slug="jdihn-listings",
+        title="JDIHN network listings",
+        source="jdihn-documents",
+        description=(
+            "The federated legal index across several hundred member "
+            "documentation centres, and which institutions publish through it."
+        ),
+        tags=("law", "regulations", "index", "jdih", "governance"),
+    ),
+    DatasetMeta(
+        slug="kemendag-catalogue",
+        title="Satu Data Perdagangan catalogue",
+        source="kemendag-satudata",
+        description=(
+            "What the trade ministry's portal exposes to a keyed caller: trade "
+            "values by commodity and partner, and the licensing figures."
+        ),
+        tags=("trade", "exports", "imports", "catalogue", "commerce"),
+    ),
+    DatasetMeta(
+        slug="kemkes-health-data",
+        title="Health data room",
+        source="kemkes-health-data",
+        description=(
+            "Health indicators and the facility register, as the health ministry's "
+            "SATUSEHAT data room renders them."
+        ),
+        tags=("health", "facilities", "indicators", "public-health", "kemenkes"),
+    ),
+    DatasetMeta(
+        slug="kemnaker-portal",
+        title="Satu Data Ketenagakerjaan portal",
+        source="kemnaker-satudata",
+        description=(
+            "The manpower ministry's data portal as served: vacancies, minimum "
+            "wages, industrial relations and vocational training output."
+        ),
+        tags=("labour", "employment", "wages", "training", "portal"),
+    ),
+    DatasetMeta(
+        slug="klhk-publications",
+        title="Environment ministry publications",
+        source="klhk-environment",
+        description=(
+            "What the environment ministry publishes since the 2024 split of KLHK: "
+            "state-of-the-environment reporting, emissions and programme documents."
+        ),
+        tags=("environment", "emissions", "publications", "sustainability"),
+    ),
+    DatasetMeta(
+        slug="kpu-elections",
+        title="Election candidates, parties and decisions",
+        source="kpu-elections",
+        description=(
+            "Who stood and under which party, as InfoPemilu renders it, with the "
+            "KPU regulations and decrees that made each list official."
+        ),
+        tags=("elections", "candidates", "parties", "democracy", "governance"),
+    ),
+    DatasetMeta(
+        slug="osm-editions",
+        title="OpenStreetMap Indonesia extract editions",
+        source="osm-geofabrik",
+        description=(
+            "Which daily cut of the Indonesian extract was current, by checksum, "
+            "with the boundary polygon it was cut to."
+        ),
+        tags=("openstreetmap", "geospatial", "editions", "provenance", "maps"),
+    ),
+    DatasetMeta(
+        slug="osm-extract",
+        title="OpenStreetMap Indonesia extract",
+        source="osm-geofabrik",
+        description=(
+            "The full Indonesian OSM extract: roads, buildings, land use and every "
+            "mapped point of interest. Collected only when a run asks for it."
+        ),
+        tags=("openstreetmap", "geospatial", "infrastructure", "maps", "points-of-interest"),
+    ),
+    DatasetMeta(
+        slug="peraturan-pusat",
+        title="Central legislation listings",
+        source="bpk-peraturan-pusat",
+        description=(
+            "Acts, government and presidential regulations and ministerial "
+            "regulations as BPK's legal portal lists them, newest first, with the "
+            "in-force status each carries."
+        ),
+        tags=("law", "regulations", "legislation", "central-government", "bpk"),
+    ),
+    DatasetMeta(
+        slug="region-profiles",
+        title="Provincial profile: people, prices and public finance",
+        source="kemendagri-wilayah",
+        description=(
+            "What the interior ministry records about each of the 38 provinces: "
+            "population and poverty, the human development index by sex, the Gini "
+            "ratio, inflation, unemployment, economic growth, budget realisation, "
+            "life expectancy and years of schooling — each dated by its own year, "
+            "because the ministry refreshes them independently. It also carries "
+            "the Kemendagri region codes themselves, which are the key every "
+            "subnational figure in this warehouse joins on."
+        ),
+        tags=(
+            "provinces",
+            "subnational",
+            "poverty",
+            "human-development",
+            "public-finance",
+            "codes",
+            "kemendagri",
+        ),
+    ),
+    DatasetMeta(
+        slug="satudata-catalogue",
+        title="Satu Data Indonesia catalogue pages",
+        source="satudata-indonesia",
+        description=(
+            "The cross-government catalogue as rendered: what each ministry and "
+            "region has registered, which is how a publisher worth collecting "
+            "properly is found."
+        ),
+        tags=("open-data", "catalogue", "discovery", "government", "metadata"),
+    ),
+    DatasetMeta(
+        slug="school-register",
+        title="School register",
+        source="kemdikbud-referensi",
+        description=(
+            "Every Indonesian school with its NPSN identifier, level and location, "
+            "as the education ministry's reference register publishes it."
+        ),
+        tags=("education", "schools", "registry", "reference", "subnational"),
+    ),
+    DatasetMeta(
+        slug="trade-exports",
+        title="Exports by partner, as partners report them",
+        source="comtrade-indonesia",
+        description=(
+            "Indonesia's annual exports by partner country at the commodity total, "
+            "from UN Comtrade — the independent account against which Kemendag's "
+            "own figures can be checked."
+        ),
+        tags=("trade", "exports", "partners", "international", "comtrade"),
+    ),
+    DatasetMeta(
+        slug="trade-exports-total",
+        title="Exports to the world, annual total",
+        source="comtrade-indonesia",
+        description=(
+            "Indonesia's total annual exports in US dollars, across every partner "
+            "and every mode of transport, as UN Comtrade holds them. Asked for on "
+            "its own because the partner breakdown can run past the response cap "
+            "before the total is reached."
+        ),
+        tags=("trade", "exports", "totals", "international", "comtrade"),
+    ),
+    DatasetMeta(
+        slug="trade-imports-total",
+        title="Imports from the world, annual total",
+        source="comtrade-indonesia",
+        description=(
+            "Indonesia's total annual imports in US dollars, across every partner "
+            "and every mode of transport, as UN Comtrade holds them."
+        ),
+        tags=("trade", "imports", "totals", "international", "comtrade"),
+    ),
+    DatasetMeta(
+        slug="trade-imports",
+        title="Imports by partner, as partners report them",
+        source="comtrade-indonesia",
+        description=(
+            "Indonesia's annual imports by partner country at the commodity total, "
+            "from UN Comtrade."
+        ),
+        tags=("trade", "imports", "partners", "international", "comtrade"),
+    ),
+    DatasetMeta(
+        slug="transport-listing",
+        title="Kemenhub publication shelf",
+        source="kemenhub-statistics",
+        description="Which transport statistics and publications the ministry listed.",
+        tags=("transport", "catalogue", "provenance"),
+    ),
+    DatasetMeta(
+        slug="transport-statistics",
+        title="Transport statistics",
+        source="kemenhub-statistics",
+        description=(
+            "Passengers and freight by road, rail, sea and air, port by port and "
+            "airport by airport — the connectivity an archipelago's other figures "
+            "are read against."
+        ),
+        tags=("transport", "logistics", "connectivity", "ports", "aviation"),
+    ),
+    DatasetMeta(
+        slug="village-development",
+        title="Village development index and the village fund",
+        source="kemendesa-sid",
+        description=(
+            "The Indeks Desa Membangun score and classification per village, and "
+            "the village fund that follows from it. Joins to PODES and to the "
+            "school and facility registers on the village code."
+        ),
+        tags=("villages", "development", "idm", "village-fund", "subnational"),
     ),
 )
 

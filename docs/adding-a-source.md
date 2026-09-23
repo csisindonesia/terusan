@@ -52,6 +52,57 @@ Working examples, runnable offline:
 [`sources/example/native.py`](../pipelines/src/terusan_pipelines/sources/example/native.py)
 and [`sources/example/adapted.py`](../pipelines/src/terusan_pipelines/sources/example/adapted.py).
 
+## Portal shapes
+
+Before writing `collect` by hand, check whether the portal is one of the three
+shapes most of them are. Forty Indonesian portals were surveyed for this lake
+and they divided almost cleanly, so the patterns live in
+[`sources/portals.py`](../pipelines/src/terusan_pipelines/sources/portals.py)
+and a source declares only what is its own.
+
+**It answers JSON.** Subclass `ApiSource` and list the endpoints:
+
+```python
+class Earthquakes(ApiSource):
+    meta = SourceMeta(slug="bmkg-earthquakes", ...)
+    endpoints = (
+        Endpoint(dataset="earthquakes-recent", url=f"{TEWS}/gempaterkini.json",
+                 filename="gempaterkini.json"),
+    )
+```
+
+Where the URLs depend on the run — a year range, a page count, a listing that
+has to be fetched first — override `endpoints_for(ctx, http)`, which is handed
+the open client so a discovery request queues behind the same per-host limiter
+as everything else.
+
+**It publishes files behind an index page.** Subclass `FileIndexSource`, give it
+the index URLs and the pattern a link has to match. The index lands too, under
+`index_dataset`: it is the only record of what the publisher called a file named
+`Lampiran-3.xlsx`, and of the fact that a file which used to be listed is not any
+more. `exclude_pattern` drops links another source already lands, before they are
+fetched rather than after.
+
+**It renders everything server-side.** Subclass `PageSource`. The page is the
+document; an extractor reads it out of RAW later, which is what survives the
+portal rebuilding its markup.
+
+**It cannot be collected at all.** Subclass `GatedSource`, set `active=False`,
+and write `access` as a sentence someone could act on — the account to open, the
+key to request, the subscription to buy. It raises `AccessNotProvisioned` rather
+than yielding nothing, because a green run landing zero artifacts reads as a
+portal that published nothing this month.
+
+Register the source anyway. A catalogue that omits what it cannot reach says
+nothing about the gap; one that lists it gated says the gap is known and whose
+decision it is. See [indonesia-sources.md](indonesia-sources.md) for the survey
+these came out of.
+
+For an optional, expensive part of a source — the 1 GB OSM extract, GDELT's
+knowledge graph — gate it on `wants(ctx, "full")` rather than
+`ctx.params.get("full")`: parameters arrive from the CLI as strings, and
+`"false"` is truthy.
+
 ## Bringing an existing script in
 
 Do not rewrite it first. Wrap it, land its output, migrate later:

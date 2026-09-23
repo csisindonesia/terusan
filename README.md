@@ -89,6 +89,15 @@ but the run fails below a 90% success ratio, because a site-wide outage looks
 exactly like one flaky table, one table at a time, and a partial month must not
 masquerade as a complete one.
 
+Most portals are one of three shapes — an API, an index of files, a page that
+is itself the document — so those are engines in
+[sources/portals.py](pipelines/src/terusan_pipelines/sources/portals.py) and a
+source declares only its own URLs. The fifty Indonesian portals surveyed in
+`indonesia_dataset_sources.xlsx` are all registered against one: twenty-six
+collect today, and the twenty-four that cannot each say what would open them —
+an account, an API key, a subscription, an hour of reconnaissance. See
+[docs/indonesia-sources.md](docs/indonesia-sources.md).
+
 See [docs/adding-a-source.md](docs/adding-a-source.md).
 
 ## The pipeline
@@ -238,7 +247,9 @@ make dev        # API on :8080, portal on :3000, Ctrl-C stops both
 | `GET /v1/datasets/{id}` | one collection, and the series inside it |
 | `GET /v1/storage` | what is physically in the lake |
 | `GET /v1/indicators` | each series, its coverage, how many places |
-| `GET /v1/observations` | figures, filtered by indicator, place, place type, commodity, period |
+| `GET /v1/observations` | figures, filtered by indicator, place, place type, commodity, status, year, period |
+| `GET /v1/observations/facets` | what those filters can offer for a series, counted |
+| `GET /v1/observations/series` | the same figures as a chart needs them — a line per member, bucketed |
 | `GET /v1/geography` | the geography dimension |
 | `GET /v1/commodities` | the commodity dimension, read off the figures themselves |
 | `GET /v1/sources` | the source registry — schedule, licence, rate limit |
@@ -342,6 +353,16 @@ Or in containers, with the lake on a shared folder — see
 cp .env.example .env        # set DATA_DIR to the share
 make docker-up              # the portal on :3000, the API on :8080
 make docker-ingest CMD="sources run bnpb-disaster"
+```
+
+On the NAS, published through a Cloudflare Tunnel — the deployment this runs
+as — see [docs/nas-deployment.md](docs/nas-deployment.md):
+
+```bash
+make nas-tunnel-install     # once: the tunnel, and terusan.csis.or.id
+make nas-deploy             # copy to /volume2/terusan, render the stack's compose
+                            # then start it: UGOS → Docker → Project → terusan
+make nas-status             # the box, the lake, the hostname at the edge
 ```
 
 ## Setup

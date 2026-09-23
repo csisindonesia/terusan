@@ -40,6 +40,22 @@ class SourceCredentials(BaseSettings):
     #: are public, and an unauthenticated run collects the same figures.
     hdx_api_token: SecretStr | None = Field(default=None, alias="HDX_API_TOKEN")
 
+    #: A BPS web API key, from https://webapi.bps.go.id/developer. Free, issued
+    #: per registered application. Without it `bps-webapi` collects nothing:
+    #: BPS answers an unkeyed call with "You are not Allowed to take this
+    #: action", and the website it would otherwise be read from serves a
+    #: Cloudflare challenge to anything unattended.
+    bps_api_key: SecretStr | None = Field(default=None, alias="BPS_API_KEY")
+
+    #: An API key for satudata.kemendag.go.id, issued by the trade ministry's
+    #: data unit. The portal answers an unkeyed call with `API Key not found`.
+    kemendag_api_key: SecretStr | None = Field(default=None, alias="KEMENDAG_API_KEY")
+
+    #: An API key for the food price panel, api-panelhargav2.badanpangan.go.id.
+    #: The dashboard is public; the API behind it stopped being so, and now
+    #: answers `Unauthorized. Invalid or missing API key.`
+    panel_harga_api_key: SecretStr | None = Field(default=None, alias="PANEL_HARGA_API_KEY")
+
 
 @cache
 def credentials() -> SourceCredentials:
