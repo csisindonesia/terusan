@@ -88,6 +88,10 @@ type assistantRequest struct {
 	Regenerate     bool   `json:"regenerate,omitempty"`
 
 	Messages []assistantMessage `json:"messages,omitempty"`
+
+	// The reader's answer to a chart proposal, sent with their message: the
+	// series to draw. See assistant_analysis.go.
+	Confirm *chartConfirm `json:"confirm,omitempty"`
 }
 
 // assistantSource is one thing the answer was allowed to suggest.
@@ -184,8 +188,10 @@ func (s *Server) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 	// Written to the stream as it happens, and to the conversation once the
 	// reply is over — however it ended.
 	var emit func(any)
-	// The chart drawn beside the reply, where the question asked for one.
+	// The chart drawn beside the reply, where the reader confirmed one, and
+	// what is kept with the reply: that chart, or the proposal for one.
 	var chart *chartSpec
+	var stored any
 	start := func() {
 		emit = startStream(w)
 		if chat != nil {
@@ -202,10 +208,13 @@ func (s *Server) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 		var drawn json.RawMessage
 		if chart != nil {
-			drawn, _ = json.Marshal(chart)
+			stored = chart
+		}
+		if stored != nil {
+			drawn, _ = json.Marshal(stored)
 		}
 		if _, err := s.chats.Append(ctx, chat.ID, conversations.Message{
-			Role: "assistant", Content: content, Sources: sources, Error: failure, Chart: drawn,
+			Role: "assistant", Content: verifiedReply(content, catalogue), Sources: sources, Error: failure, Chart: drawn,
 		}); err != nil {
 			s.log.Warn("assistant.record_failed", "conversation", chat.ID, "error", err)
 		}
@@ -246,10 +255,41 @@ func (s *Server) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 		route.Language = "id"
 	}
 	prompt, sources := assistantPrompt(catalogue, found, question)
-	if wantsAnalysis(question.latest) {
-		// Planned and measured before the reply starts, so the chart is on
-		// the page before the words that describe it.
-		if chart = s.analyse(r.Context(), catalogue, question.latest, route.Language); chart != nil {
+	analysisTurn := body.Confirm != nil || wantsAnalysis(question.latest)
+	switch {
+	case body.Confirm != nil:
+		// Confirmed: drawn now, and described by the model below.
+		chart = s.confirmedChart(r.Context(), catalogue, *body.Confirm, earlierContext(messages))
+		if chart != nil {
+			chart.Reason = kindReason(chart.Kind, len(chart.Series), route.Language)
+		}
+	case analysisTurn:
+		// Asked for: planned and checked, then proposed rather than drawn.
+		// The proposal is the server's own words — no model is called — and
+		// the reader confirms before anything is charted or described.
+		if planned := s.analyse(r.Context(), catalogue, question.latest, route.Language,
+			earlierContext(messages)); planned != nil {
+			proposal := proposalFrom(planned, catalogue, route.Language)
+			text := proposalText(proposal, route.Language)
+			sources = withChartSources(sources, planned)
+			keys := make([]string, len(sources))
+			for n, source := range sources {
+				keys[n] = source.Kind + ":" + source.ID
+			}
+			stored = proposal
+			start()
+			emit(map[string]any{"type": "sources", "sources": sources})
+			emit(map[string]any{"type": "proposal", "proposal": proposal})
+			emit(map[string]string{"type": "delta", "text": text})
+			emit(map[string]string{"type": "done"})
+			record(text, keys, "")
+			return
+		}
+	}
+	if analysisTurn {
+		if chart == nil {
+			prompt += noChartPrompt
+		} else {
 			prompt = analysisInstructions(prompt) + chartPrompt(chart)
 			sources = withChartSources(sources, chart)
 			if route.Source != "jev" {
@@ -260,7 +300,10 @@ func (s *Server) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	prompt += route.replyLanguage()
-	if yesNoQuestion(lastQuestion(messages)) {
+	// Not on a turn that asked for a chart: whether there is one is decided
+	// above, and "begin with No" beneath a chart that was drawn is a reply
+	// that contradicts the page.
+	if !analysisTurn && yesNoQuestion(lastQuestion(messages)) {
 		// Said outright: a small model given the rule in general still
 		// answers "is BNPB's data this?" with a list and no answer.
 		yes, no := "Yes", "No"
@@ -273,8 +316,15 @@ func (s *Server) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 	}
 	upstreamCtx, cancelUpstream := context.WithCancel(r.Context())
 	defer cancelUpstream()
+	sent := verifiedHistory(messages, catalogue)
+	if analysisTurn {
+		// The latest question alone: what it refers to was read above, and
+		// earlier questions with their replies blanked read as unanswered —
+		// the model answered them all again.
+		sent = sent[len(sent)-1:]
+	}
 	upstream, err := s.callAssistantModel(upstreamCtx, append(
-		[]assistantMessage{{Role: "system", Content: prompt}}, trimHistory(messages)...))
+		[]assistantMessage{{Role: "system", Content: prompt}}, trimHistory(sent)...))
 	if err != nil {
 		s.log.Warn("assistant.upstream_failed", "error", err)
 		record("", nil, "The model did not answer. Try again.")
@@ -301,12 +351,21 @@ func (s *Server) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 	// recital begins: nothing of "You are the assistant of…" reaches the page.
 	var reply strings.Builder
 	held := ""
-	leaked := false
+	leaked, looped := false, false
+	// Whether the opening has been shown, and what of it was dropped.
+	opened, denied := false, ""
 	usage, err := relayCompletion(upstream, func(text string) {
-		if leaked {
+		if leaked || looped {
 			return
 		}
 		reply.WriteString(text)
+		if repeating(reply.String()) {
+			// Ended rather than shown: the rest would be the same sentence.
+			looped = true
+			s.log.Warn("assistant.loop_stopped", "router", route.Source)
+			cancelUpstream()
+			return
+		}
 		if leaksInstructions(reply.String()) {
 			leaked = true
 			s.log.Warn("assistant.leak_stopped", "router", route.Source)
@@ -318,7 +377,17 @@ func (s *Server) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 			held += text
 			return
 		}
-		emit(map[string]string{"type": "delta", "text": held + text})
+		out := held + text
+		if chart != nil && !opened {
+			// The opening is read whole before any of it is shown: beneath a
+			// chart, one that says there is no chart is dropped.
+			out, denied = withoutDenial(out)
+			if denied != "" {
+				s.log.Warn("assistant.denial_dropped", "text", clip(denied, 120))
+			}
+		}
+		opened = true
+		emit(map[string]string{"type": "delta", "text": out})
 		held = ""
 	})
 
@@ -327,6 +396,11 @@ func (s *Server) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 	case leaked:
 		chart = nil
 		record(refusalText("injection", route.Language), nil, "")
+	case looped:
+		if held != "" {
+			emit(map[string]string{"type": "delta", "text": held})
+		}
+		record(reply.String(), keys, "")
 	case err != nil && errors.Is(err, context.Canceled):
 		// The reader stopped it, and has seen what was sent so far.
 		record(strings.TrimSuffix(reply.String(), held), keys, "Stopped.")
@@ -337,9 +411,12 @@ func (s *Server) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 		record(reply.String(), keys, "The reply was cut off.")
 	default:
 		if held != "" {
+			if chart != nil && !opened {
+				held, denied = withoutDenial(held)
+			}
 			emit(map[string]string{"type": "delta", "text": held})
 		}
-		record(reply.String(), keys, "")
+		record(strings.TrimPrefix(reply.String(), denied), keys, "")
 	}
 	// What each turn cost, so the size of the prompt is watched rather than
 	// guessed at: it is most of the bill.
@@ -1048,14 +1125,14 @@ var translations = map[string]string{
 	"pertumbuhan": "growth", "ekonomi": "economic gdp", "pdb": "gdp", "penduduk": "population",
 	"kemiskinan": "poverty", "miskin": "poverty", "pengangguran": "unemployment",
 	"tenaga": "labour labor", "kerja": "employment", "upah": "wage", "gaji": "wage salary",
-	"minyak": "oil", "sawit": "palm", "emas": "gold", "batubara": "coal", "gas": "gas",
+	"minyak": "oil crude", "sawit": "palm", "emas": "gold", "batubara": "coal", "gas": "gas",
 	"kurs": "exchange rupiah", "tukar": "exchange", "suku": "rate", "bunga": "interest",
 	"anggaran": "budget apbd apbn", "pajak": "tax", "utang": "debt", "hutang": "debt",
 	"energi": "energy", "listrik": "electricity", "investasi": "investment",
 	"produksi": "production", "konsumsi": "consumption", "cabai": "chili chilli",
 	"bawang": "onion shallot garlic", "gula": "sugar", "jagung": "maize corn",
 	"rawit": "bird's", "kedelai": "soybean", "daging": "meat beef", "telur": "egg", "ayam": "chicken",
-	"saham": "stock index", "obligasi": "bond", "uang": "money currency", "bank": "bank",
+	"saham": "stock index", "obligasi": "bond", "uang": "money currency exchange", "bank": "bank",
 	"provinsi": "province provincial", "daerah": "regional", "kabupaten": "regency",
 	"pendapatan": "revenue income", "belanja": "spending expenditure", "komoditas": "commodity",
 	"industri": "industry manufacturing", "pertanian": "agriculture", "tambang": "mining",
@@ -1072,6 +1149,10 @@ var translations = map[string]string{
 	// Currencies as readers abbreviate them, and series never do: FRED's
 	// rupiah is "Exchange Rate to U.S. Dollar for Indonesia".
 	"rupiah": "exchange", "idr": "rupiah exchange", "usd": "dollar exchange",
+	"currency": "exchange", "valuta": "exchange", "ringgit": "malaysian", "baht": "thai",
+	"sgd": "singapore", "myr": "malaysian", "thb": "thai",
+	// ASEAN is the member states, which is how the series are named.
+	"asean": "singapore malaysian thai philippine vietnam brunei",
 }
 
 // English and Indonesian words that match everything and so mean nothing.
