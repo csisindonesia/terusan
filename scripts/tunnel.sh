@@ -15,9 +15,9 @@
 # Instead vite proxies `/v1` to the API (see apps/portal/vite.config.ts) and
 # the whole stack answers on one origin.
 #
-# This is for showing someone the portal, not for deploying it. The URL is
-# unauthenticated unless AUTH_REQUIRED says otherwise, and anyone who has it
-# reaches this machine.
+# This is for showing someone the portal, not for deploying it. The URL needs a
+# sign-in unless AUTH_REQUIRED=false, and anyone who has it reaches this
+# machine.
 
 set -euo pipefail
 

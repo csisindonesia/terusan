@@ -100,6 +100,17 @@ an account, an API key, a subscription, an hour of reconnaissance. See
 
 See [docs/adding-a-source.md](docs/adding-a-source.md).
 
+## News monitoring
+
+One source makes its own figures rather than republishing somebody else's:
+sixty-nine Indonesian newspapers are read every day, and what they report is
+coded against the controlled vocabulary the VEWS project's human coders use.
+The corpus, the coded incidents and the counts are three separate collections,
+because they answer different questions — and machine-coded rows stay in their
+own collection, unverified, so they can never be cited as VEWS.
+
+See [docs/news-monitoring.md](docs/news-monitoring.md).
+
 ## The pipeline
 
 ```bash

@@ -73,6 +73,7 @@ mapping is the part worth reading rather than the invocation:
 ```bash
 make pihps-silver      # food prices, one indicator per market
 make bnpb-silver       # disaster impact, one indicator per measure and hazard
+make vews-silver       # collective violence, one indicator per measure
 ```
 
 `--name-column` publishes the Silver indicators table as well as the figures,
@@ -263,8 +264,8 @@ While a tunnel is up, `AUTH_SECURE_COOKIES=true` means a login on
 `http://localhost:3000` will not stick — use the public URL, or `make dev` when
 you want the local one back.
 
-This is for showing someone the portal, not for deploying it. The URL is open to
-anyone who has it unless `AUTH_REQUIRED=true`, `PIPELINES_ENABLED` is on for the
+This is for showing someone the portal, not for deploying it. The URL needs a
+sign-in unless `AUTH_REQUIRED=false` was set, `PIPELINES_ENABLED` is on for the
 local stack — which means the visitor can start scrapers on this machine — and
 the tunnel reaches a laptop, not a server. For anything longer-lived, a named
 tunnel with Cloudflare Access in front of it is the thing, not this.
@@ -359,8 +360,9 @@ public port on this machine to find, which is the point of a tunnel.
 
 #### Before it is really public
 
-- **Who may read it.** `AUTH_REQUIRED=false` serves everything to anyone with
-  the URL. Set it to `true`, or put [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/)
+- **Who may read it.** Sign-in is required by default (`AUTH_REQUIRED=true`);
+  `false` serves everything to anyone with the URL. For an internal deployment,
+  also consider [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/)
   in front of the hostname — which is the better answer for an internal
   deployment, because then nothing unauthenticated ever reaches this machine.
 - **What it runs on.** A laptop that sleeps takes the hostname down with it.
@@ -521,9 +523,211 @@ Each row also carries `estimate` and `uncertain`, which the workbook states
 only as blue and red font. A figure SIPRI flags as an estimate should not read
 as a measurement.
 
-## SEKI, HEESI and Meta's movement data
+## Revealed comparative advantage
 
-Three sources ported from standalone scrapers. Each is a source that lands
+Two sources, one question: where Indonesia exports more of a product than its
+share of world trade would predict, and how that compares with ASEAN and the
+economies it competes against. Both cover the same reporters, declared once in
+[`trade.py`](../pipelines/src/terusan_pipelines/trade.py): ASEAN (Timor-Leste
+included), the other RCEP members, Brazil, Mexico, Türkiye, South Africa and
+Bangladesh.
+
+**The base years** come from two Stata working files the trade team built, put
+in `tmp/rca` (or `RCA_DROP_DIR`, or `--param dir=...`):
+
+```bash
+make rca-ingest                                   # terusan sources run rca-seed
+uv run terusan warehouse extract statistics rca-seed
+./scripts/normalize-rca.sh                        # from the project root
+```
+
+- `rca clean_EG lists.dta`: Indonesia's HS92 six-digit exports and RCA from a
+  WITS bulk download, 1995–2025. Landed as it came.
+- `RCA_country_product_year_hs6_raw.dta`: the Atlas of Economic Complexity
+  panel, every country, 1995–2024. At 3.7 GB it is cut to the reporters
+  (3.0 of its 23.9 million rows) and landed as Parquet. The original is public
+  and CC0 (Harvard Dataverse, doi:10.7910/DVN/T4CHWJ), so nothing dropped is
+  lost for good.
+
+Which file is which is read off its Stata variables, not its name. The goods
+lists merged onto the first file are committed as
+[`reference/trade/environmental-goods.csv`](../reference/trade/environmental-goods.csv):
+561 HS92 codes across TESSD, APEC, ACCTS, SAGEA, EU–NZ, UK–NZ, OECD and UNCTAD.
+
+The extractor sums the product rows into series for each list, and for the
+union of all eight (`any`):
+
+| Indicator | From | Unit |
+| --- | --- | --- |
+| `atlas_eg_rca_<list>` | Atlas, every reporter | index, world = 1 |
+| `atlas_eg_exports_<list>` | Atlas | US$ |
+| `atlas_eg_products_rca_<list>` | Atlas | listed HS6 products with RCA ≥ 1 |
+| `atlas_eci`, `atlas_coi`, `atlas_diversity`, `atlas_growth_proj` | Atlas | as the Atlas states them |
+| `wits_hs6_eg_exports_<list>` | WITS, Indonesia | US$ thousand |
+| `wits_hs6_eg_export_share_<list>` | WITS, Indonesia | percent of total exports |
+| `wits_hs6_eg_products_rca_<list>` | WITS, Indonesia | count |
+| `wits_hs6_products_rca` | WITS, Indonesia | all HS6 products with RCA ≥ 1 |
+
+The WITS file has no basket RCA. It only has rows for products Indonesia
+exported, so about sixty of the listed codes are missing each year. A basket
+taken over what is there leaves those products out of the world's side and
+overstates Indonesia's advantage. The Atlas file has the world's exports of
+every product, so its basket RCA is safe to use. The product rows themselves
+stay in RAW, and one DuckDB query over the Parquet reads any subheading.
+
+**The years after that** come from WITS's TradeStats API. It is public, needs
+no key, and the `wits-tradestats` source collects it monthly:
+
+```bash
+uv run terusan sources run wits-tradestats        # 63 calls, ~40 s
+uv run terusan warehouse extract statistics wits-tradestats
+./scripts/normalize-rca.sh
+```
+
+The API stops at sector level. It covers RCA, exports (US$ thousand) and export
+shares by the 16 HS sections, UNCTAD's SITC groups and the four stages of
+processing, 1989 on, as `wits_rca_<group>`, `wits_export_value_<group>` and
+`wits_export_share_<group>`. It has no HS six-digit RCA, so new product-level
+years mean a fresh WITS bulk download dropped into `tmp/rca`. Two limits of the
+endpoint:
+
+- One reporter per call. Two come back as a 200 that reads `Response too
+  large`, which the extractor refuses.
+- Timor-Leste answers 404 until WITS holds data for it.
+
+## UCDP organized violence
+
+What <https://ucdp.uu.se/country/850> charts for Indonesia — deaths in
+organized violence since 1989 — as 24 annual series:
+
+```bash
+uv run terusan sources run ucdp-organized-violence   # ~170 kB, one archive per release
+uv run terusan warehouse extract statistics ucdp-organized-violence
+./scripts/normalize-ucdp.sh                          # from the project root
+```
+
+The archive link is read off <https://ucdp.uu.se/downloads/> rather than
+hardcoded: its filename carries the version — `organizedviolencecy-261-csv.zip`
+is UCDP 26.1 — which changes with every June release, and the version is what a
+citation states. The download is global and lands whole; the extractor keeps
+country 850 and reads one indicator per column:
+
+| Indicator | Unit |
+| --- | --- |
+| `ucdp_state_based_deaths` | deaths — a government against an organised opponent |
+| `ucdp_intrastate_deaths` | deaths — the same, fought inside the country |
+| `ucdp_interstate_deaths` | deaths — the same, against another state |
+| `ucdp_non_state_deaths` | deaths — organised groups fighting each other |
+| `ucdp_one_sided_deaths` | deaths — an armed actor killing civilians |
+| `ucdp_organized_violence_deaths` | deaths — all three together |
+| `ucdp_civilian_deaths` | deaths — civilians, across all three |
+| `ucdp_combatant_deaths` | deaths — combatants, across all three |
+| `ucdp_unattributed_deaths` | deaths — side unknown, which is what the range is made of |
+| `ucdp_state_based_dyads` | dyads — pairs of actors fighting that year |
+| `ucdp_non_state_dyads` | dyads |
+| `ucdp_one_sided_actors` | dyads — actors killing civilians |
+
+The first six also publish `_low` and `_high` series. A death toll in a
+conflict is a range UCDP bounds deliberately, and a Silver observation carries
+a value rather than a range — so the bounds are their own indicators, and
+charting the best estimate alone states a precision UCDP does not claim.
+
+A zero is a figure here. Indonesia has had no non-state conflict deaths since
+2016, and that is the finding rather than a gap; only an empty cell yields no
+observation.
+
+The API at `ucdpapi.pcr.uu.se` is not used: it now answers an unauthenticated
+caller with `API token required`, and the same release is public on the
+downloads page. UCDP's event-level GED — the other half of the country page —
+is not collected yet: it is a 39 MB global archive and nothing downstream reads
+events.
+
+## VEWS collective violence
+
+The Violence Early Warning System codes collective violence in Indonesia one
+incident at a time — a date, a district, two sides, the form the violence took,
+what it was about, who was hurt, and whether anyone stepped in — and publishes a
+verified export once a year. There is no portal and no URL: the files arrive by
+hand.
+
+Put them somewhere and run the source:
+
+```bash
+cp ~/Downloads/'Yearly Dataset 2025 - VEWS Dataset (v.1.0).xlsx' tmp/vews/
+uv run terusan sources run vews-collective-violence
+uv run terusan warehouse extract research vews-collective-violence
+./scripts/normalize-vews.sh                          # from the project root
+```
+
+`tmp/vews` is only the default; `VEWS_DROP_DIR` in `.env` or
+`--param dir=/some/where` moves it. The inbox can be emptied afterwards — what
+matters is the copy in RAW, which is landed with provenance like everything
+else.
+
+**The year comes from the filename.** VEWS names each export for the year it
+covers, and that decides which figures it is authoritative for: an export
+carries a tail of incidents dated to its neighbours, because a coder files an
+incident when they read about it. The 2021 export reaches back to 2017 and
+forward into 2022; the 2025 one into 2026. Counted, the 2025 export's six weeks
+of 2024 would overwrite the 2024 export's whole year and publish a 90% fall in
+violence that is really a file boundary. So only the export's own year is
+counted, and a file whose name carries no year is skipped rather than landed
+under a guess.
+
+Two Bronze collections come out of each export:
+
+| Collection | Grain |
+| --- | --- |
+| `collective-violence-incidents` | one row per coded incident, every column VEWS wrote |
+| `collective-violence-early-warning` | the year's incidents counted, per province and for the country |
+
+Only the second is normalized. An incident is not an observation: two brawls in
+one regency on one day are two facts, and no indicator, period and place tells
+them apart. The incidents stay in Bronze, where a query can group them by
+actor, weapon or issue — none of which Silver holds a dimension for.
+
+| Indicator | Unit |
+| --- | --- |
+| `vews_incidents` | incidents |
+| `vews_deaths` | deaths |
+| `vews_injured` | people |
+| `vews_female_deaths` | deaths — women and girls, a subset of the total |
+| `vews_female_injured` | people — the same |
+| `vews_child_deaths` | deaths — children, a subset of the total |
+| `vews_child_injured` | people — the same |
+| `vews_infrastructure_damaged` | structures |
+| `vews_infrastructure_destroyed` | structures |
+| `vews_incidents_with_intervention` | incidents a third party intervened in |
+
+Three things to know before charting them.
+
+**Indonesia is the whole year, not the sum of the provinces.** It counts every
+incident, including the handful whose province was never coded. Adding the two
+levels counts the year twice.
+
+**An empty cell is a zero and `-99` is not.** VEWS leaves the casualty cell
+blank when nobody was hurt and writes `-99` when the reporting did not say, so a
+blank contributes zero to the sum and `-99` contributes nothing at all. A
+province with incidents and no deaths publishes a zero, which is a finding; a
+province with no incident at all publishes nothing, because a quiet year and a
+province dropped from an export are not distinguishable from here.
+
+**The province comes from the name, not the code.** VEWS carries a
+`province_id` beside the name and it is a spreadsheet formula over the incident
+id, so a mistyped id silently renumbers the province — some two dozen rows
+across the four exports have a code that contradicts a name that is plainly
+right. The name is what a coder typed and a verifier checked. Where one
+province is written two ways — `Sumatra` and `Sumatera`, Jakarta's old formal
+name and the one it was given in 2024 — `SPELLINGS` in `extract/vews.py` picks
+one. A variant that is not in that table fails the Silver run outright
+(`CollapsedDimension`), rather than publishing half a province's violence:
+adding a line is the fix.
+
+2022 has no export, so the series skip it.
+
+## SEKI and Meta's movement data
+
+Two sources ported from standalone scrapers. Each is a source that lands
 bytes, an extractor that knows the publication's shape, and a normalization
 script.
 
@@ -552,6 +756,11 @@ uv --project pipelines run terusan warehouse extract research
 uv --project pipelines run terusan sources run yahoo-gold yahoo-copper
 uv --project pipelines run terusan warehouse extract statistics
 ./scripts/normalize-yahoo.sh
+
+# Yahoo's exchange rates — eight pairs in one dataset, four price series each
+uv --project pipelines run terusan sources run yahoo-exchange-rates
+uv --project pipelines run terusan warehouse extract statistics yahoo-exchange-rates
+./scripts/normalize-fx.sh
 ```
 
 **SEKI** publishes formatted sheets, not datasets: row 41 of table 8.1 is the
@@ -575,6 +784,35 @@ the registry says what the warehouse can resolve, and the page lists what has
 figures. Nickel is the current example: Indonesia's largest metal export,
 present only as Bank Indonesia's monthly export value, with no price series
 registered yet.
+
+**Yahoo's exchange rates** are one dataset rather than eight, because a reader
+asking for "the exchange rate" wants the table. The pairs are declared in
+[`currencies.py`](../pipelines/src/terusan_pipelines/sources/yahoo_finance/currencies.py)
+and told apart in Silver by `--include symbol=`, which selects on the ticker
+Bronze carries rather than on the file the figures arrived in.
+
+Which pairs exist was settled by asking the API, not by assuming. A cross
+quoted in rupiah — `EURIDR=X` — exists with five years behind it for the
+dollar, euro, yen, pound, Singapore dollar, ringgit and baht. It does not exist
+for the yuan, the peso, the dong, the Brunei dollar, the riel, the kip or the
+kyat: Yahoo answers `CNYIDR=X` and `PHPIDR=X` with a single row dated today and
+404s the rest. China being Indonesia's largest trading partner, the yuan is
+carried as `USDCNY=X` and quoted in yuan per dollar; the cross against the
+rupiah is a division the reader can do and not a figure to store. The other six
+ASEAN currencies are each available on the same dollar basis — `USDPHP=X`,
+`USDVND=X`, `USDBND=X`, `USDKHR=X`, `USDLAK=X`, `USDMMK=X` — and adding them is
+one line each in `PAIRS`, at the cost of a table that quotes some currencies in
+rupiah and others in dollars.
+
+Foreign exchange is also why Yahoo's bars are dated by the exchange's clock
+rather than by UTC. Yahoo keeps FX on Europe/London and stamps each bar at
+local midnight, which under British Summer Time is 23:00 UTC the day before —
+so read as UTC, every summer rate was dated a day early and a trading week ran
+from Sunday to Thursday. The reader adds back the offset Yahoo states, which
+moves no other instrument: Jakarta and New York are both stamped at an hour
+that already falls on the session's own date. A session Yahoo is still pricing
+arrives twice, once as its own bar with a null close and again as the running
+quote, and the later reading supersedes the earlier.
 
 **ESDM's annual handbook** is collected as a document and nothing more. Its
 fourteen tables need a reader written for them one table at a time; that reader
@@ -605,6 +843,246 @@ uv run terusan silver check "Triwulan I 2026"
 uv run terusan silver check "1.234,56"
 uv run terusan silver resolve "Sultra"
 ```
+
+## The scheduled run
+
+Every registry record may carry a cron: `0 18 * * 1-5` for IHSG, after the
+Jakarta close; `0 22 * * 1-5` for the commodity futures, after New York;
+`7 * * * *` for BMKG's earthquakes. Those records are now the instruction.
+
+```bash
+make due          # what this hour owes, collecting nothing
+make scheduled    # collect it
+make daily        # every active daily source, whatever its cron says
+```
+
+A launchd agent runs `scripts/scheduled.sh` on the hour — `make
+schedule-install`, `make schedule-status` to see it. Hourly rather than daily
+because an 05:00 agent cannot serve a source that wants 18:00; most hours owe
+nothing and exit in about a second.
+
+It was not always so, and the failure is worth recording. One agent fired at
+05:00 and ran a list of two slugs written into `daily.sh` when there were two
+daily sources. Thirteen more were added and the list was never touched, so they
+were collected only when somebody remembered — and IHSG, had it been on the
+list, would have been asked at five in the morning for a session that closes at
+four in the afternoon. Nothing anywhere read the `schedule` field.
+
+So nothing is listed by hand any more. `scripts/scheduled.sh` asks `terusan
+sources due` which crons fired in the last hour; `scripts/daily.sh` with no
+arguments asks the registry which active sources are daily. Adding a source
+with a schedule needs no second edit.
+
+```bash
+uv run terusan sources due --verbose                   # this hour, with schedules
+uv run terusan sources due --at 2026-09-25T22:00       # what a Friday evening owes
+uv run terusan sources due --frequency daily           # ignore the rest
+scripts/scheduled.sh --list --at 2026-09-25T18:00      # the same, end to end
+```
+
+`--list` comes first on `scheduled.sh` for a reason: without it, asking what a
+Friday evening owes collects a Friday evening.
+
+**Due is a window, not an instant.** An agent starts a few seconds late, or a
+laptop wakes at 09:03 into the 09:00 it slept through. A matcher demanding the
+exact minute would skip that run in silence, so the question asked is whether a
+firing fell anywhere in the last hour. Widen it to catch up — `scripts/scheduled.sh
+--window 180` — and keep it equal to the agent's interval otherwise, or a firing
+falls between two runs. The reader is `sources/schedule.py`: five fields, no
+`@daily`, no `L` or `#`, and an expression outside that dialect raises rather
+than quietly never matching. Schedules are read against the machine's local
+clock, as cron and launchd read them.
+
+### What one run does
+
+`scripts/daily.sh` is the run itself — fetch, extract, normalize, then
+republish the dimensions and the document catalogue. Two things keep its work
+proportional to a night's figures.
+
+**It asks for a week, not for everything.** The lake already holds the history,
+so re-pulling five years each night is asking a publisher for what was landed
+yesterday — Yahoo answers with the whole window whatever it is asked for, and a
+full pull is a thousand bars to learn one. A week rather than a day so a night
+the agent did not fire leaves no hole, and because publishers restate: a
+restated figure arrives as a second document and normalization resolves the two
+by retrieval time, so an overlapping window corrects rather than duplicates.
+
+```bash
+SINCE_DAYS=90 scripts/daily.sh      # a catch-up after the laptop was shut
+SINCE_DAYS=0 scripts/daily.sh       # the full window, which a first run wants
+```
+
+A source that does not read `--since` ignores it — Trading Economics scrapes
+today's pages whatever it is told.
+
+**It extracts the subtrees it fetched.** RAW is laid out `category/slug`, and
+extraction given no subtree walks the whole lake: sixteen thousand documents
+visited to find the eight this run landed. The category comes off the source's
+registry record, so the subtree is derived rather than listed twice. For the
+exchange rates that is `seen=16` instead of `seen=16550`, and 56 Bronze rows
+instead of 10,432.
+
+The cost of that: a file landed outside this script — a manual `sources run`, a
+backfill, something copied into RAW by hand — is no longer swept up. Run
+`terusan warehouse extract` with no arguments after doing that.
+
+Normalization is per source, through a `case` naming each source's script. It
+is not narrowed further: normalizing rebuilds a series from all of its Bronze
+rows, which is what makes re-running it safe. A source with no mapping falls
+through — JDIHN's legal documents and Geofabrik's extract are not series; they
+land, reach Bronze, and `silver documents` catalogues them.
+
+**One source's failure does not end the hour.** Extraction exits non-zero when
+every document in a subtree fails, and under `set -e` that used to abort the
+run where it stood. An hour that owed GDELT and IHSG collected both, failed on
+GDELT's archives, and left IHSG unextracted and unnormalized without saying so
+— the log simply stopped. Each subtree and each mapping is now allowed to fail
+on its own, the failures are collected by name, and the run still exits
+non-zero at the end:
+
+```
+--- extract: news/gdelt-events
+!!! extract failed for news/gdelt-events — continuing with the rest
+--- extract: statistics/yahoo-ihsg
+=== normalize: yahoo-ihsg ===
+=== done, with failures: extract:news/gdelt-events ===
+```
+
+Nothing is hidden and nothing else is lost. A run that ends this way wants
+looking at, not ignoring — but it has done the rest of its work first.
+
+**GDELT is the current standing failure.** Its hourly archives hold a CSV, and
+`ZippedWorkbookExtractor` claims every `.zip` and then fails for want of a
+workbook, so nothing GDELT lands has ever reached Bronze. Fixing it means
+deciding whether a warehouse about Indonesia wants the global event stream —
+hourly, and several hundred kilobytes a file — which is a scope question rather
+than a bug to patch quietly.
+
+## Three sources of food prices
+
+Indonesia publishes daily food prices three times over, and the temptation is
+to keep one and drop the rest. They are not the same figures.
+
+| | PIHPS (BI) | SP2KP (Kemendag) | Panel Harga (Bapanas) |
+|---|---|---|---|
+| status | live, 8.7M observations | live, two sources | registered, inactive |
+| geography | 34 provinces + national | **513 regencies and cities**, and national | 34 provinces |
+| commodities | 31 grades of 10 foods | 42 national, 17 by regency | the same families |
+| breakdown | four market types | the government ceiling | producer / wholesale / consumer |
+| history | daily since March 2017 | national since Feb 2024; regency forward only | — |
+| unit | IDR/kg | IDR/kg | — |
+| blocked on | — | a browser, for the regency half only | an API key from Bapanas |
+
+```bash
+# SP2KP — needs the browser extra, once
+uv --project pipelines sync --extra browser
+uv --project pipelines run playwright install chromium
+
+uv --project pipelines run terusan sources run kemendag-sp2kp-prices
+uv --project pipelines run terusan warehouse extract statistics kemendag-sp2kp-prices
+./scripts/normalize-sp2kp.sh
+```
+
+**PIHPS** is the long series and the one to reach for: `food-prices`, daily
+since March 2017, traditional, modern, wholesale and farmgate markets. It is
+the only one of the three that can answer a question about last year.
+
+**SP2KP** is collected twice, because the ministry publishes it twice and
+neither half contains the other.
+
+```bash
+# The API — no browser, no key, and rebuildable from nothing
+uv --project pipelines run terusan sources run kemendag-sp2kp-national
+uv --project pipelines run terusan warehouse extract statistics kemendag-sp2kp-national
+./scripts/normalize-sp2kp-national.sh
+
+# The Tableau crosstab — needs the browser extra, once
+uv --project pipelines sync --extra browser
+uv --project pipelines run playwright install chromium
+
+uv --project pipelines run terusan sources run kemendag-sp2kp-prices
+uv --project pipelines run terusan warehouse extract statistics kemendag-sp2kp-prices
+./scripts/normalize-sp2kp.sh
+```
+
+| | `kemendag-sp2kp-national` | `kemendag-sp2kp-prices` |
+|---|---|---|
+| via | the dashboard's JSON API | a Tableau crosstab, through Chromium |
+| place | the country, one weighted price | 513 regencies and cities |
+| goods | 42 | 17 |
+| history | daily since 2024-02-01 | the day it is run |
+| backfill | one call per commodity | impossible |
+| a run takes | ~2 seconds | ~23 seconds |
+
+*The API half* is the one to reach for. `hnt/history-series` takes a date
+range, so the whole series can be rebuilt at any time — which is what makes a
+missed day survivable. It is also wider: Bulog's SPHP rice and imported
+soybeans are priced here and absent from the crosstab, and both are the kind of
+thing a subsidy question turns on.
+
+Its endpoints were found by watching what the dashboard requests, not by
+guessing. Guessing is useless here: **the API answers 401 for a route it does
+not have**, so a wrong path looks exactly like a locked door. `/report/api/harga`
+and a dozen other plausible names all return "Invalid or expired token"; they
+simply do not exist.
+
+*The crosstab half* remains the only way to a regency. The API's province and
+regency views are single-date endpoints with no range, so they cannot be
+backfilled and are not collected. It also carries the government **ceiling** —
+*Harga Eceran Tertinggi*, *Harga Acuan* — beside each price, which is the
+pairing the system exists for: not "what does rice cost" but "is it selling
+above the ceiling, and where". On the first day collected, 391 of the 458
+regencies reporting red bird's eye chili were over it, and 388 of 498 for bulk
+sugar.
+
+Two details will bite whoever touches this next.
+
+*The crosstab writes Indonesian thousands separators; the API does not.*
+`41.500` from the crosstab is forty-one thousand five hundred rupiah — read as
+an English decimal it is 41.5, a thousandfold error that looks entirely
+plausible in a chart — so that mapping declares `--number-format id`. Every
+value in the export matches `\d{1,3}(\.\d{3})*`, with no decimal point
+anywhere to lose. The API answers with plain integers and needs no such flag.
+
+*The API states a quantity and never a currency.* `satuan` is `kg`, or `lt` for
+cooking oil, `bks` for instant noodles, `400gr` for toddler formula, `ekor` for
+a free-range chicken. A unit of `kg` on a price is wrong where it lands, beside
+`IDR/kg` from the same ministry's crosstab, so the extractor joins the two and
+keeps both columns — `satuan` as the API wrote it, `unit` as the figure reads.
+
+**Panel Harga** is the food agency's own panel, measured by its own enumerators
+at producer, wholesale and consumer level. Two independent measures of the same
+prices is not redundancy: it is how a wrong one gets noticed, and they diverge
+in exactly the weeks that matter. It lands under `food-prices-{level}`, so
+nothing collides.
+
+### The commodity and geography they share
+
+Both land on the same dimensions, which is what lets a reader put them side by
+side, and getting there needed two additions to the reference data.
+
+Twelve commodities were added to
+[`commodities.csv`](../reference/commodities/commodities.csv) and three aliases
+onto rows already there. The aliases are where the two ministries spell one
+good differently — Kemendag's `Daging Ayam Ras` against Bank Indonesia's
+`Daging Ayam Ras Segar`. The new rows are where they mean different things:
+`Beras Medium` is the HET bracket Kemendag sells rice under and `Beras Kualitas
+Medium I` is the quality BI's surveyor saw, so they stay two goods. Minyakita
+is its own commodity rather than a grade of cooking oil, because it is a policy
+instrument before it is an oil.
+
+Twenty-six regencies gained a second BPS code in
+[`indonesia-regencies.csv`](../reference/geography/indonesia-regencies.csv).
+Papua was split into four provinces in 2022 and Papua Barat into two, and BPS
+renumbered the regencies that moved: Merauke is `91.01` under the old scheme
+and `9301` under the new one, which SP2KP prints. No boundary was redrawn, so
+each stays one row and answers to both codes. Without that, a sixth of SP2KP's
+regencies landed with no place at all.
+
+The cost is recorded in the file: `parent_geo_id` still names the pre-2022
+province, so a roll-up puts Papua Tengah's figures under Papua. Registering the
+four new provinces and re-parenting those twenty-six is what would fix it, and
+it would move every series already collected against the old parents.
 
 ## Run history
 
@@ -794,23 +1272,74 @@ asks two different questions:
   ingestion — is refused with 401 to a browser that is not signed in. This is
   not a setting: on a portal where people sign in, an anonymous request that
   renames somebody's collection is not a feature.
-- **Reading** is a setting, because whether the figures are public is a
-  decision about the deployment:
+- **Reading** needs a session too, unless the deployment says otherwise:
 
 ```bash
-AUTH_REQUIRED=true   # everything but /healthz, /readyz, /v1/capabilities and
-                     # /v1/auth/* needs a session
+AUTH_REQUIRED=true   # the default: everything but /healthz, /readyz,
+                     # /v1/capabilities and /v1/auth/login|logout|me|bootstrap
+                     # needs a session or an API token
+AUTH_REQUIRED=false  # serve the lake to anyone who can reach the API
 ```
 
-Off by default, because this serves a research warehouse whose point is that
-figures can be traced. Turn it on where the lake holds something that is not
-public, and set `AUTH_SECURE_COOKIES=true` wherever TLS is terminated by a
-proxy in front of the API, so the session cookie is marked `Secure` even though
-this process cannot see the TLS.
+On by default, so a deployment reachable from outside does not hand its lake
+to whoever finds the address; serving it publicly is a decision somebody makes.
+With it on and no `APP_DB` the API refuses to start — there would be no account
+anybody could sign in with. Set `AUTH_SECURE_COOKIES=true` wherever TLS is
+terminated by a proxy in front of the API, so the session cookie is marked
+`Secure` even though this process cannot see the TLS.
 
-Roles are carried and shown and enforce nothing: everyone who can sign in sees
-the same warehouse and the same shelf. The portal says so on the account page
-rather than letting a badge imply a permission model.
+### API tokens
+
+A script, a notebook or another service has no browser to hold the cookie, so
+it sends an API token instead:
+
+```bash
+curl -H "Authorization: Bearer trs_…" https://terusan.example.org/v1/indicators
+```
+
+Make one on the account page (**API tokens**), or from the terminal with the
+API stopped:
+
+```bash
+cd services/api && go run ./cmd/authctl token -email you@example.org -name "notebook" -days 90
+```
+
+The token is printed once; the database keeps only its SHA-256. It expires
+(90 days by default, a year at most, twenty live per account), reads exactly
+what its account can read, and stops working the moment it is revoked or the
+account is disabled. It cannot manage the account: the password, the logins
+list and the tokens themselves answer only to a cookie session, so a token that
+leaks out of a script cannot mint its own successor. An unknown or revoked
+token is a 401, not a quiet anonymous read.
+
+### Roles, registration and the Users page
+
+Three roles:
+
+| Role | What it can do |
+|---|---|
+| `admin` | Everything below, plus **Administration → Access → Users**: add accounts (with a generated password shown once), approve or reject requests, change role and department, reset passwords, disable accounts |
+| `researcher` | The ordinary account: reads the warehouse, keeps collections, makes API tokens |
+| `guest` | A researcher with an end date. At the end of that day sign-in, open sessions and API tokens all stop |
+
+A stranger can ask for an account at `/register` (linked from the login page,
+off with `AUTH_REGISTRATION=false`). The request lands as a *pending*
+researcher that cannot sign in until an admin approves it — as researcher,
+guest (with an end date) or admin. The form answers the same whether or not
+the address already had an account, is limited to five requests an hour per
+address, and holds at most 200 pending requests. From the terminal:
+`authctl approve -email … -role researcher`.
+
+Each user's page shows their access history: every sign-in, and use of the
+portal or an API token at most once per five minutes per address, with the IP
+address and — behind Cloudflare with `AUTH_TRUST_PROXY=true` — the reported
+country and city. Kept for 180 days.
+
+Accounts from before roles existed (`member`) become `researcher` on the first
+start after upgrading.
+
+Beyond account management and a guest's end date, roles grant nothing: every
+account that can sign in sees the same warehouse and the same shelf.
 
 ### The account page
 

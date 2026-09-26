@@ -151,6 +151,9 @@ Two of these sources have that mapping today.
 |---|---|---|
 | `kemendagri-wilayah` | 24 × 38 provinces | Population, poverty, HDI by sex, Gini, inflation, unemployment, growth, budget realisation, life expectancy, schooling, governance scores — from one request, [scripts/normalize-kemendagri.sh](../scripts/normalize-kemendagri.sh) |
 | `comtrade-indonesia` | 2 | Annual exports and imports to the world in US dollars, [scripts/normalize-comtrade.sh](../scripts/normalize-comtrade.sh) |
+| `wits-tradestats` | 86 × 21 economies | RCA, exports and export shares by HS section, SITC group and stage of processing, for Indonesia, ASEAN and peers, [scripts/normalize-rca.sh](../scripts/normalize-rca.sh) |
+| `djpk-apbd` | 26 regional totals + 26 per government | Budget and realisation of revenue, PAD, transfers, expenditure by type, financing and the fiscal balance, monthly and cumulative within the year — for the nation, each province's governments summed, and each provincial government, regency and city on its own, [scripts/normalize-apbd.sh](../scripts/normalize-apbd.sh) |
+| `rca-seed` | 59 | Environmental goods lists' exports, basket RCA and advantaged-product counts, plus ECI, from the HS6 working files, [scripts/normalize-rca.sh](../scripts/normalize-rca.sh) |
 
 ESDM's energy handbook is the one source here held as a document and nothing
 more: `esdm-heesi` lands a PDF per edition, and no series is published from it
@@ -177,10 +180,10 @@ Two of them stop there for a reason worth stating rather than fixing. **BMKG's
 earthquakes are events, not a series**: two quakes on one day are two figures
 for one indicator and period, which Silver's observation identity refuses — and
 it is right to. The series a reader wants is a count or a daily maximum, which
-is an aggregation this warehouse does not yet have a step for. **GDELT's files
-are zipped, headerless CSV** with 61 columns defined only in GDELT's codebook,
-so the generic reader cannot claim them; they need an extractor carrying that
-column spec.
+is an aggregation this warehouse does not yet have a step for. **GDELT's
+events and mentions reach Bronze and stop**: its own extractor keeps the events
+involving Indonesia and the mentions of them, and like BMKG's they are events
+rather than a series.
 
 ## How these are built
 
