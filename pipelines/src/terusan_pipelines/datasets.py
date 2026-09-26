@@ -49,13 +49,33 @@ class DatasetMeta:
 DATASETS: tuple[DatasetMeta, ...] = (
     DatasetMeta(
         slug="apbd-national",
-        title="APBD realisation, national roll-up",
+        title="APBD, national roll-up",
         source="djpk-apbd",
         description=(
-            "Realised regional government revenue, own-source revenue, transfers and "
-            "expenditure, summed to the national total, as DJPK publishes them."
+            "Every regional government's budget and realisation summed to the national "
+            "total, month by month and cumulative within the year, as DJPK publishes it."
         ),
         tags=("apbd", "fiscal", "public-finance", "subnational", "government"),
+    ),
+    DatasetMeta(
+        slug="apbd-provinces",
+        title="APBD by province",
+        source="djpk-apbd",
+        description=(
+            "Each province's regional governments summed — the provincial government and "
+            "all its regencies and cities — budgeted and realised, month by month."
+        ),
+        tags=("apbd", "fiscal", "public-finance", "subnational", "province"),
+    ),
+    DatasetMeta(
+        slug="apbd-governments",
+        title="APBD by regional government",
+        source="djpk-apbd",
+        description=(
+            "One regional government's own budget and realisation: every provincial "
+            "government, regency and city, month by month."
+        ),
+        tags=("apbd", "fiscal", "public-finance", "regency", "city", "government"),
     ),
     # -- BNPB, one collection per CKAN dataset ------------------------------
     #
@@ -279,6 +299,18 @@ DATASETS: tuple[DatasetMeta, ...] = (
         tags=("copper", "metals", "mining", "commodities", "prices"),
     ),
     DatasetMeta(
+        slug="exchange-rates",
+        title="Exchange rates",
+        source="yahoo-exchange-rates",
+        description=(
+            "Daily open, high, low and close for eight currency pairs: the rupiah "
+            "against the US dollar, euro, yen, pound, Singapore dollar, ringgit and "
+            "baht, and the dollar against the yuan — which Yahoo carries with no "
+            "rupiah cross behind it. Five years."
+        ),
+        tags=("currencies", "exchange-rates", "rupiah", "markets", "asean"),
+    ),
+    DatasetMeta(
         slug="food-prices",
         title="Strategic food prices",
         source="bi-pihps-food-prices",
@@ -289,6 +321,48 @@ DATASETS: tuple[DatasetMeta, ...] = (
             "farmgate. Daily since March 2017."
         ),
         tags=("food", "agriculture", "prices", "inflation", "households"),
+    ),
+    DatasetMeta(
+        slug="sp2kp-national-prices",
+        title="National weighted food prices",
+        source="kemendag-sp2kp-national",
+        description=(
+            "The Ministry of Trade's harga nasional tertimbang: one weighted "
+            "price for the whole country per staple good per day, for the 42 "
+            "goods it prices, daily since February 2024. Read from the "
+            "dashboard's own API rather than its Tableau view, so unlike the "
+            "regency crosstab this can be rebuilt from nothing — and it covers "
+            "42 goods where the crosstab covers 17, Bulog's SPHP rice and "
+            "imported soybeans among them."
+        ),
+        tags=("food", "prices", "staples", "inflation", "trade-ministry"),
+    ),
+    DatasetMeta(
+        slug="sp2kp-variants",
+        title="SP2KP commodity master",
+        source="kemendag-sp2kp-national",
+        description=(
+            "The ministry's own list of the goods it prices, with the unit and "
+            "commodity group of each. Landed so a replay can name a series: "
+            "the price endpoint answers with dates and figures and never says "
+            "which good it priced."
+        ),
+        tags=("reference", "commodities", "trade-ministry"),
+    ),
+    DatasetMeta(
+        slug="sp2kp-food-prices",
+        title="Food prices by regency, and the ceiling",
+        source="kemendag-sp2kp-prices",
+        description=(
+            "The Ministry of Trade's daily market monitoring: seventeen staple "
+            "goods priced in each of Indonesia's 513 regencies and cities, with "
+            "the government's ceiling or reference price (HET/HA) beside each "
+            "one. Finer than Bank Indonesia's PIHPS, which stops at the "
+            "province, and it carries Minyakita and wheat flour, which PIHPS "
+            "does not. One day per run — the view exports the day it shows, so "
+            "history accumulates forward and cannot be backfilled."
+        ),
+        tags=("food", "prices", "staples", "subnational", "regencies", "trade-ministry"),
     ),
     DatasetMeta(
         slug="fred-indonesia-series",
@@ -889,6 +963,50 @@ DATASETS: tuple[DatasetMeta, ...] = (
         tags=("trade", "imports", "totals", "international", "comtrade"),
     ),
     DatasetMeta(
+        slug="tradestats",
+        title="Trade competitiveness by sector",
+        source="wits-tradestats",
+        description=(
+            "Revealed comparative advantage, exports and export shares by HS section, "
+            "SITC group and stage of processing, for Indonesia, ASEAN and peer "
+            "economies, as the World Bank's WITS computes them from UN Comtrade."
+        ),
+        tags=("trade", "exports", "competitiveness", "rca", "asean", "international"),
+    ),
+    DatasetMeta(
+        slug="rca-atlas-hs6",
+        title="Environmental goods competitiveness and economic complexity",
+        source="rca-seed",
+        description=(
+            "Exports, revealed comparative advantage and advantaged-product counts for "
+            "eight environmental goods lists (TESSD, APEC, ACCTS, SAGEA, EU–NZ, UK–NZ, "
+            "OECD, UNCTAD), with the Economic Complexity Index and its companions, for "
+            "Indonesia, ASEAN and peers — summed from the Atlas of Economic Complexity "
+            "at HS92 six digits."
+        ),
+        tags=(
+            "trade",
+            "exports",
+            "competitiveness",
+            "rca",
+            "environmental-goods",
+            "complexity",
+            "asean",
+            "international",
+        ),
+    ),
+    DatasetMeta(
+        slug="rca-indonesia-hs6",
+        title="Indonesia's environmental goods exports",
+        source="rca-seed",
+        description=(
+            "Indonesia's exports of each environmental goods list, their share of "
+            "total exports, and how many listed products carry a revealed comparative "
+            "advantage — summed from WITS HS92 six-digit trade, 1995–2025."
+        ),
+        tags=("trade", "exports", "competitiveness", "rca", "environmental-goods"),
+    ),
+    DatasetMeta(
         slug="trade-imports",
         title="Imports by partner, as partners report them",
         source="comtrade-indonesia",
@@ -926,6 +1044,88 @@ DATASETS: tuple[DatasetMeta, ...] = (
             "school and facility registers on the village code."
         ),
         tags=("villages", "development", "idm", "village-fund", "subnational"),
+    ),
+    # -- News monitoring, one collection per layer of the same corpus --------
+    #
+    # Four, and they are genuinely four different things. An article is a piece
+    # of writing. A coding is what a classifier made of one article. An event
+    # is what several reports of one incident agree happened. A count is how
+    # many of those there were. Collapsing any two of them would lose the
+    # question a reader is actually asking.
+    DatasetMeta(
+        slug="news-articles",
+        title="Indonesian news corpus",
+        source="news-monitoring",
+        description=(
+            "The articles the daily crawl kept, from two newspapers per province plus "
+            "two national papers: the outlet, the date, the headline, the lead and the "
+            "body. Kept, not read — every article a paper published is read, and only "
+            "the ones about a monitored issue are stored. What the rest amounted to is "
+            "in the daily tallies."
+        ),
+        tags=("news", "media", "corpus", "indonesia", "monitoring"),
+    ),
+    DatasetMeta(
+        slug="news-daily-tallies",
+        title="What the press published, and how much was violence",
+        source="news-monitoring",
+        description=(
+            "One row per newspaper per day: how many articles were read, how many "
+            "matched the violence vocabulary, and how many a classifier confirmed, "
+            "beside the candidates discovery turned up. The denominator every rate "
+            "needs — without it a rise in incidents cannot be told from a crawl that "
+            "reached further that week. A row exists for every outlet a run visited, "
+            "including the ones that yielded nothing: no row at all means the crawl "
+            "has never reached that paper, which is a different fact from a quiet week."
+        ),
+        tags=("news", "media", "coverage", "monitoring", "indonesia"),
+    ),
+    DatasetMeta(
+        slug="news-violence-codings",
+        title="Collective violence, coded per article",
+        source="news-monitoring",
+        description=(
+            "One row per article a classifier read for collective violence, in the "
+            "column names VEWS coders use. One row per report, not per incident: five "
+            "papers covering one brawl produce five of these."
+        ),
+        tags=("news", "collective-violence", "coding", "machine-coded", "indonesia"),
+    ),
+    DatasetMeta(
+        slug="news-violence-events",
+        title="Collective violence incidents, from the press",
+        source="news-monitoring",
+        description=(
+            "Reports collapsed into the incidents they describe — same district, "
+            "within a day, same form of violence, overlapping actors. Machine-coded "
+            "and never verified by a second reader, which is what separates these from "
+            "the VEWS incidents they are shaped to be comparable with."
+        ),
+        tags=("news", "collective-violence", "incidents", "machine-coded", "indonesia"),
+    ),
+    DatasetMeta(
+        slug="news-violence-counts",
+        title="Press-reported collective violence, counted",
+        source="news-monitoring",
+        description=(
+            "The incidents counted per province and month, with the dead, the injured, "
+            "the women and children among them, the structures damaged and how often "
+            "someone intervened. Counts what the press reported, which is not the same "
+            "as what happened."
+        ),
+        tags=("news", "collective-violence", "subnational", "monthly", "indonesia"),
+    ),
+    DatasetMeta(
+        slug="news-screenshots",
+        title="News article screenshots",
+        source="news-monitoring",
+        description=(
+            "One row per article photographed at the moment it was collected, pointing "
+            "at the image in RAW. Taken for every article that matched an issue, "
+            "because the page as it looked on the day is what a human verifier reads — "
+            "and what survives a correction, a paywall or a deletion."
+        ),
+        tags=("news", "provenance", "evidence", "screenshots"),
     ),
 )
 

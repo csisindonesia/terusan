@@ -44,7 +44,10 @@ class Documents(PageSource):
         license="Public domain — Indonesian law is not subject to copyright",
         update_frequency=UpdateFrequency.DAILY,
         max_requests_per_second=0.5,
-        schedule="0 5 * * 5",
+        # Daily, 05:00, as its frequency says. The network indexes new
+        # regulations every working day; a weekly run left `make daily` and
+        # the hourly scheduler disagreeing about how often this is collected.
+        schedule="0 5 * * *",
         notes=(
             "Federated index across several hundred member JDIHs. Documents "
             "download through /api/doc/{id}/file, which needs ids read out of "

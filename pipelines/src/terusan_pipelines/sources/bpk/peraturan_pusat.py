@@ -1,11 +1,17 @@
-"""BPK JDIH — central legislation, the half the imported corpus does not hold.
+"""BPK JDIH — central legislation, the half the regional corpus does not hold.
 
 `bpk-peraturan-daerah` holds a quarter of a million regional regulations,
 imported as a finished corpus. What it does not hold is the law those regional
 regulations are made under: the acts, the government regulations, the
-presidential regulations and the ministerial ones. They come from the same
-portal and are a much smaller body — thousands rather than hundreds of
-thousands — which is why they can be collected here directly.
+presidential regulations and the ministerial ones.
+
+That law arrives two ways, both under this slug. The same crawler that built
+the regional corpus built a central one — 41,378 records, tracks `pusat` and
+`kementerian`, parsed into sections and citations — and
+`scripts/import-regulations.sh` lands it into silver beside the regional one,
+where `source_id` is what tells them apart. This class collects the other way:
+the portal's newest listings, so a regulation promulgated after the corpus was
+crawled is still seen.
 
 The search listing is what lands, one page at a time per regulation type. Each
 entry links a `/Details/{id}/...` page carrying the document and its status —
@@ -68,8 +74,9 @@ class PeraturanPusat(PageSource):
         schedule="0 5 * * 6",
         notes=(
             "Acts, government and presidential regulations, and ministerial "
-            "regulations. Regional instruments come from the imported corpus "
-            "under bpk-peraturan-daerah."
+            "regulations. The parsed corpus (41,378 records) is imported by "
+            "scripts/import-regulations.sh; this source scrapes the newest "
+            "listings. Regional instruments are under bpk-peraturan-daerah."
         ),
     )
 

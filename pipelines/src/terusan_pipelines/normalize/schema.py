@@ -206,6 +206,28 @@ SILVER_GEOGRAPHY = pa.schema(
 )
 
 #: Commodity dimension (program.md §12).
+#: The newspapers the news monitor reads, published so the serving layer can
+#: list them without reading the repository.
+#:
+#: A dimension rather than a lookup table: an article's outlet is one of the
+#: things a reader filters and groups by, exactly as they do with a place or a
+#: commodity, and the retired outlets belong in it too — a paper that published
+#: until last year is why a province's coverage changed.
+SILVER_NEWS_OUTLETS = pa.schema(
+    [
+        pa.field("host", pa.string(), nullable=False),
+        pa.field("outlet", pa.string(), nullable=False),
+        pa.field("province", pa.string()),
+        pa.field("geo_id", pa.string()),
+        pa.field("bps_code", pa.string()),
+        pa.field("base_url", pa.string()),
+        pa.field("section_path", pa.string()),
+        pa.field("adapter", pa.string()),
+        pa.field("active", pa.bool_(), nullable=False),
+        pa.field("note", pa.string()),
+    ]
+)
+
 SILVER_COMMODITIES = pa.schema(
     [
         pa.field("commodity_id", pa.string(), nullable=False),
@@ -274,6 +296,7 @@ SILVER_SCHEMAS: dict[str, pa.Schema] = {
     "documents": SILVER_DOCUMENTS,
     "geography": SILVER_GEOGRAPHY,
     "commodities": SILVER_COMMODITIES,
+    "news_outlets": SILVER_NEWS_OUTLETS,
     "sources": SILVER_SOURCES,
     "datasets": SILVER_DATASETS,
 }

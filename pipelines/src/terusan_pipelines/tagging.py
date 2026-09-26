@@ -65,7 +65,7 @@ _TOPICS: tuple[tuple[str, tuple[str, ...]], ...] = (
         r"current account|balance of payment|financial account|reserve",
         ("external-sector", "balance-of-payments"),
     ),
-    (r"exchange rate|kurs|rupiah per", ("exchange-rate", "monetary")),
+    (r"exchange rate|kurs|nilai tukar|rupiah per", ("exchange-rate", "monetary")),
     (
         r"interest rate|policy rate|central bank rate|suku bunga|yield",
         ("interest-rates", "monetary"),

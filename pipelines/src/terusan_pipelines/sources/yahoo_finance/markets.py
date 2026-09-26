@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Iterator
+from typing import Any
 
 from ..base import (
     Artifact,
@@ -42,6 +43,60 @@ def chart_url(symbol: str) -> str:
     return f"{API_ROOT}/{symbol}"
 
 
+def chart_window(ctx: ScrapeContext, years: int) -> tuple[int, int]:
+    """The epoch seconds one run asks for."""
+    end = int(time.time())
+    # `ctx.since` narrows an incremental run; a full pull takes the window.
+    start = int(time.mktime(ctx.since.timetuple())) if ctx.since else end - years * SECONDS_PER_YEAR
+    return start, end
+
+
+def chart_artifact(
+    http: Any,
+    symbol: str,
+    dataset: str,
+    start: int,
+    end: int,
+    *,
+    filename: str | None = None,
+) -> Artifact:
+    """One day-interval chart response, landed as received.
+
+    Shared because a source that follows several instruments makes this same
+    request once per instrument, and a second copy of the error handling is a
+    second place for an unknown ticker to pass silently.
+    """
+    response = http.get(
+        chart_url(symbol),
+        params={"period1": start, "period2": end, "interval": "1d"},
+    )
+    body = response.json()
+
+    result = (body.get("chart") or {}).get("result")
+    if not result:
+        # Yahoo answers 200 with an error object for an unknown symbol, so a
+        # missing result is the failure rather than the status.
+        error = (body.get("chart") or {}).get("error")
+        raise ValueError(f"no chart data for {symbol}: {error}")
+
+    return Artifact(
+        # Re-serialized compactly: the API does not promise stable whitespace,
+        # and unstable bytes would defeat the content-addressed landing that
+        # makes a re-run free.
+        content=json.dumps(body, separators=(",", ":")).encode(),
+        filename=filename or f"{dataset}.json",
+        dataset=dataset,
+        source_url=str(response.url),
+        media_type="application/json",
+        metadata={
+            "symbol": symbol,
+            "interval": "1d",
+            "period1": start,
+            "period2": end,
+        },
+    )
+
+
 class YahooDailyIndex(Source, abstract=True):
     """Daily open, high, low and close for one index.
 
@@ -56,44 +111,9 @@ class YahooDailyIndex(Source, abstract=True):
     years: int = DEFAULT_YEARS
 
     def collect(self, ctx: ScrapeContext) -> Iterator[Artifact]:
-        end = int(time.time())
-        # `ctx.since` narrows an incremental run; a full pull takes the window.
-        start = (
-            int(time.mktime(ctx.since.timetuple()))
-            if ctx.since
-            else end - self.years * SECONDS_PER_YEAR
-        )
-
+        start, end = chart_window(ctx, self.years)
         with fetcher() as http:
-            response = http.get(
-                chart_url(self.symbol),
-                params={"period1": start, "period2": end, "interval": "1d"},
-            )
-            body = response.json()
-
-            result = (body.get("chart") or {}).get("result")
-            if not result:
-                # Yahoo answers 200 with an error object for an unknown symbol,
-                # so a missing result is the failure rather than the status.
-                error = (body.get("chart") or {}).get("error")
-                raise ValueError(f"no chart data for {self.symbol}: {error}")
-
-            yield Artifact(
-                # Re-serialized compactly: the API does not promise stable
-                # whitespace, and unstable bytes would defeat the
-                # content-addressed landing that makes a re-run free.
-                content=json.dumps(body, separators=(",", ":")).encode(),
-                filename=f"{self.dataset}.json",
-                dataset=self.dataset,
-                source_url=str(response.url),
-                media_type="application/json",
-                metadata={
-                    "symbol": self.symbol,
-                    "interval": "1d",
-                    "period1": start,
-                    "period2": end,
-                },
-            )
+            yield chart_artifact(http, self.symbol, self.dataset, start, end)
 
 
 class JakartaCompositeIndex(YahooDailyIndex):

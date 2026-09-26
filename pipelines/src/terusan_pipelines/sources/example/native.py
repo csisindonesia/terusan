@@ -33,6 +33,9 @@ class ExampleStatistics(Source):
         base_url="https://example.invalid/api",
         license="CC-BY-4.0",
         update_frequency=UpdateFrequency.MONTHLY,
+        # A template for writing a source, not a publisher: its host is
+        # `example.invalid`, and a scheduled run of it lands made-up figures.
+        active=False,
         # Politeness ceiling for this source. The runner limits per host, so a
         # low number here does not slow down sources on other hosts.
         max_requests_per_second=2.0,

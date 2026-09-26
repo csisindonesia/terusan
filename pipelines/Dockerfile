@@ -48,8 +48,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # Same reasoning as the API: spill and staging stay on the container's disk,
 # never on the share.
+# 1777 for the reason services/api/Dockerfile gives: the uid this runs as is
+# the host's business, not the image's.
 RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin terusan \
-    && mkdir -p /scratch && chown terusan:terusan /scratch
+    && mkdir -p /scratch && chmod 1777 /scratch
 USER terusan
 
 ENV SCRATCH_DIR=/scratch

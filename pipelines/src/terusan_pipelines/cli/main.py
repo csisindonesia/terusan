@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated
 
 import typer
@@ -18,6 +18,7 @@ from terusan_pipelines.catalog import (
     sync_sources,
 )
 from terusan_pipelines.extract import ExtractionRunner
+from terusan_pipelines.news import load_outlets
 from terusan_pipelines.normalize import (
     ColumnMapping,
     NumberFormat,
@@ -55,11 +56,15 @@ sources_app = typer.Typer(help="List and run data sources.", no_args_is_help=Tru
 warehouse_app = typer.Typer(help="Extract, compact and query the lake.", no_args_is_help=True)
 catalog_app = typer.Typer(help="Inspect and sync the PostgreSQL catalog.", no_args_is_help=True)
 silver_app = typer.Typer(help="Normalize Bronze into Silver.", no_args_is_help=True)
+news_app = typer.Typer(
+    help="Cluster and score the news monitoring corpus.", no_args_is_help=True
+)
 app.add_typer(storage_app, name="storage")
 app.add_typer(sources_app, name="sources")
 app.add_typer(warehouse_app, name="warehouse")
 app.add_typer(catalog_app, name="catalog")
 app.add_typer(silver_app, name="silver")
+app.add_typer(news_app, name="news")
 
 
 def _resolver() -> StorageResolver:
@@ -178,6 +183,61 @@ def sources_show(slug: Annotated[str, typer.Argument(help="Source slug.")]) -> N
             indent=2,
         )
     )
+
+
+@sources_app.command("due")
+def sources_due(
+    window_minutes: Annotated[
+        int,
+        typer.Option(
+            "--window",
+            help=(
+                "How far back to look for a firing, in minutes. Match it to how "
+                "often the agent runs: an hourly agent asking for sixty catches "
+                "every schedule exactly once, and forgives a run that starts late."
+            ),
+        ),
+    ] = 60,
+    at: Annotated[
+        datetime | None,
+        typer.Option(
+            "--at", formats=["%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M"], help="Pretend it is now."
+        ),
+    ] = None,
+    frequency: Annotated[
+        str | None,
+        typer.Option("--frequency", help="Only sources declaring this update frequency."),
+    ] = None,
+    verbose: Annotated[
+        bool, typer.Option("--verbose", help="Also print each source's schedule and category.")
+    ] = False,
+) -> None:
+    """Print the sources whose schedule fired in the last window.
+
+    One slug per line and nothing else, because its caller is a shell loop:
+    `scripts/scheduled.sh` reads this and hands the slugs to `sources run`.
+    Nothing is printed when nothing is due, which is the common case for an
+    agent that wakes every hour.
+
+    `--at` makes it answerable without waiting for the clock — what a schedule
+    does on a Friday evening is a question, not an experiment.
+    """
+    reg = _registry()
+    # Local time, not UTC. These expressions are written against the wall clock
+    # of the machine that runs them — `0 18 * * 1-5` is 18:00 WIB, after the
+    # Jakarta close — which is how cron and launchd read a schedule too. Asking
+    # `_now()` here would put the Jakarta close at one in the morning.
+    sources = reg.due(at or datetime.now(), timedelta(minutes=window_minutes))
+
+    if frequency:
+        sources = [s for s in sources if str(s.meta.update_frequency) == frequency]
+
+    for source in sources:
+        meta = source.meta
+        if verbose:
+            typer.echo(f"{meta.slug:<32} {meta.schedule:<16} {meta.category}")
+        else:
+            typer.echo(meta.slug)
 
 
 @sources_app.command("run")
@@ -1045,6 +1105,11 @@ def silver_normalize_each(
                     # dated by the day it publishes, and the table should say
                     # what the observations say.
                     "frequency": result.resolution,
+                    # The collection the figures came from, per series: run
+                    # without --dataset, one pass can cover several of a
+                    # source's collections, and the table is replaced per
+                    # source — so each series has to say which one it is in.
+                    "dataset": rows[0].get("dataset") or dataset,
                 }
             )
 
@@ -1188,6 +1253,10 @@ def silver_dimensions(
             {
                 "geography": runner.write_geography(geographies),
                 "commodities": runner.write_commodities(load_commodities()),
+                # The newspapers the news monitor reads. Published whole,
+                # retired titles included: which papers were being read is part
+                # of what a figure from this corpus means.
+                "news_outlets": runner.write_news_outlets(list(load_outlets())),
                 # The registry too: it is reference data about how the figures
                 # are collected, and the serving layer has no other way to read
                 # it — the catalog database that also holds it is optional.
@@ -1300,3 +1369,246 @@ def silver_resolve(
 
 if __name__ == "__main__":
     app()
+
+
+@news_app.command("cluster")
+def news_cluster(
+    profile: Annotated[
+        str, typer.Option("--profile", help="Which issue to cluster.")
+    ] = "violence",
+    since: Annotated[
+        str | None,
+        typer.Option("--since", help="Only cluster codings dated on or after this, YYYY-MM-DD."),
+    ] = None,
+    until: Annotated[
+        str | None,
+        typer.Option("--until", help="Only cluster codings dated on or before this, YYYY-MM-DD."),
+    ] = None,
+) -> None:
+    """Collapse the codings into events, and count them.
+
+    Recomputed from Bronze every time rather than merged into, so running this
+    twice changes nothing and running it after a corrected coding corrects the
+    events. Safe to run as often as you like.
+    """
+    from datetime import date as _date
+
+    from terusan_pipelines.news.cluster import recluster
+
+    result = recluster(
+        profile,
+        since=_date.fromisoformat(since) if since else None,
+        until=_date.fromisoformat(until) if until else None,
+    )
+    typer.echo(json.dumps(result, indent=2))
+
+
+@news_app.command("recode")
+def news_recode(
+    profile: Annotated[
+        str, typer.Option("--profile", help="Which issue to recode.")
+    ] = "violence",
+    url: Annotated[
+        str | None, typer.Option("--url", help="Recode one article, by its URL.")
+    ] = None,
+    since: Annotated[
+        str | None,
+        typer.Option("--since", help="Only codings dated on or after this, YYYY-MM-DD."),
+    ] = None,
+    until: Annotated[
+        str | None,
+        typer.Option("--until", help="Only codings dated on or before this, YYYY-MM-DD."),
+    ] = None,
+    ask_model: Annotated[
+        bool,
+        typer.Option(
+            "--ask-model/--no-ask-model",
+            help="Also put articles that were never coded to the classifier. Costs a call each.",
+        ),
+    ] = False,
+    limit: Annotated[
+        int | None, typer.Option("--limit", help="Stop after rewriting this many codings.")
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Report what would change without writing it.")
+    ] = False,
+) -> None:
+    """Apply a corrected parser to codings already in Bronze.
+
+    Dates, places and casualty figures are read out of an article's text, not
+    chosen by a model, so a fix to one of those parsers can be applied to every
+    coding already written — from the text Bronze holds, without fetching an
+    outlet again and without paying for a second reading. The labels the readers
+    chose are kept exactly as they stand.
+
+    Only codings a re-read actually changes are written, and they are appended
+    rather than edited: the newest coding per article wins downstream, and the
+    one it corrects stays on the record. Run `news cluster` afterwards to carry
+    the corrections into the events and the counts.
+
+    `--ask-model` additionally walks the articles that were never coded — the
+    ones landed with `engine = "unavailable"` because the classifier could not
+    be reached — and asks for them now. That one costs a model call per article.
+    """
+    from datetime import date as _date
+
+    from terusan_pipelines.news.recode import recode
+
+    result = recode(
+        profile,
+        since=_date.fromisoformat(since) if since else None,
+        until=_date.fromisoformat(until) if until else None,
+        url=url,
+        ask_model=ask_model,
+        limit=limit,
+        dry_run=dry_run,
+    )
+    typer.echo(json.dumps(result, indent=2))
+
+
+@news_app.command("validate")
+def news_validate(
+    period: Annotated[str, typer.Argument(help="The month to score, as YYYY-MM.")],
+    profile: Annotated[
+        str, typer.Option("--profile", help="Which issue to score.")
+    ] = "violence",
+) -> None:
+    """Score a month of machine coding against the human VEWS record.
+
+    Reports recall, precision and per-field agreement — and, separately, how
+    many articles each outlet yielded for the month. The separation matters:
+    an incident missed because an outlet's archive no longer serves that month
+    is not the same failure as one the classifier read and rejected.
+    """
+    from terusan_pipelines.news.validate import validate
+
+    typer.echo(json.dumps(validate(period, profile).as_dict(), indent=2))
+
+
+@news_app.command("outlets")
+def news_outlets(
+    active_only: Annotated[
+        bool, typer.Option("--active/--all", help="Hide outlets that have been retired.")
+    ] = True,
+) -> None:
+    """List the newspapers the crawl reads."""
+    from terusan_pipelines.news import active_outlets, load_outlets
+
+    rows = active_outlets() if active_only else load_outlets()
+    for outlet in rows:
+        flag = "" if outlet.active else "  (retired)"
+        typer.echo(
+            f"{outlet.province:28} {outlet.outlet:22} "
+            f"{outlet.host:30} {outlet.adapter}{flag}"
+        )
+    typer.echo(f"\n{len(rows)} outlets")
+
+
+@news_app.command("lexicon")
+def news_lexicon(
+    profile: Annotated[str, typer.Option("--profile", help="Which issue.")] = "violence",
+    limit: Annotated[int, typer.Option("--limit", help="How many terms to show.")] = 40,
+) -> None:
+    """Show the search terms mined for an issue.
+
+    Recall is bounded by this list, so it is worth reading before wondering why
+    something is not in the corpus.
+    """
+    from terusan_pipelines.news.profiles import profile as get_profile
+
+    lexicon = get_profile(profile).lexicon()
+    typer.echo(f"seed: {len(lexicon.seed)}   mined: {len(lexicon.mined)}\n")
+    for term in lexicon.terms(limit=limit):
+        weight = lexicon.mined.get(term)
+        typer.echo(f"  {term}" + (f"   ({weight} incidents)" if weight else "   (seed)"))
+
+
+@news_app.command("dictionary")
+def news_dictionary(
+    profile: Annotated[str, typer.Option("--profile", help="Which issue.")] = "violence",
+    text: Annotated[
+        str | None,
+        typer.Option("--text", help="Try the dictionary against a headline or an article."),
+    ] = None,
+) -> None:
+    """Show the keyword dictionary, or run one piece of text through it.
+
+    The dictionary decides which fetched article reaches the classifier, so an
+    incident it does not match is an incident the dataset will never hold. With
+    `--text` it reports what matched, from which categories, and which rule
+    admitted or rejected the article.
+    """
+    from terusan_pipelines.news.profiles import profile as get_profile
+
+    dictionary = get_profile(profile).dictionary()
+    if text is None:
+        for category, entries in dictionary.categories.items():
+            typer.echo(f"{category}  ({len(entries)})")
+            typer.echo("    " + ", ".join(entries))
+        typer.echo(f"\n{len(dictionary.terms)} terms in {len(dictionary.categories)} categories")
+        return
+
+    found = dictionary.match(text)
+    typer.echo(json.dumps(found.as_dict() | {"candidate": found.candidate}, indent=2))
+
+
+@news_app.command("coverage")
+def news_coverage(
+    quiet_only: Annotated[
+        bool,
+        typer.Option("--quiet/--all", help="Only the outlets that yielded nothing."),
+    ] = False,
+) -> None:
+    """What each newspaper has actually yielded, and where it has not.
+
+    A blank row on the outlets page has three quite different causes, and they
+    need different fixes:
+
+    - **never visited** — no tally at all. The crawl has not reached it yet;
+      run it.
+    - **found nothing** — discovery returned no candidates. Its sitemap, feed,
+      section page and search all came back empty, which is a fault in this
+      repository's adapters, not in the newspaper.
+    - **read nothing** — candidates were found and none could be fetched.
+      Usually an outlet that refuses robots, including a headless browser.
+
+    Anything else is an outlet working as intended, whose week held no
+    collective violence — which is the common case and not a problem.
+    """
+    from terusan_pipelines.news import load_outlets
+    from terusan_pipelines.news.cluster import read_tallies
+
+    tallies: dict[str, dict[str, int]] = {}
+    for tally in read_tallies():
+        host = str(tally.get("outlet_host") or "")
+        seen = tallies.setdefault(host, {"discovered": 0, "scanned": 0, "recorded": 0})
+        for key in seen:
+            value = tally.get(key)
+            seen[key] = max(seen[key], int(value) if value else 0)
+
+    rows = []
+    for outlet in load_outlets():
+        if not outlet.active:
+            continue
+        seen = tallies.get(outlet.host)
+        if seen is None:
+            state = "never visited"
+        elif seen["discovered"] == 0:
+            state = "found nothing"
+        elif seen["scanned"] == 0:
+            state = "read nothing"
+        elif seen["recorded"] == 0:
+            state = "nothing violent"
+        else:
+            state = "yielding"
+        if quiet_only and state in ("yielding", "nothing violent"):
+            continue
+        rows.append((outlet, seen or {}, state))
+
+    for outlet, seen, state in sorted(rows, key=lambda r: (r[2], r[0].province)):
+        typer.echo(
+            f"{state:16} {outlet.province:26} {outlet.host:30} "
+            f"found={seen.get('discovered', 0):>4} read={seen.get('scanned', 0):>4} "
+            f"kept={seen.get('recorded', 0):>3}"
+        )
+    typer.echo(f"\n{len(rows)} outlets")

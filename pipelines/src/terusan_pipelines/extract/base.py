@@ -88,7 +88,50 @@ from typing import Any
 #:     six provinces created in 2022 in an order of its own, so every one of
 #:     them resolved to a neighbour rather than failing — Papua Tengah's
 #:     casualties were filed under Papua.
-PARSER_VERSION = "16"
+#: 17: Yahoo's daily bars are dated by the exchange's own clock rather than by
+#:     UTC. Foreign exchange sits on Europe/London and is stamped at local
+#:     midnight, which under British Summer Time is 23:00 UTC the day before —
+#:     so every summer rate was dated a day early and a trading week ran from
+#:     Sunday to Thursday. No other Yahoo instrument moves: Jakarta and New
+#:     York are both stamped at an hour that already falls on the session's
+#:     own date. The running quote Yahoo appends for a session it is still
+#:     pricing folds into that session's bar, which it duplicated — Silver
+#:     refuses a period holding two figures, so the pair failed to normalize
+#:     at all once both readings landed on the same date.
+#: 18: News pages collected by `news-monitoring` are read into the corpus and
+#:     coded against an issue profile, instead of landing through the generic
+#:     HTML reader — which sees an article as one blob of prose and carries
+#:     neither the outlet, nor the publication date, nor anything coded.
+#: 19: The news crawl reads everything an outlet published and keeps only what
+#:     is about the issue, so each run also lands a tally of what it read. The
+#:     tallies are the denominator every rate needs: without them a rise in
+#:     incidents cannot be told from a crawl that reached further.
+#: 20: A province a report names is trusted over the one a regency's parent
+#:     implies, and a place name inside a longer place name no longer matches
+#:     twice. Every regency of the six Papua provinces is filed in the
+#:     geography reference under Papua Barat, so following the parent put
+#:     Nabire, Mimika, Jayawijaya and Asmat there — two-fifths of the coded
+#:     incidents, in a province holding none of them.
+#: 21: Two corrections to what the news monitor records.
+#:
+#:     A regency whose parent province is one the geography reference gets
+#:     wrong no longer implies a province at all, where the report does not
+#:     name one. Fifteen incidents in Papua's highlands were being filed in
+#:     Papua Barat, which holds none of those districts.
+#:
+#:     And the gate now refuses follow-up reporting. Asked whether an article
+#:     reports collective violence, the classifier said yes to "investigators
+#:     will take statements" and "police have examined 23 witnesses" — true
+#:     of the article, and wrong for a dataset of incidents, which would have
+#:     counted one brawl again every time it reached court. Those score 0.08
+#:     under the revised wording, against 0.96 before, and a real incident is
+#:     unmoved at 0.96.
+#: 22: DJPK's APBD exports are read by their own extractor — one record per
+#:     headline line, budget and realisation apart, naming the government and
+#:     the fiscal month the landing record carries — instead of as SpreadsheetML
+#:     cells that say neither. GDELT's archives are read at all: the archive
+#:     reader claimed them and found no workbook.
+PARSER_VERSION = "22"
 
 
 class ExtractionError(Exception):

@@ -37,6 +37,7 @@ from .schema import (
     SILVER_DOCUMENTS,
     SILVER_GEOGRAPHY,
     SILVER_INDICATORS,
+    SILVER_NEWS_OUTLETS,
     SILVER_OBSERVATIONS,
     SILVER_SOURCES,
 )
@@ -451,6 +452,30 @@ class SilverRunner:
             for c in commodities
         ]
         return self._write_dimension("commodities", rows, SILVER_COMMODITIES)
+
+    def write_news_outlets(self, outlets: list) -> int:
+        """Publish the news outlet dimension.
+
+        Retired outlets are published too. A paper that stopped publishing is
+        the reason its province's coverage thins, and a dimension that quietly
+        drops it makes that look like a fall in violence.
+        """
+        rows = [
+            {
+                "host": outlet.host,
+                "outlet": outlet.outlet,
+                "province": outlet.province,
+                "geo_id": outlet.geo_id or None,
+                "bps_code": outlet.bps_code or None,
+                "base_url": outlet.base_url,
+                "section_path": outlet.section_path or None,
+                "adapter": outlet.adapter,
+                "active": outlet.active,
+                "note": outlet.note or None,
+            }
+            for outlet in outlets
+        ]
+        return self._write_dimension("news_outlets", rows, SILVER_NEWS_OUTLETS)
 
     def write_sources(self, metas: list) -> int:
         """Publish the source registry (program.md §16).

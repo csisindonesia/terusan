@@ -36,6 +36,9 @@ ExampleLegacy = legacy_source(
         source_type=SourceType.OFFICIAL_PORTAL,
         collection_method=CollectionMethod.SCRAPE,
         update_frequency=UpdateFrequency.IRREGULAR,
+        # A template for porting a script, not a publisher: there is nothing
+        # at the other end to collect.
+        active=False,
         notes="Adapted from a standalone script; convert to a native Source when touched.",
     ),
     dataset="bulk",

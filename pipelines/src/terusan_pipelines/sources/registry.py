@@ -11,8 +11,10 @@ from __future__ import annotations
 import importlib
 import pkgutil
 from collections.abc import Iterator
+from datetime import datetime, timedelta
 
 from .base import Source, SourceMeta
+from .schedule import DEFAULT_WINDOW, due
 
 
 class DuplicateSourceSlug(ValueError):
@@ -90,6 +92,21 @@ class Registry:
     def scheduled(self) -> list[type[Source]]:
         """Sources that declare a schedule and are active."""
         return [s for s in self.all() if s.meta.schedule and s.meta.active]
+
+    def due(
+        self,
+        now: datetime,
+        window: timedelta = DEFAULT_WINDOW,
+    ) -> list[type[Source]]:
+        """Scheduled sources whose cron fired in the window ending at `now`.
+
+        What an agent runs. A schedule that cannot be read raises rather than
+        being skipped: a source going uncollected in silence is the failure
+        reading these expressions was meant to end.
+        """
+        return [
+            source for source in self.scheduled() if due(str(source.meta.schedule), now, window)
+        ]
 
     def __len__(self) -> int:
         self.ensure_loaded()

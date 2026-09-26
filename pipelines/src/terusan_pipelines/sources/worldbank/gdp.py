@@ -113,10 +113,11 @@ class WorldBankGDP(WorldBankIndicator):
         license="CC-BY-4.0",
         update_frequency=UpdateFrequency.ANNUAL,
         max_requests_per_second=4.0,
-        # Daily, 06:00. The series updates rarely, but a cheap check beats
-        # discovering a revision months late; landing is content-addressed, so
-        # an unchanged day writes nothing.
-        schedule="0 6 * * *",
+        # Mondays, 06:00. An annual series revised a few times a year: weekly
+        # still catches a revision within days, where daily asked the API the
+        # same question 365 times to learn it perhaps four. Landing is
+        # content-addressed, so an unchanged week writes nothing.
+        schedule="0 6 * * 1",
         notes="Ported from the lake warehouse. One artifact per API page.",
     )
 
@@ -136,5 +137,6 @@ class WorldBankPopulation(WorldBankIndicator):
         license="CC-BY-4.0",
         update_frequency=UpdateFrequency.ANNUAL,
         max_requests_per_second=4.0,
-        schedule="0 6 * * *",
+        # Mondays, like GDP above, and for the same reason.
+        schedule="0 6 * * 1",
     )

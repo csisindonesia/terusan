@@ -1,0 +1,587 @@
+# Environmental goods lists, concorded to HS 1988/92 subheadings.
+#
+# One row per HS92 six-digit code that sits on at least one list; a 1 in a
+# list's column means the list includes it. Built from the CSIS trade team's
+# working file (`rca clean_EG lists.dta`), which took each list in the HS
+# revision it was drawn up in and concorded it back to HS92 — the revision
+# WITS and the Atlas of Economic Complexity publish a 1995-onward series in.
+#
+# The lists:
+#   tessd   WTO Trade and Environmental Sustainability Structured Discussions
+#   apec    APEC List of Environmental Goods (2012)
+#   accts   Agreement on Climate Change, Trade and Sustainability
+#   sagea   SAGEA environmental goods list
+#   eunz    EU–New Zealand Free Trade Agreement, environmental goods annex
+#   uknz    UK–New Zealand Free Trade Agreement, environmental goods annex
+#   oecd    OECD combined list of environmental goods
+#   unctad  UNCTAD environmental goods
+#
+# A concordance is many-to-many. Where one HS92 code split into several later
+# codes, the row is flagged if any of them is listed, and `hs22` / `hs17` list
+# every code it maps to, pipe-separated. That over-includes by construction:
+# the HS92 code carries the trade of the split-off codes the list left out.
+#
+# `description` is WITS's HS92 text as the working file held it, which Stata
+# had cut at 48 characters.
+hs92,description,tessd,apec,accts,sagea,eunz,uknz,oecd,unctad,hs17,hs22
+060299,"Other live plants, nes",0,0,0,1,0,1,0,0,060290,060290
+220110,"Mineral waters and aerated waters, unsweetened",0,0,0,0,0,0,1,0,220110,220110
+220190,Other unsweetened waters; ice and snow,0,0,0,0,0,0,1,0,220190,220190
+220710,"Undenatured ethyl alcohol, of alcoholic strengt",0,0,0,1,0,0,1,0,220710,220710
+220720,Ethyl alcohol and other denatured spirits of an,0,0,0,1,0,0,0,0,220720,220720
+250490,Other natural graphite (excl. in powder or in f,0,0,0,1,0,0,0,0,250490,250490
+251910,Natural magnesium carbonate (magnesite),0,0,0,1,0,0,0,0,251910,251910
+252100,Limestone flux; limestone and other calcareous,0,0,0,0,0,0,1,0,252100,252100
+252220,Slaked lime,0,0,0,0,0,0,1,0,252220,252220
+260111,Non-agglomerated iron ores and concentrates,0,0,0,1,0,0,0,0,260111,260111
+260112,Agglomerated iron ores and concentrates,0,0,0,1,0,0,0,0,260112,260112
+260120,Roasted iron pyrites,0,0,0,1,0,0,0,0,260120,260120
+260200,"Manganese ores and concentrates, with a mangane",0,0,0,1,0,0,0,0,260200,260200
+260500,Cobalt ores and concentrates,0,0,0,1,0,0,0,0,260500,260500
+260600,Aluminium ores and concentrates,0,0,0,1,0,0,0,0,260600,260600
+261100,Tungsten ores and concentrates,0,0,0,1,0,0,0,0,261100,261100
+261800,Granulated slag (slag sand) from the manufactur,0,0,0,1,0,1,0,0,261800,261800
+262090,Ash and residues containing other metals or met,0,0,0,1,0,0,0,0,262060|262091|262099|711292,262060|262091|262099|711292
+271000,"Petroleum oils, etc, (excl. crude); preparation",0,0,0,1,0,0,0,0,271012|271019|271020|271091|271099,271012|271019|271020|271091|271099
+271600,Electrical energy,0,0,0,1,0,0,0,0,271600,271600
+280110,Chlorine,0,0,0,0,0,0,1,0,280110,280110
+280410,Hydrogen,1,0,0,1,0,0,0,0,280410,280410
+280461,Silicon containing by weight >=99.99% silicon,1,0,1,1,1,1,0,0,280461,280461
+280469,Silicon containing by weight <99.99% silicon,1,0,1,1,0,1,0,0,280469,280469
+281410,Anhydrous ammonia,0,0,0,1,0,0,1,0,281410,281410
+281420,Ammonia in aqueous solution,0,0,0,1,0,0,0,0,281420,281420
+281511,"Sodium hydroxide (caustic soda), solid",0,0,0,0,0,0,1,0,281511,281511
+281512,Sodium hydroxide in aqueous solution (soda lye,0,0,0,0,0,0,1,0,281512,281512
+281610,Hydroxide and peroxide of magnesium,0,0,0,0,0,0,1,0,281610,281610
+281830,Aluminium hydroxide,0,0,0,0,0,0,1,0,281830,281830
+282010,Manganese dioxide,0,0,0,1,0,0,1,0,282010,282010
+282090,Manganese oxides (excl. manganese dioxide),0,0,0,1,0,0,1,0,282090,282090
+282200,Cobalt oxides and hydroxides; commercial cobalt,0,0,0,1,0,0,0,0,282200,282200
+282300,Titanium oxides,0,0,0,1,1,0,0,0,282300,282300
+282410,"Lead monoxide (litharge, massicot)",0,0,0,0,0,0,1,0,282410,282410
+282520,Lithium oxide and hydroxide,0,0,0,1,0,0,0,0,282520,282520
+282690,Fluoroaluminates and other complex fluorine sal,0,0,0,1,0,0,0,0,282690,282690
+282720,Calcium chloride,0,0,0,1,0,0,0,0,282720,282720
+283210,Sodium sulphites,0,0,0,0,0,0,1,0,283210,283210
+283220,Sulphites (excl. sodium),0,0,0,0,0,0,1,0,283220,283220
+283340,Peroxosulphates (persulphates),0,0,0,1,0,0,0,0,283340,283340
+283510,Phosphinates and phosphonates,0,0,0,0,0,0,1,0,283510,283510
+283522,Phosphates of mono or disodium,0,0,0,0,0,0,1,0,283522,283522
+283524,Phosphates of potassium,0,0,0,0,0,0,1,0,283524,283524
+283525,Calcium hydrogenorthophosphate (dicalcium phosp,0,0,0,0,0,0,1,0,283525,283525
+283526,"Phosphates of calcium, nes",0,0,0,0,0,0,1,0,283526,283526
+283529,Phosphates (excl. polyphosphates),0,0,0,0,0,0,1,0,283529,283529
+283691,Lithium carbonates,0,0,0,1,0,0,0,0,283691,283691
+284180,Tungstates (wolframates),0,0,0,1,0,0,0,0,284180,284180
+284700,Hydrogen peroxide,0,0,0,0,0,0,1,0,284700,284700
+285100,Other inorganic compounds; liquid air; compress,0,0,0,0,0,0,1,0,285310|285390,285310|285390
+290511,Methanol (methyl alcohol),0,0,0,0,0,0,1,0,290511,290511
+290512,Propan-1-ol (propyl alcohol) and propan-2-ol (i,0,0,0,1,0,0,0,0,290512,290512
+290513,Butan-1-ol (n-butyl alcohol),0,0,0,1,0,0,0,0,290513,290513
+292111,"Methylamine, di- or trimethylamine and their sa",0,0,0,1,1,0,0,0,292111,292111
+292249,"Amino-acids and their esters, not >1 oxygen fun",0,0,1,0,0,0,0,0,292243|292244|292249,292243|292244|292249
+292520,Imines and their derivatives; salts thereof,0,0,0,1,1,0,0,0,292521|292529,292521|292529
+293339,Compounds containing an unfused pyridine ring i,0,0,0,0,1,0,0,0,293332|293333|293339,293332|293333|293334|293335|293336|293337|293339
+300210,Antisera and other blood fractions,0,0,1,0,0,0,0,0,300211|300215|300290,300249|300251|300259|382211|382212
+300290,Human and animal blood; microbial cultures; tox,0,0,0,1,0,0,0,0,300212|300213|300214|300215|300290,300212|300213|300214|300215|300290
+320730,Liquid lustres and similar preparations,0,0,0,1,0,0,0,0,320730,320730
+320910,"Paints... based on acrylic or vinyl polymers, i",0,0,0,0,0,0,1,0,320910,320910
+320990,"Paints and varnishes, in an aqueous medium, nes",0,0,0,0,0,0,1,0,320990,320990
+340219,"Organic surface-active agents, (excl. soap), ne",0,0,1,0,0,0,0,0,340219,340249
+340290,"Washing and cleaning preparations, not put up f",0,0,1,0,0,0,0,0,340290,340290
+350790,Enzymes; prepared enzymes (not elsewhere specif,0,0,1,1,1,0,0,0,350790,350790
+380210,Activated carbon,0,0,1,1,0,1,1,1,380210,380210
+381511,Supported catalysts with nickel or its compound,0,0,0,0,0,0,1,0,381511,381511
+381512,Supported catalysts with precious metal or its,0,0,0,0,0,0,1,0,381512,381512
+381519,"Supported catalysts, nes",0,0,0,0,0,0,1,0,381519,381519
+381590,"Reaction initiators, accelerators and catalytic",0,0,0,0,0,0,1,0,381590,381590
+381800,"Chemical elements in disk form and compounds, d",1,0,1,1,1,1,0,0,381800,381800
+382100,Prepared culture media for development of micro,0,0,0,1,0,0,0,0,382100,382100
+382390,Chemical products and residual products of chem,1,0,1,1,0,0,0,0,300670|382471|382472|382473|382474|382475|382476|382477|382478|382479|382481|382482|382483|382484|382485|382486|382487|382488|382491|382499|382510|382520|382530|382541|382549|382550|382561|382569|382590|382600|854810,240412|240492|240499|300670|382481|382482|382483|382484|382485|382486|382487|382488|382489|382491|382492|382499|382510|382520|382530|382541|382549|382550|382561|382569|382590|382600|382711|382712|382713|382714|382720|382731|382732|382739|382740|382751|382759|382761|382762|382763|382764|382765|382768|382769|382790|854911|854912|854913|854914|854919
+390940,"Phenolic resins, in primary forms",0,0,0,0,0,0,0,1,390940,390940
+391400,Ion-exchangers based on polymers of 39.01 to 39,0,0,1,1,0,0,1,0,391400,391400
+391732,"Tubes, pipes and hoses, not reinforced, without",0,0,0,0,0,1,0,0,391732,391732
+391733,"Tubes, pipes and hoses, not reinforced, with fi",0,0,0,0,0,1,0,0,391733,391733
+391739,"Other tubes, pipes and hoses, nes",0,0,0,0,0,1,0,0,391739,391739
+391990,"Other self-adhesive plates, tape, strip, foil..",0,0,1,1,1,1,0,0,391990,391990
+392010,"Plates..., of polymers of ethylene, not reinfor",0,0,1,0,1,0,0,1,392010,392010
+392020,"Plates..., of polymers of propylene, not reinfo",0,0,0,0,0,0,1,0,392020,392020
+392030,"Plates..., of polymers of styrene, not reinforc",0,0,0,1,0,1,0,1,392030,392030
+392062,"Plates..., of polyethylene terephthalate, not r",0,0,1,1,1,1,0,0,392062,392062
+392091,"Plates..., of polyvinyl butyral, not reinforced",0,0,1,1,1,1,0,0,392091,392091
+392111,"Cellular plates, strips... of polymers of styre",0,0,0,0,0,0,0,1,392111,392111
+392113,"Cellular plates, strips... of polymers of polyu",0,0,0,0,0,0,0,1,392113,392113
+392190,"Other cellular plates, strips..., of plastics,",0,0,1,1,1,1,0,0,392190,392190
+392290,"Bidets, lavatory pans... and other sanitary war",0,0,0,0,0,1,0,0,392290,392290
+392330,"Carboys, bottles, flasks and similar articles o",0,0,0,0,0,1,0,0,392330,392330
+392490,"Household and toilet articles of plastics, nes",0,0,0,0,0,0,1,0,392490,392490
+392510,"Reservoirs... and similar containers, capacity",0,0,1,0,0,0,0,1,392510,392510
+392690,"Other articles of plastics, nes",0,0,1,0,0,0,1,0,285210|285290|300691|382200|392690|853670,285210|285290|300691|382219|382290|392690|853670
+400259,Acrylonitrile-butadiene rubber (excl. latex),0,0,0,0,0,0,0,1,400259,400259
+400300,"Reclaimed rubber in primary forms or in plates,",0,0,0,1,0,1,0,0,400300,400300
+400400,"Waste, parings and scrap of rubber (excl. hard",0,0,0,1,0,1,0,0,400400,400400
+401150,"New pneumatic tyres, of rubber of a kind used o",0,0,1,1,0,1,0,0,401150,401150
+401320,"Inner tubes, of rubber of a kind used on bicycl",0,0,1,1,0,1,0,0,401320,401320
+440130,"Sawdust, wood waste and scrap (incl. agglomerat",0,0,1,0,0,0,0,0,440131|440139|440140,440131|440132|440139|440141|440149
+440710,"Coniferous wood sawn or chipped lengthwise, sli",0,0,1,0,0,1,0,0,440711|440712|440719,440711|440712|440713|440714|440719
+440723,"Baboen, Mahogany, Imbuia and Balsa wood, sawn l",0,0,1,0,0,0,0,0,440721|440722,440721|440722
+440791,"Oak (Quercus spp.) wood,sawn/chipped lengthwise",0,0,1,0,0,0,0,0,440791,440791
+440792,"Beech (Fagus spp.) wood,sawn/chipped lengthwise",0,0,1,0,0,0,0,0,440792,440792
+440799,"Wood, nes sawn or chipped lengthwise, sliced or",0,0,1,0,0,0,0,0,440727|440728|440729|440793|440794|440795|440796|440797|440799,440723|440727|440728|440729|440793|440794|440795|440796|440797|440799
+440810,Coniferous veneer sheets and sheets for plywood,0,0,1,0,0,1,0,0,440810,440810
+440890,Veneer sheets and sheets for plywood and other,0,0,1,0,0,0,0,0,440831|440839|440890,440831|440839|440890
+440910,"Coniferous wood, continuously shaped along any",0,0,1,0,0,1,0,0,440910,440910
+440920,"Non-coniferous wood, continuously shaped along",0,0,1,0,0,1,0,0,440921|440922|440929,440921|440922|440929
+441830,"Parquet panels, of wood",0,0,1,0,0,0,0,1,441874,441874
+441890,"Builders' joinery and carpentry, of wood, nes",0,1,1,1,0,1,0,0,441860|441873|441875|441879|441891|441899,441830|441873|441875|441879|441881|441882|441883|441889|441891|441892|441899
+450410,"Blocks..., tiles of any shape, solid cylinders,",0,0,1,1,1,1,0,1,450410,450410
+450490,Agglomerated cork; articles of agglomerated cor,0,0,0,0,1,1,0,1,450490,450490
+460120,"Mats, matting and screens of vegetable material",0,0,1,1,0,1,0,0,460121|460122|460129,460121|460122|460129
+470692,Chemical pulp of fibrous cellulosic material (e,0,0,1,1,0,1,0,0,470620|470630|470692,470620|470630|470692
+470710,"Waste and scrap of unbleached kraft paper, pape",0,0,0,1,0,1,0,0,470710,470710
+470720,Waste and scrap of other paper or paperboard of,0,0,0,1,0,1,0,0,470720,470720
+470730,Waste and scrap of paper or paperboard made mai,0,0,0,1,0,1,0,0,470730,470730
+470790,"Waste and scrap of paper or paperboard, nes",0,0,0,1,0,1,0,0,470790,470790
+480522,Multi-ply paper... with only one outer layer bl,0,0,1,1,0,1,0,0,480592,480592
+480560,"Paper and paperboard, in rolls or sheets, weigh",0,0,1,1,0,1,0,0,480512|480519|480524|480591,480512|480519|480524|480591
+480580,"Paper and paperboard, in rolls or sheets, weigh",0,0,1,1,0,1,0,0,480525|480593,480525|480593
+481091,"Multi-ply paper and paperboard, coated...",0,0,1,1,0,1,0,0,481092,481092
+500500,"Yarn spun from silk waste, not put up for retai",0,0,0,1,0,1,0,0,500500,500500
+500600,"Silk yarn, put up for retail sale; silk-worm gu",0,0,0,1,0,1,0,0,500600,500600
+510111,"Greasy shorn wool, not carded or combed",0,0,1,1,0,1,0,0,510111,510111
+510121,"Degreased shorn wool, not carbonised, not carde",0,0,1,1,0,1,0,0,510121,510121
+530110,"Flax, raw or retted",0,0,1,1,0,1,0,0,530110,530110
+530129,"Flax, hackled or otherwise processed, but not s",0,0,1,1,0,1,0,0,530129,530129
+530310,"Jute, etc (excl. flax, true hemp and ramie), ra",0,0,1,1,0,1,0,1,530310,530310
+530599,"Processed ramie, etc, nes; tow, noils and waste",0,0,1,1,0,1,0,1,530500,530500
+531010,Unbleached woven fabrics of jute or of other te,0,0,0,1,0,1,0,0,531010,531010
+540500,Monofilament; strip and the like of artificial,0,0,0,0,0,0,0,1,540500,540500
+560300,Nonwovens,0,0,0,1,0,1,0,1,560311|560312|560313|560314|560391|560392|560393|560394,560311|560312|560313|560314|560391|560392|560393|560394
+560721,"Binder or baler twine of sisal, etc, of the gen",0,0,0,0,0,0,0,1,560721,560721
+560790,"Twine, cordage, ropes and cables, nes",0,0,0,0,0,1,0,1,560790,560790
+560811,Made up fishing nets of man-made textile materi,0,0,0,0,0,0,0,1,560811,560811
+560890,"Knotted netting of twine, cordage or rope of te",0,0,0,0,0,0,0,1,560890,560890
+580190,Woven pile and chenille fabrics of other textil,0,0,0,0,0,0,1,0,580190,580190
+591190,"Textile articles for technical uses, nes, speci",0,0,0,1,0,1,0,0,591190,591190
+630510,"Sacks and bags, used for packing goods, of jute",0,0,0,1,0,1,0,1,630510,630510
+631010,"Used or new rags, worn out scrap twine, cordage",0,0,0,0,0,1,0,0,631010,631010
+631090,"Used or new rags, worn out scrap twine, cordage",0,0,0,0,0,1,0,0,631090,631090
+680610,"Slag wool, rock wool & similar mineral wools in",0,0,1,1,1,1,0,1,680610,680610
+680620,"Exfoliated vermiculite,expanded clays,foamed sl",0,0,0,0,1,0,0,0,680620,680620
+680690,"Art. of heat/sound insulating,etc,nes,mineral m",0,0,1,1,1,1,0,1,680690,680690
+680800,"Panels,boards etc of veg fbr,straw etc agglomer",0,0,1,0,1,1,0,1,680800,680800
+681011,"Building blocks and bricks of cement, concrete",0,0,0,0,0,0,0,1,681011,681011
+681019,"Tiles,flagstones and similar art. of cement/con",0,0,0,0,0,0,0,1,681019,681019
+681091,Prefabri structural components of buildings etc,0,0,0,0,0,0,0,1,681091,681091
+681099,"Articles of cement, of concrete or of artificia",0,0,0,1,0,0,1,0,681099,681099
+681510,Non-electrical articles of graphite or other ca,0,0,0,1,0,1,0,0,681510,681519
+691010,"Ceramic sinks,wash basins etc&similar sanitary",0,0,1,0,0,1,0,1,691010,691010
+691090,"Ceramic sinks, wash basins etc & similar sanita",0,0,1,0,0,0,0,0,691090,691090
+700510,"Float gls etc in sheets,non-wired having an abs",0,0,1,1,1,1,0,0,700510,700510
+700719,Safety glass toughened (tempered) nes,0,0,1,1,1,1,0,0,700719,700719
+700800,Multiple-walled insulating units of glass,0,0,1,1,0,1,1,1,700800,700800
+700991,"Glass mirrors, unframed",0,0,1,1,1,1,0,1,700991,700991
+700992,"Glass mirrors, framed",0,0,0,0,0,0,0,1,700992,700992
+701931,Mats of glass fibres,0,0,0,0,0,1,0,1,701931,701914|701915|701919
+701939,"Webs, mattresses, boards and similar nonwoven p",0,0,0,0,0,1,0,1,701939,701962|701969|701972|701973
+701990,Glass fibres (including glass wool) and article,0,0,1,1,0,1,1,0,701990,701980|701990
+711011,Platinum unwrought or in powder form,0,0,0,1,0,0,0,0,711011,711011
+711019,Platinum in other semi-manufactured forms,0,0,0,1,0,0,0,0,711019,711019
+711021,Palladium unwrought or in powder form,0,0,0,1,0,0,0,0,711021,711021
+711029,Palladium in other semi-manufactured forms,0,0,0,1,0,0,0,0,711029,711029
+711031,Rhodium unwrought or in powder form,0,0,0,1,0,0,0,0,711031,711031
+711039,Rhodium in other semi-manufactured forms,0,0,0,1,0,0,0,0,711039,711039
+711041,"Iridium, osmium and ruthenium unwrought or in p",0,0,0,1,0,0,0,0,711041,711041
+711049,"Iridium, osmium and ruthenium in other semi-man",0,0,0,1,0,0,0,0,711049,711049
+720110,"Pig iron,non-alloy,containing by wt.=<0.5% of p",0,0,0,1,0,0,0,0,720110,720110
+720120,"Pig iron,non-alloy,containing by wt. >0.5% of p",0,0,0,1,0,0,0,0,720120,720120
+720130,"Pig iron, alloy in primary forms",0,0,0,1,0,0,0,0,720150,720150
+720211,"Ferro-manganese, containing by weight more than",0,0,0,1,0,0,0,0,720211,720211
+720219,"Ferro-manganese, nes",0,0,0,1,0,0,0,0,720219,720219
+720221,"Ferro-silicon, containing by weight more than 5",0,0,0,1,0,0,0,0,720221,720221
+720229,"Ferro-silicon, nes",0,0,0,1,0,0,0,0,720229,720229
+720230,Ferro-silico-manganese,0,0,0,1,0,0,0,0,720230,720230
+720241,Ferro-chromium containing by weight more than 4,0,0,0,1,0,0,0,0,720241,720241
+720249,"Ferro-chromium, nes",0,0,0,1,0,0,0,0,720249,720249
+720250,Ferro-silico-chromium,0,0,0,1,0,0,0,0,720250,720250
+720260,Ferro-nickel,0,0,0,1,0,0,0,0,720260,720260
+720270,Ferro-molybdenum,0,0,0,1,0,0,0,0,720270,720270
+720280,Ferro-tungsten and ferro-silico-tungsten,0,0,0,1,0,0,0,0,720280,720280
+720291,Ferro-titanium and ferro-silico-titanium,0,0,0,1,0,0,0,0,720291,720291
+720292,Ferro-vanadium,0,0,0,1,0,0,0,0,720292,720292
+720293,Ferro-niobium,0,0,0,1,0,0,0,0,720293,720293
+720299,"Ferro-alloys, nes",0,0,0,1,0,0,0,0,720299,720299
+720310,Ferrous products obtained by direct reduction o,0,0,0,1,0,0,0,0,720310,720310
+720390,"Spongy ferrous products, or iron having a minim",0,0,0,1,0,0,0,0,720390,720390
+720410,"Waste and scrap, cast iron",0,0,1,1,0,1,0,0,720410,720410
+720421,"Waste and scrap, stainless steel",0,0,1,1,0,1,0,0,720421,720421
+720429,"Waste and scrap, of alloy steel, other than sta",0,0,1,1,0,1,0,0,720429,720429
+720430,"Waste and scrap, of tinned iron or steel",0,0,1,1,0,1,0,0,720430,720430
+720441,"Ferrous waste and scrap,i or s,from the mechani",0,0,1,1,0,1,0,0,720441,720441
+720449,"Ferrous waste and scrap, iron or steel, nes",0,0,1,1,0,1,0,0,720449,720449
+720450,"Remelting scrap ingots, of iron or steel",0,0,1,1,0,1,0,0,720450,720450
+720510,Granules of pig iron or spiegeleisen,0,0,0,1,0,0,0,0,720510,720510
+720521,"Powders, alloy steel",0,0,0,1,0,0,0,0,720521,720521
+720529,"Powders, iron or steel, other than alloy",0,0,0,1,0,0,0,0,720529,720529
+720610,"Ingots, iron or non-alloy steel, of a purity of",0,0,0,1,0,0,0,0,720610,720610
+720690,"Primary forms, iron or non-alloy steel, nes, of",0,0,0,1,0,0,0,0,720690,720690
+722510,Flat rolled products of silicon-electrical stee,0,0,0,0,0,1,0,0,722511|722519,722511|722519
+722610,"Flat rolled prod, of silicon electrical steel,",0,0,0,0,0,1,0,0,722611|722619,722611|722619
+730210,"Rails, iron or steel",0,0,0,1,0,1,0,1,730210,730210
+730230,"Switch blades, crossing frogs, point rods & oth",0,0,0,1,0,1,0,1,730230,730230
+730240,"Fish plates and sole plates, iron or steel",0,0,0,1,0,1,0,1,730240,730240
+730290,Rail or tramway construction material of iron o,0,0,0,1,0,1,0,1,730290,730290
+730300,"Tubes, pipes and hollow profiles of cast iron",0,0,0,0,0,0,0,1,730300,730300
+730410,"Pipes, line, iron or steel, smls, of a kind use",1,0,0,0,0,0,0,0,730411|730419,730411|730419
+730431,"Tubes,pipe&hollow profiles,i or nas,smls,cd/cr,",0,0,0,0,0,0,0,1,730431,730431
+730490,"Tubes, pipe & hollow profiles, iron or steel, s",0,0,0,0,0,0,0,1,730490,730490
+730630,"Tubes,pipe&hollow profiles,iron or nas,welded,o",0,0,0,0,0,0,0,1,730630,730630
+730690,"Tubes, pipe & hollow profiles, iron or steel, w",0,0,0,0,0,0,0,1,730690,730690
+730820,"Towers and lattice masts, iron or steel",1,0,1,1,1,1,0,1,730820,730820
+730890,"Structures and parts of structures,i or s",1,0,1,1,1,1,0,1,730890,730890
+730900,"Reservoirs, tanks, vats & sim ctnr, cap >300L,",0,0,0,0,0,1,1,1,730900,730900
+731010,"Tanks, casks, drums, cans, boxes&sim contr, i o",0,0,0,0,0,0,1,1,731010,731010
+731021,"Cans,iron or steel,cap<50 litres,to be closed b",0,0,0,0,0,0,1,0,731021,731021
+731029,"Cans, iron or steel, capacity <50 litres nes",0,0,0,0,0,0,1,1,731029,731029
+731100,Containers for compressed or liquefied gas of i,1,0,0,1,0,0,0,0,731100,731100
+731511,"Chain, roller, iron or steel",0,0,1,1,0,1,0,0,731511,731511
+732020,"Springs, helical, iron or steel",0,0,0,0,0,1,0,0,732020,732020
+732111,Cooking appliances&plate warmers for gas fuel o,0,0,1,0,0,0,0,1,732111,732111
+732113,Cooking appliances & plate warmers for solid fu,0,0,1,0,0,0,0,1,732119,732119
+732183,"Household or camping appliances,i/s,for htg or",0,0,0,0,0,0,0,1,732189,732189
+732190,Appliance parts clearly identifiable as for hou,0,0,0,0,0,0,0,1,732190,732190
+732490,"Sanitary ware&parts thereof,i or s,nes,for exam",0,0,1,0,0,1,0,1,732490,732490
+732510,Cast articles of non-malleable cast iron nes,0,0,0,0,0,0,1,1,732510,732510
+732599,"Articles of iron or steel, cast, nes",1,0,0,0,0,0,0,0,732599,732599
+732620,"Articles of wire, iron or steel, nes",0,0,1,0,0,0,0,0,732620,732620
+732690,"Articles, iron or steel, nes",0,0,1,0,0,0,0,1,732690,732690
+750110,Nickel mattes,0,0,0,1,0,0,0,0,750110,750110
+750800,"Articles of nickel, nes",0,0,0,1,1,1,0,0,750810|750890,750810|750890
+760110,"Aluminium unwrought, not alloyed",0,0,0,1,0,0,0,0,760110,760110
+760120,"Aluminium unwrought, alloyed",0,0,0,1,0,0,0,0,760120,760120
+760200,"Waste and scrap, aluminium",0,0,0,1,0,0,0,0,760200,760200
+760310,"Powders, aluminium, of non-lamellar structure",0,0,0,1,0,0,0,0,760310,760310
+760320,"Powders, aluminium, of lamellar structure, incl",0,0,0,1,0,0,0,0,760320,760320
+761090,"Structures&parts,alum,eg plate,rods etc,for str",0,0,1,0,0,0,0,1,761090,761090
+761100,"Reservoirs,vats&similar cont of aluminium,cap >",0,0,0,0,0,0,0,1,761100,761100
+761290,"Containers, alum, cap <300L, lined or heated, n",0,0,0,0,0,0,0,1,761290,761290
+761300,"Containers, aluminium, for compressed or liquef",1,0,0,1,0,0,0,0,761300,761300
+761520,"Sanitary ware&parts thereof,aluminium for the k",0,0,1,0,0,1,0,0,761520,761520
+761690,"Articles of aluminium, nes, for example casting",0,0,1,0,0,0,0,0,761691|761699,761691|761699
+780600,Articles of lead nes,0,0,0,0,0,0,1,0,780600,780600
+810110,"Powders, tungsten (wolfram)",0,0,0,1,0,0,0,0,810110,810110
+810411,Magnesium unwrought containing by weight at lea,0,0,0,1,0,0,0,0,810411,810411
+810419,Magnesium unwrought nes,0,0,0,1,0,0,0,0,810419,810419
+810420,Magnesium waste and scrap,0,0,0,1,0,0,0,0,810420,810420
+810430,"Magnesium raspings,turnings or granules graded",0,0,0,1,0,0,0,0,810430,810430
+810490,Magnesium and articles thereof nes,0,0,0,1,0,0,0,0,810490,810490
+810510,"Cobalt,unwrought,matte and oth intermediate pro",0,0,0,1,0,0,0,0,810520|810530,810520|810530
+811100,"Manganese and articles thereof, including waste",0,0,0,1,0,0,0,0,811100,811100
+830630,"Photograph, picture, or similar frames and mirr",0,0,0,0,0,0,0,1,830630,830630
+840211,Watertube boilers with a steam production excee,0,0,1,1,0,1,0,0,840211,840211
+840212,Watertube boilers with a steam production not e,0,0,1,1,0,1,0,0,840212,840212
+840219,"Vapour generating boilers nes, including hybrid",0,0,1,1,0,1,0,1,840219,840219
+840220,Super-heated water boilers,0,0,1,1,0,0,0,0,840220,840220
+840290,Parts of steam or vapour generating boilers nes,0,1,1,1,0,0,0,1,840290,840290
+840310,Central heating boilers nes,0,0,1,1,0,0,0,0,840310,840310
+840390,Parts of central heating boiler nes,0,0,0,1,0,0,0,0,840390,840390
+840410,Auxiliary plant for use with steam or vapour ge,0,1,1,1,0,1,0,1,840410,840410
+840420,Condensers for steam or vapour power units,0,1,1,1,0,1,0,1,840420,840420
+840490,Parts for auxiliary plant & condenser for steam,0,1,1,1,0,1,0,1,840490,840490
+840510,Producer gas or water gas generators acetylene,0,0,0,0,0,1,0,1,840510,840510
+840619,Steam and vapour turbines nes,0,0,0,1,0,1,0,1,840681|840682,840681|840682
+840690,Parts of steam and vapour turbines,0,1,0,1,0,1,0,1,840690,840690
+840731,"Engines, spark-ignition reciprocating, displaci",0,0,0,1,0,0,0,0,840731,840731
+840732,"Engines, spark-ignition reciprocating, displaci",0,0,0,1,0,0,0,0,840732,840732
+840733,"Engines, spark-ignition reciprocating displacin",0,0,0,1,0,0,0,0,840733,840733
+840734,"Engines, spark-ignition reciprocating displacin",0,0,0,1,0,0,0,0,840734,840734
+840790,"Engines, spark-ignition type nes",0,0,0,1,0,0,0,0,840790,840790
+840991,Parts for spark-ignition type engines nes,0,0,0,1,0,0,1,1,840991,840991
+840999,Parts for diesel and semi-diesel engines,0,0,0,1,0,0,1,1,840999,840999
+841011,Hydraulic turbines & water wheels of a power no,0,0,1,1,1,1,1,1,841011,841011
+841012,Hyd turbines & water wheels of a power exc 1000,0,0,1,1,1,1,1,1,841012,841012
+841013,Hydraulic turbines and water wheels of a power,0,0,1,1,1,1,1,1,841013,841013
+841090,Parts of hydraulic turbines & water wheels incl,0,0,1,1,1,1,1,1,841090,841090
+841181,Gas turbines nes of a power not exceeding 5000,0,0,0,1,0,1,0,1,841181,841181
+841182,Gas turbines nes of a power exceeding 5000 KW,0,1,0,1,0,1,0,1,841182,841182
+841199,Parts of gas turbines nes,0,1,0,1,0,0,0,1,841199,841199
+841280,Engines and motors nes,1,0,1,0,1,0,0,1,841280,841280
+841290,Parts of hydraulic & pneumatic & other power en,1,1,1,1,1,1,0,1,841290,841290
+841319,Pumps fitted or designed to be fitted with a me,0,0,0,1,0,0,0,0,841319,841319
+841320,"Hand pumps nes, o/t those of subheading No 8413",0,0,0,0,0,0,1,1,841320,841320
+841350,Reciprocating positive displacement pumps nes,0,0,0,1,0,0,1,1,841350,841350
+841360,Rotary positive displacement pumps nes,0,0,1,1,0,0,1,1,841360,841360
+841370,Centrifugal pumps nes,0,0,1,1,0,0,1,1,841370,841370
+841381,Pumps nes,0,0,1,1,0,0,1,1,841381,841381
+841382,Liquid elevators,0,0,0,1,0,0,0,0,841382,841382
+841391,Parts of pumps for liquid whether or not fitted,0,0,0,0,0,0,0,1,841391,841391
+841410,Vacuum pumps,0,0,1,0,0,0,1,1,841410,841410
+841430,Compressors of a kind used in refrigerating equ,0,0,0,0,0,0,1,1,841430,841430
+841440,Air compressors mounted on a wheeled chassis fo,0,0,0,0,0,0,1,1,841440,841440
+841459,Fans nes,0,0,1,0,0,0,0,1,841459,841459
+841480,"Air or gas compressors, hoods",1,0,1,1,0,1,1,1,841480,841480
+841490,"Parts of vacuum pumps, compressors, fans, blowe",1,0,1,1,0,0,1,1,841490,841490
+841510,"Air conditioning machines window or wall types,",0,0,1,1,0,0,0,0,841510,841510
+841581,Air cond mach nes inc a ref unit and a valve fo,0,0,1,1,0,0,0,1,841581,841581
+841582,"Air cond mach nes, inc a refrigerating unit",0,0,1,1,0,0,0,0,841520|841582,841520|841582
+841583,"Air cond mach nes, not incorporating refrigerat",0,0,1,1,0,0,0,0,841583,841583
+841590,Parts of air conditioning machines,0,0,0,1,0,0,0,0,841590,841590
+841620,"Furnace burners nes, including combination burn",0,0,1,0,0,0,0,0,841620,841620
+841690,"Parts of furnace burners,mech stokers grates,as",0,0,1,0,0,0,0,0,841690,841690
+841780,"Industrial or lab furnaces & ovens, inc inciner",0,1,1,1,0,0,1,1,841780,841780
+841790,Parts of industrial or lab furnaces & ovens inc,0,1,1,1,0,0,1,1,841790,841790
+841861,Compression type refrigrting or freez equip who,0,0,1,0,1,1,0,1,841861,841861
+841869,Refrigerating or freezing equipment nes,0,0,0,1,0,0,0,1,841869,841869
+841899,"Parts of refrigerating or freezing equipment, n",0,0,1,0,0,1,0,0,841899,841899
+841911,Instantaneous gas water heaters,0,0,0,0,0,0,1,0,841911,841911
+841919,"Instantaneous or storage water heaters, non-ele",1,1,1,1,1,1,1,1,841919,841912|841919
+841939,"Non-domestic, non-electric dryers nes",0,1,1,1,0,1,0,1,841939,841939
+841940,Distilling or rectifying plant,0,0,1,1,0,1,0,1,841940,841940
+841950,"Heat exchange units, non-domestic, non-electric",0,0,0,0,0,0,1,1,841950,841950
+841960,Machinery for liquefying air or other gases,0,1,1,1,0,1,1,1,841960,841960
+841989,"Machinery, plant or laboratory equip for treat",0,1,1,1,0,1,1,1,841989,841989
+841990,"Parts of machinery, plant and equipment of head",0,1,1,1,0,1,1,1,841990,841990
+842119,Centrifuges nes,0,0,1,1,0,1,1,1,842119,842119
+842121,Filtering or purifying machinery and apparatus,0,1,1,1,0,1,1,1,842121,842121
+842129,Filtering or purifying machinery and apparatus,0,1,1,1,0,0,1,1,842129,842129
+842139,Filtering or purifying machinery and apparatus,0,1,1,1,0,1,1,1,842139,841470|842132|842139
+842191,"Parts of centrifuges, including centrifugal dry",0,0,1,1,0,1,1,1,842191,842191
+842199,Parts for filtering or purifying mchy & apparat,0,1,1,1,0,1,1,1,842199,842199
+842220,Machinery for cleaning or drying bottles or con,0,0,0,1,0,1,1,1,842220,842220
+842290,"Pts of dish washing,cleaning or drying containe",0,0,0,1,0,1,0,1,842290,842290
+842381,Weighing machinery having a maximum weighing ca,0,0,0,0,0,0,1,0,842381,842381
+842382,Weighing machinery having a maximum weighing ca,0,0,0,0,0,0,1,0,842382,842382
+842389,"Weighing machinery, nes",0,0,0,0,0,0,1,0,842389,842389
+842481,Mech appl for proj/disp or spraying liquids or,0,0,1,1,0,0,0,0,842441|842449|842482,842441|842449|842482
+842489,Mech appl (whether or not hand-op) for proj/dis,0,0,0,1,0,0,0,0,842489,842489
+842490,Pts of mech app (hand-op or not) for proj/disp,0,0,1,0,0,0,1,0,842490,842490
+842833,"Cont-action elevators/conveyors for goods/mat,",0,0,0,0,0,0,0,1,842833,842833
+842940,"Tamping machines and road rollers, self-propell",0,0,0,0,0,0,0,1,842940,842940
+846239,Shearing mach (inc presses) o/t combined pnnch/,0,0,0,1,0,1,0,0,846239,846232|846239
+846291,Hydraulic presses for working metal,0,0,0,1,0,1,0,1,846291,846261
+846299,Presses nes for working metal,0,0,0,1,0,0,0,0,846299,846242|846262|846263|846269|846290
+846596,Splitting/slicing or paring mach for wrkg wood/,0,0,0,0,0,0,0,1,846596,846596
+846599,Mach-tls for working wod/crk/bne/hrd rubber/hrd,0,0,0,0,0,0,0,1,846520|846599,846520|846599
+846694,Parts and accessories nes for use on machines o,0,0,0,0,0,0,0,1,846694,846694
+847193,"Storage units, whether or not presented with th",0,0,0,1,0,0,0,0,847130,847130
+847199,Automatic data processing machines and units th,0,0,0,1,0,0,0,0,847149|847180|847190,847149|847180|847190
+847330,Parts and accessories of automatic data process,0,0,0,1,0,1,0,0,844331|844332|847160|847170|847330|847350|852842|852852|852862|962000,844331|844332|847160|847170|847330|847350|852842|852852|852862|962000
+847410,Sorting/screening/separating or washing mach fo,0,0,1,1,0,1,0,0,847410,847410
+847420,Crushing/grinding machines for earth/ stone/ore,0,1,1,1,0,1,0,1,847420,847420
+847439,Mixing or kneading machines nes for earth or ot,0,0,0,1,0,1,1,0,847439,847439
+847490,Pts of sorting/screening/mixing/crushing/grindi,0,0,1,1,0,1,0,0,847490,847490
+847751,Mach for moulding/retreading pneu tires or to m,0,0,1,0,0,1,0,0,847751,847751
+847982,Mach for mixing/kneading/crushing/grinding etc,0,1,0,1,0,0,1,1,847982,847982
+847989,Machines & mechanical appliances nes having ind,0,1,1,1,1,1,1,1,845640|845650|847950|847960|847971|847979|847989|848610|848620|848630|848640|850819|850860,845640|845650|847950|847960|847971|847979|847983|847989|848530|848580|848610|848620|848630|848640|850819|850860
+847990,Parts of machines & mechanical appliances nes h,0,1,1,1,1,1,0,1,847990|848690|850870,847990|848590|848690|850870
+848110,"Valves, pressure reducing",0,0,1,1,0,1,1,1,848110,848110
+848130,"Valves, check",0,0,0,0,0,0,1,1,848130,848130
+848140,"Valves, safety or relief",0,0,0,1,0,0,1,1,848140,848140
+848180,"Taps, cocks, valves and similar appliances, nes",0,0,1,0,0,0,1,1,848180,848180
+848190,"Parts of taps, cocks, valves or similar applian",0,0,0,0,0,0,0,1,848190,848190
+848210,"Bearings, ball",0,0,1,1,1,1,0,0,848210,848210
+848230,"Bearings, spherical roller",0,0,1,1,1,1,0,0,848230,848230
+848310,"Transmission shafts and cranks, including cam s",0,0,1,0,1,0,0,0,848310,848310
+848330,"Bearing housings,not incorporating ball/roller",0,0,1,1,0,1,0,0,848330,848330
+848340,"Gears and gearing,ball screws,gear boxes,speed",1,0,1,1,1,1,0,1,848340,848340
+848360,Clutches and shaft couplings (including univers,0,0,1,1,1,1,0,1,848360,848360
+850131,"DC motors, DC generators, of an output not exce",0,0,1,0,0,1,0,0,850131,850131|850171|850172
+850132,"DC motors,DC generators,of an output exceeding",0,0,0,1,0,1,0,0,850132,850132
+850133,"DC motors,DC generators,of an output exceeding",1,0,0,1,0,1,0,0,850133,850133
+850151,"AC motors, multi-phase, of an output not exceed",0,0,1,0,0,1,0,0,850151,850151
+850152,"AC motors, multi-phase, of an output exceeding",0,0,1,0,0,1,0,0,850152,850152
+850153,"AC motors, multi-phase, of an output exceeding",0,0,1,0,0,0,0,0,850153,850153
+850161,"AC generators (alternators), of an output not e",0,0,1,1,0,1,0,1,850161,850161
+850162,"AC generators, of an output exceeding 75 KVA bu",0,0,1,1,0,1,0,1,850162,850162
+850163,"AC generators, of an output exceeding 375 KVA b",0,0,1,1,0,1,0,1,850163,850163
+850164,"AC generators, of an output exceeding 750 KVA",0,1,1,1,0,1,0,1,850164,850164|850180
+850220,Generating sets with spark-ignition internal co,0,0,0,0,0,0,0,1,850220,850220
+850230,"Electric generating sets, nes",1,1,1,1,1,1,0,1,850231|850239,850231|850239
+850300,"Parts of electric motors,generators,generating",0,1,1,1,0,1,0,1,850300,850300
+850421,Liquid dielectric transformers having a power h,0,0,1,1,0,1,0,1,850421,850421
+850422,Liq dielectric transf having a power handling c,0,0,1,1,0,1,0,1,850422,850422
+850423,Liq dielectric transf having a power handling c,0,0,1,1,0,1,0,1,850423,850423
+850431,Transformers electric power handling capacity n,0,0,1,1,0,1,0,1,850431,850431
+850432,Transformers electric power handling capacity >,0,0,1,1,0,1,0,1,850432,850432
+850433,Transformers electric power handling capacity >,0,0,1,1,0,1,0,1,850433,850433
+850434,Transformers electric having a power handling c,0,0,1,1,0,1,0,1,850434,850434
+850440,"Static converters, nes",1,0,1,1,0,1,0,1,850440,850440
+850450,"Inductors, electric",0,0,0,1,0,0,0,0,850450,850450
+850490,"Parts of electrical transformers, static conver",0,1,1,1,0,1,0,1,850490,850490
+850590,Electro-magnets nes and parts of heading No 85.,0,0,1,1,0,1,0,1,850590,850590
+850611,Manganese dioxide primary cells&batt of an exte,0,0,0,1,0,0,0,0,850610,850610
+850619,Primary cells and primary batteries of an exter,1,0,0,1,0,1,0,1,850650|850660|850680,850650|850660|850680
+850690,Parts of primary cells and primary batteries,1,0,0,1,0,0,0,0,850690,850690
+850710,Lead-acid electric accumulators of a kind used,0,0,0,1,0,0,0,0,850710,850710
+850720,Lead-acid electric accumulators nes,0,0,1,1,0,1,0,1,850720,850720
+850730,Nickel-cadmium electric accumulators,0,0,1,1,0,1,0,0,850730,850730
+850780,"Electric accumulators, nes",0,0,1,1,0,1,0,0,850750|850760|850780,850750|850760|850780
+850790,"Parts of electric accumulators, including separ",0,0,1,1,0,1,0,0,850790,850790
+850880,"Tools, nes, hand-held, with self-contained elec",0,1,0,0,0,1,0,0,841939|846729,841933|846729
+850980,"Electro-mechanical domestic appliances,with sel",0,0,0,0,0,0,0,1,850980|851030,850980|851030
+851210,Lighting or signalling equipment of a kind used,0,0,1,1,0,1,0,0,851210,851210
+851220,Lighting or visual signalling equipment nes,0,0,1,0,0,1,0,0,851220,851220
+851310,Portable electric lamps designed to function by,0,0,1,0,0,1,0,0,851310,851310
+851410,Industrial & laboratory electric resistance hea,0,1,1,1,0,0,1,1,851410,851411|851419
+851420,Industrial&laboratory electric induction or die,0,1,1,1,0,0,1,1,851420,851420
+851430,Industrial & laboratory electric furnaces & ove,0,1,1,1,0,0,1,1,851430,851431|851432|851439
+851440,Industrial&laboratory electric induction or die,0,0,1,0,0,0,0,0,851440,851440
+851490,Parts of industrial or laboratory electric furn,0,1,0,1,0,0,1,1,851490,851490
+851629,Electric space heating apparatus and electric s,0,0,0,1,0,1,1,1,851629,851629
+852520,"Transmission apparatus, for radioteleph incorpo",0,0,1,1,0,1,0,0,851712|851761|851762|852560,851713|851714|851761|851762|852411|852412|852419|852491|852492|852499|852560|854151|854159
+852691,Radio navigational aid apparatus,0,0,1,1,0,1,0,0,852691,852691
+852810,Television receivers including video monitors a,0,0,0,0,0,1,0,0,851718|851769|852849|852859|852869|852871|852872,851718|851769|852849|852859|852869|852871|852872
+852910,Aerials and aerial reflectors of all kinds; par,0,0,1,1,0,1,0,0,852910,852910
+852990,Parts suitable for use solely or princ with the,0,0,1,1,0,1,0,0,852990,852990
+853010,"Electrical signalling,safety or traffic control",0,0,1,1,0,1,0,1,853010,853010
+853080,"Electrical signalling, safety or traffic contro",0,0,0,1,0,1,0,1,853080,853080
+853090,"Parts of electrical signalling, safety or traff",0,0,1,1,0,1,0,1,853090,853090
+853120,Indicator panels incorporating liquid crystal d,0,0,1,1,0,1,0,0,853120,853120
+853190,Parts of electric sound or visual signalling ap,0,0,0,1,0,1,0,0,853190,853190
+853222,"Electrical capacitors, fixed, aluminium electro",0,0,0,1,0,0,0,0,853222,853222
+853223,"Electrical capacitors, fixed, ceramic dielectri",0,0,0,1,0,0,0,0,853223,853223
+853224,"Electrical capacitors, fixed, ceramic dielectri",0,0,0,1,0,0,0,0,853224,853224
+853229,"Electrical capacitors, fixed, nes",0,0,0,1,0,0,0,0,853229,853229
+853230,"Electrical capacitors, variable or adjustable (",0,0,0,1,0,0,0,0,853230,853230
+853340,"Variable resistors, including rheostats and pot",0,0,0,1,0,0,0,0,853340,853340
+853400,Printed circuits,0,0,0,1,0,0,0,0,853400,853400
+853590,Electrical app for switching or protec elec cir,0,0,0,1,0,0,0,0,853590,853590
+853650,Electrical switches for a voltage not exceeding,0,0,1,1,0,1,0,0,853650,853650
+853690,Electrical app for switching or protec elec cir,0,0,1,0,0,0,0,0,853690,853690
+853710,"Boards, panels, including numerical control pan",1,0,1,1,1,0,0,1,853710,853710
+853720,"Boards, panels, including numerical control pan",0,0,0,1,0,0,0,1,853720,853720
+853921,"Filament lamps, tungsten halogen",0,0,0,0,0,0,0,1,853921,853921
+853931,"Fluorescent lamps, hot cathode",0,0,0,1,0,1,1,1,853931,853931
+853939,"Discharge lamps, other than ultra-violet lamps,",0,0,0,0,0,0,0,1,853932|853939,853932|853939
+853940,Ultra-violet or infra-red lamps; arc lamps,0,0,1,1,0,1,0,0,853941|853949,853941|853949
+853990,"Parts of electric filament or discharge lamps,U",0,0,1,1,0,0,0,0,853990,853951|853990
+854110,"Diodes, other than photosensitive or light emit",0,0,1,0,0,1,0,0,854110,854110
+854121,"Transistors,oth than photosensitive,with a diss",0,0,1,0,0,1,0,0,854121,854121
+854129,"Transistors, other than photosensitive transist",0,0,1,1,0,1,0,0,854129,854129
+854130,"Thyristors, diacs and triacs, other than photos",0,0,1,1,0,1,0,0,854130,854130
+854140,"Photosensitive semiconductor devices,photovolta",1,1,1,1,1,1,1,1,854140,854141|854142|854143|854149
+854190,Parts of mounted piezo-electric crystals and se,0,0,1,0,0,1,0,0,854190,854190
+854211,"Monolithic integrated circuits, digital",0,0,1,1,0,1,0,0,854231|854232|854233|854239,854231|854232|854233|854239|854921|854929|854931|854939|854991|854999
+854330,"Machines & apparatus for electroplating, electr",1,0,1,1,0,1,0,0,854330,854330
+854380,"Electrical machines and apparatus, having indiv",0,0,1,1,0,1,1,1,853950|854370,853952|854340|854370
+854390,Parts of electrical machines & apparatus having,0,1,1,1,0,1,0,1,854390,854390
+854460,"Electric conductors, for a voltage exceeding 1,",0,0,1,1,0,1,0,0,854460,854460
+860110,Rail locomotives powered from an external sourc,0,0,1,1,0,1,0,1,860110,860110
+860120,Rail locomotives powered by electric batteries,0,0,1,1,0,1,0,1,860120,860120
+860210,"Rail locomotives, diesel-electric",0,0,0,0,0,0,0,1,860210,860210
+860290,Rail locomotives nes and locomotive tenders,0,0,0,0,0,0,0,1,860290,860290
+860310,Self-propelled railway cars powered from an ext,0,0,1,1,0,1,0,1,860310,860310
+860390,Self-propelled railway cars nes,0,0,0,0,0,0,0,1,860390,860390
+860400,Railway maintenance-of-way service vehicles,0,0,0,0,0,0,0,1,860400,860400
+860500,"Railway passenger and special purpose coaches,",0,0,0,0,0,1,0,1,860500,860500
+860610,"Railway tank cars, not self-propelled",0,0,0,0,0,0,0,1,860610,860610
+860630,"Railway cars, self-discharging, other than tank",0,0,0,0,0,1,0,1,860630,860630
+860691,"Railway cars, closed and covered",0,0,0,0,0,1,0,1,860691,860691
+860692,"Railway cars, open, with non-removable sides of",0,0,0,0,0,1,0,1,860692,860692
+860699,Railway cars nes,0,0,0,0,0,1,0,1,860699,860699
+860711,Driving bogies and bissel-bogies,0,0,0,1,0,1,0,1,860711,860711
+860712,Bogies and bissel-bogies nes,0,0,0,1,0,1,0,1,860712,860712
+860719,Axles and wheels and parts,0,0,0,1,0,1,0,1,860719,860719
+860721,Air brakes and parts for railway rolling stock,0,0,0,1,0,1,0,1,860721,860721
+860729,Brakes nes and parts thereof for railway rollin,0,0,0,1,0,1,0,1,860729,860729
+860730,Coupling devices and parts for railway rolling,0,0,0,1,0,1,0,1,860730,860730
+860791,Locomotive parts nes,0,0,0,1,0,1,0,1,860791,860791
+860799,Railway rolling stock parts nes,0,0,0,1,0,1,0,1,860799,860799
+860800,"Signalling devices for railways, waterways and",0,0,1,1,0,1,0,1,860800,860800
+870110,Pedestrian controlled tractors,0,0,1,0,0,0,0,0,870110,870110
+870120,Road tractors for semi-trailers (truck tractors,0,0,1,0,0,0,0,0,870120,870121|870122|870123|870124|870129
+870130,Track-laying tractors (crawlers),0,0,1,0,0,0,0,0,870130,870130
+870190,Wheeled tractors nes,0,0,1,0,0,0,0,0,870191|870192|870193|870194|870195,870191|870192|870193|870194|870195
+870290,Buses with a seating capacity of more than nine,0,0,1,1,0,1,0,1,870230|870240|870290,870230|870240|870290
+870310,"Snowmobiles, golf cars and similar vehicles",0,0,1,0,0,0,0,0,870310,870310
+870390,Automobiles nes including gas turbine powered,0,0,1,1,0,1,0,1,870340|870350|870360|870370|870380|870390,870340|870350|870360|870370|870380|870390
+870410,Dump trucks designed for off-highway use,0,0,1,0,0,0,0,0,870410,870410
+870421,Diesel powered trucks with a GVW not exceeding,0,0,0,1,0,0,0,0,870421,870421|870441
+870422,Diesel powered trucks with a GVW exc five tonne,0,0,0,1,0,0,0,0,870422,870422|870442
+870423,Diesel powered trucks with a GVW exceeding twen,0,0,0,1,0,0,0,0,870423,870423|870443
+870431,Gas powered trucks with a GVW not exceeding fiv,0,0,0,1,0,0,0,0,870431,870431|870451
+870490,Trucks nes,0,0,1,1,0,0,0,0,870490,870452|870460|870490
+870510,Mobile cranes,0,0,1,0,0,0,0,0,870510,870510
+870520,Mobile drilling derricks,0,0,1,0,0,0,0,0,870520,870520
+870530,Fire fighting vehicles,0,0,1,0,0,0,0,0,870530,870530
+870540,Mobile concrete mixers,0,0,1,0,0,0,0,0,870540,870540
+870590,Special purpose motor vehicles nes,0,0,1,0,0,0,0,0,870590,870590
+870892,Mufflers and exhaust pipes for motor vehicles,0,0,0,0,0,0,1,0,870892,870892
+870899,Motor vehicle parts nes,1,0,0,0,0,0,0,0,870895|870899,870895|870899
+870911,"Work trucks, electrically powered, for use in f",0,0,1,0,0,0,0,0,870911,870911
+871190,Motorcycles with other than a reciprocating pis,0,0,1,1,0,1,0,0,871160|871190,871160|871190
+871200,Bicycles and other cycles (including delivery t,0,0,1,1,0,1,0,1,871200,871200
+871419,Motorcycle parts nes,0,0,0,0,0,0,0,1,871410,871410
+871420,Wheelchair parts nes,0,0,0,0,0,0,0,1,871420,871420
+871491,"Bicycle frames and forks, and parts thereof",0,0,1,1,0,1,0,1,871491,871491
+871492,Bicycle wheel rims and spokes,0,0,1,1,0,1,0,1,871492,871492
+871493,Bicycle hubs and free-wheel sprocket wheels,0,0,1,1,0,1,0,1,871493,871493
+871494,"Bicycle brakes, including coaster braking hubs,",0,0,1,1,0,1,0,1,871494,871494
+871495,Bicycle saddles,0,0,1,1,0,1,0,1,871495,871495
+871496,Bicycle pedals and crank-gear and parts thereof,0,0,1,1,0,1,0,1,871496,871496
+871499,Bicycle parts nes,0,0,1,1,0,1,0,1,871499,871499
+871639,Trailers nes for the transport of goods,0,0,0,0,0,0,0,1,871639,871639
+890110,"Cruise ships, excursion boats etc principally d",0,0,1,0,0,0,0,0,890110,890110
+890710,Inflatable rafts including those for carrying s,0,0,1,1,0,1,0,0,890710,890710
+890790,"Buoys, beacons, coffer-dams, pontoons and other",0,0,1,1,0,1,0,1,890790,890790
+900190,"Prisms, mirrors & other optical elements of any",0,0,1,1,1,1,0,1,900190,900190
+900290,"Lenses, prisms, mirrors and other optical eleme",0,0,1,1,1,1,0,1,900290,900290
+900580,"Monoculars, oth optical telescopes, astronomica",0,0,0,0,0,0,0,1,900580,900580
+901210,Microscopes other than optical microscopes and,0,0,0,1,0,1,0,0,901210,901210
+901290,Parts and accessories for microscopes other tha,0,0,0,1,0,1,0,0,901290,901290
+901320,"Lasers, other than laser diodes",0,0,1,1,0,1,1,0,901320,901320
+901380,"Optical devices, appliances and instruments, ne",0,1,1,1,1,1,0,1,901380,901380
+901390,Parts and accessories of optical appliances and,0,1,1,1,1,1,0,1,901390,901390
+901530,Surveying levels,0,0,0,1,0,1,0,1,901530,901530
+901540,Photogrammetrical surveying instruments and app,0,0,0,1,0,1,0,1,901540,901540
+901580,"Surveying,hydrographic,oceanographic,meteorolog",1,1,1,1,0,1,0,1,901580,901580
+901590,Parts and accessories for use with the apparatu,0,0,1,1,0,1,0,1,901590,901590
+902219,Apparatus based on the use of X-rays for other,0,0,0,1,0,0,0,0,902219,902219
+902290,Parts and accessories for app based on the use,0,0,0,1,0,0,0,0,902290,902290
+902511,"Thermometers&pyrometers,not combined with other",0,0,0,0,0,0,1,1,902511,902511
+902519,"Thermometers&pyrometers,not combined with other",0,0,1,1,0,1,1,1,902519,902519
+902580,"Hydrometers, pyrometers, hygrometers and psychr",0,0,0,0,0,0,1,0,902580,902580
+902590,Parts and accessories for use with the apparatu,0,0,1,1,0,1,0,0,902590,902590
+902610,Instruments and apparatus for measure/checking,0,1,1,1,0,1,1,1,902610,902610
+902620,Instruments and apparatus for measuring or chec,0,1,1,1,0,1,1,1,902620,902620
+902680,Instruments & apparatus for measure/checking va,0,1,1,1,0,1,1,1,902680,902680
+902690,Parts of inst and app for measure/checking vari,0,1,1,1,0,1,1,1,902690,902690
+902710,Gas or smoke analysis apparatus,0,1,1,1,0,1,1,1,902710,902710
+902720,Chromatographs and electrophoresis instruments,0,1,1,1,0,1,1,1,902720,902720
+902730,"Spectrometers,spectrophotometers and spectrogra",0,1,1,1,0,1,1,1,902730,902730
+902750,Instruments and apparatus using optical radiati,0,1,1,1,0,1,1,1,902750,902750
+902780,Instruments and apparatus for physical or chemi,0,1,1,1,0,1,1,1,902780,902781|902789
+902790,Microtomes; parts & access of inst and app for,0,1,1,1,0,1,1,1,902790,902790
+902810,"Gas supply, production and calibrating meters",0,0,1,1,0,1,1,1,902810,902810
+902820,"Liquid supply, production and calibrating meter",0,0,1,1,0,1,1,1,902820,902820
+902830,"Electricity supply, production and calibrating",1,0,1,1,0,1,0,1,902830,902830
+902890,"Parts and accessories for gas, liquid or electr",0,0,1,1,0,1,0,1,902890,902890
+903010,Instruments and apparatus for measuring or dete,0,0,1,1,0,1,1,1,903010,903010
+903020,Cathode-ray oscilloscopes and cathode-ray oscil,0,0,1,0,0,1,0,1,903020,903020
+903031,Multimeters,1,0,1,1,0,1,0,1,903031,903031
+903039,"Inst&app,for measuring or checking voltage,curr",0,0,1,1,0,1,0,1,903033,903033
+903081,"Inst&app for measuring or checking elec qty,wit",1,0,1,1,0,1,0,1,903032|903039|903084,903032|903039|903084
+903089,Instruments and apparatus for measuring or chec,1,0,1,1,0,1,0,1,903082|903089,903082|903089
+903090,Parts & access for inst & app for meas or check,0,0,1,1,0,1,0,1,903090,903090
+903110,"Machines for balancing mechanical parts, nes",0,0,1,0,0,1,0,1,903110,903110
+903120,Test benches for measuring or checking instrume,0,0,0,0,0,1,0,1,903120,903120
+903140,"Optical instruments and appliances, nes",0,1,1,1,0,1,1,1,903141|903149,903141|903149
+903180,"Measuring or checking instruments, appliances a",0,1,1,1,0,1,1,1,903180,903180
+903190,Parts and accessories for measuring or checking,0,1,1,1,0,1,0,1,903190,903190
+903210,Thermostats,0,0,1,1,0,1,1,1,903210,903210
+903220,Manostats,0,0,1,1,0,1,1,1,903220,903220
+903281,Hydraulic or pneumatic automatic regulating or,0,0,1,1,0,1,1,1,903281,903281
+903289,Automatic regulating or controlling instruments,1,1,1,1,0,1,1,1,903289,903289
+903290,Parts & access for automatic regulating or cont,0,1,1,1,0,1,0,1,903290,903290
+903300,"Parts & access nes for machines, appliances, in",0,1,0,1,0,0,0,1,903300,903300
+940510,Chandeliers & other electric ceiling or wall li,0,0,1,0,0,1,0,1,940510,940511|940519
+940520,"Electric table, desk, bedside or floor-standing",0,0,1,0,0,1,0,1,940520,940521|940529
+940530,Lighting sets of a kind used for Christmas tree,0,0,1,0,0,0,0,0,940530,940531|940539
+940540,"Electric lamps and lighting fittings, nes",0,0,1,0,0,1,0,1,940540,940541|940542|940549
+940560,"Illuminated signs, illuminated name-plates and",0,0,1,0,0,1,0,0,940560,940561|940569
+940600,Prefabricated buildings,0,0,1,0,0,0,0,0,940610|940690,940610|940620|940690
+950720,"Fish-hooks, whether or not snelled",0,0,1,0,0,0,0,1,950720,950720
+960310,Brooms/brushes of twigs or oth veg mat bound to,0,0,0,0,0,0,1,0,960310,960310
+960350,"Brushes nes, constituting parts of machines, ap",0,0,0,0,0,0,1,0,960350,960350
+960390,Hand-operated mechanical floor sweepers; prepar,0,0,0,0,0,0,1,0,960390,960390
+961700,Vacuum flasks/vacuum vessels complete w/cases;,0,0,1,0,0,1,0,0,961700,961700

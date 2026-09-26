@@ -10,11 +10,12 @@ warehouse whose subject is one country. Comparators are a deliberate addition,
 not the default (the same argument as the World Bank source's `COUNTRIES`).
 
 A detail page carries the latest reading, the previous one, the all-time high
-and low with their dates, the release calendar and the unit — but no history
-beyond that: the chart behind it is a paid API. So history accrues by running
-daily and keeping each day's page. Landing is content-addressed, which makes
-that cheap: a day where nothing was published writes nothing, and a day where
-one figure changed writes one directory.
+and low with their dates, the release calendar and the unit. The history is
+behind the page's chart, which fetches it from an endpoint the page names, so
+each page is followed by its chart's payload (see `charts.py`). Landing is
+content-addressed, which makes running daily cheap: a day where nothing was
+published writes nothing, and a day where one figure changed writes one
+directory.
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ from ..base import (
 )
 from ..http import fetcher
 from ..ratelimit import HostRateLimiter
+from .charts import chart_request
 
 log = structlog.get_logger(__name__)
 
@@ -180,5 +182,33 @@ class TradingEconomicsIndonesia(Source):
                     media_type="text/html",
                     partition=partition,
                     metadata={"indicator": slug, "observed_on": today.isoformat()},
+                )
+                landed += 1
+
+                # The chart's history. A page without one — or a market page,
+                # served elsewhere — keeps its reading and loses nothing.
+                chart = chart_request(response.text)
+                if chart is None:
+                    continue
+                payload = http.try_get(chart.url, headers=chart.headers)
+                if payload is None:
+                    continue
+                yield Artifact(
+                    content=payload.content,
+                    filename=f"{slug}-chart-{today.isoformat()}.json",
+                    dataset=slug,
+                    source_url=chart.url,
+                    media_type="application/json",
+                    partition=partition,
+                    metadata={
+                        "indicator": slug,
+                        "kind": "chart",
+                        "symbol": chart.symbol,
+                        "frequency": chart.frequency,
+                        "last_update": chart.last_update,
+                        "page_url": str(response.url),
+                        "observed_on": today.isoformat(),
+                        "encoding": "base64, XOR with the chart script's key, gzip",
+                    },
                 )
                 landed += 1

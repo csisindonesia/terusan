@@ -36,6 +36,18 @@ export PIPELINES_ROOT="${PIPELINES_ROOT:-$PWD}"
 # With it set, a collection has a URL that survives a cleared cache and opens
 # on another machine, and the portal shows a login page.
 export APP_DB="${APP_DB:-$PWD/.data/app.duckdb}"
+# The assistant's Workers AI credentials, from .env. Only these keys, read line
+# by line rather than sourced: .env is written for Docker, where a value with a
+# space in it (DATA_DIR) is fine unquoted and a shell would run half of it.
+# Anything already in the environment wins.
+if [[ -f .env ]]; then
+  for key in CF_ACCOUNT_ID CF_AI_TOKEN JEV_CLOUDFLARE AI_GATEWAY_ID ASSISTANT_MODEL ASSISTANT_ROUTER_MODEL; do
+    if [[ -z "${!key:-}" ]]; then
+      value="$(grep -E "^${key}=" .env | tail -n1 | cut -d= -f2- || true)"
+      if [[ -n "$value" ]]; then export "$key=$value"; fi
+    fi
+  done
+fi
 # How often to look for changed Go files. Polling rather than fsevents/inotify,
 # which differ per platform and would need a dependency nobody has installed.
 WATCH_INTERVAL="${WATCH_INTERVAL:-1}"

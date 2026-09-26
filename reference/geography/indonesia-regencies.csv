@@ -31,6 +31,18 @@
 #
 # valid_from and valid_to are empty: this is the 2024 state of the hierarchy,
 # and an area created or dissolved since is not distinguished here yet.
+#
+# Some regencies carry a second BPS code as an alias. In 2022 Papua was split
+# into four provinces and Papua Barat into two, and BPS renumbered the
+# regencies that moved: Merauke is 91.01 under the old scheme and 9301 under
+# the new one. No boundary was redrawn — the place is the same, so it stays one
+# row and answers to both codes, which is what lets Kemendag's SP2KP (new
+# codes) and Bank Indonesia's older series (old codes) land on it.
+#
+# The cost is that `parent_geo_id` still names the pre-2022 province, so a
+# roll-up puts Papua Tengah's figures under Papua. Registering the four new
+# provinces and re-parenting these twenty-six is what would fix that, and it
+# would move every series already collected against the old parents.
 geo_id,name,geo_type,parent_geo_id,bps_code,valid_from,valid_to,aliases
 ID-11.01,Aceh Selatan,regency,ID-11,11.01,,,acehselatan
 ID-11.02,Aceh Tenggara,regency,ID-11,11.02,,,acehtenggara
@@ -506,45 +518,45 @@ ID-82.07,Pulau Morotai,regency,ID-82,82.07,,,pulaumorotai
 ID-82.08,Pulau Taliabu,regency,ID-82,82.08,,,pulautaliabu
 ID-82.71,Kota Ternate,regency,ID-82,82.71,,,Ternate|kotaternate
 ID-82.72,Kota Tidore Kepulauan,regency,ID-82,82.72,,,Tidore Kepulauan|kotatidorekepulauan|tidorekepulauan
-ID-91.01,Merauke,regency,ID-91,91.01,,,
-ID-91.02,Jayawijaya,regency,ID-91,91.02,,,
+ID-91.01,Merauke,regency,ID-91,91.01,,,9301
+ID-91.02,Jayawijaya,regency,ID-91,91.02,,,9501
 ID-91.03,Jayapura,regency,ID-91,91.03,,,
-ID-91.04,Nabire,regency,ID-91,91.04,,,
+ID-91.04,Nabire,regency,ID-91,91.04,,,9401
 ID-91.05,Kepulauan Yapen,regency,ID-91,91.05,,,kepulauanyapen
 ID-91.06,Biak Numfor,regency,ID-91,91.06,,,biaknumfor
-ID-91.07,Puncak Jaya,regency,ID-91,91.07,,,puncakjaya
-ID-91.08,Paniai,regency,ID-91,91.08,,,
-ID-91.09,Mimika,regency,ID-91,91.09,,,
+ID-91.07,Puncak Jaya,regency,ID-91,91.07,,,puncakjaya|9402
+ID-91.08,Paniai,regency,ID-91,91.08,,,9403
+ID-91.09,Mimika,regency,ID-91,91.09,,,9404
 ID-91.10,Sarmi,regency,ID-91,91.10,,,
 ID-91.11,Keerom,regency,ID-91,91.11,,,
-ID-91.12,Pegunungan Bintang,regency,ID-91,91.12,,,pegununganbintang
-ID-91.13,Yahukimo,regency,ID-91,91.13,,,
-ID-91.14,Tolikara,regency,ID-91,91.14,,,
+ID-91.12,Pegunungan Bintang,regency,ID-91,91.12,,,pegununganbintang|9502
+ID-91.13,Yahukimo,regency,ID-91,91.13,,,9503
+ID-91.14,Tolikara,regency,ID-91,91.14,,,9504
 ID-91.15,Waropen,regency,ID-91,91.15,,,
-ID-91.16,Boven Digoel,regency,ID-91,91.16,,,bovendigoel
-ID-91.17,Mappi,regency,ID-91,91.17,,,
-ID-91.18,Asmat,regency,ID-91,91.18,,,
+ID-91.16,Boven Digoel,regency,ID-91,91.16,,,bovendigoel|9302
+ID-91.17,Mappi,regency,ID-91,91.17,,,9303
+ID-91.18,Asmat,regency,ID-91,91.18,,,9304
 ID-91.19,Supiori,regency,ID-91,91.19,,,
 ID-91.20,Mamberamo Raya,regency,ID-91,91.20,,,mamberamoraya
-ID-91.21,Mamberamo Tengah,regency,ID-91,91.21,,,mamberamotengah
-ID-91.22,Yalimo,regency,ID-91,91.22,,,
-ID-91.23,Lanny Jaya,regency,ID-91,91.23,,,lannyjaya
-ID-91.24,Nduga,regency,ID-91,91.24,,,
-ID-91.25,Puncak,regency,ID-91,91.25,,,
-ID-91.26,Dogiyai,regency,ID-91,91.26,,,
-ID-91.27,Intan Jaya,regency,ID-91,91.27,,,intanjaya
-ID-91.28,Deiyai,regency,ID-91,91.28,,,
+ID-91.21,Mamberamo Tengah,regency,ID-91,91.21,,,mamberamotengah|9505
+ID-91.22,Yalimo,regency,ID-91,91.22,,,9506
+ID-91.23,Lanny Jaya,regency,ID-91,91.23,,,lannyjaya|9507
+ID-91.24,Nduga,regency,ID-91,91.24,,,9508
+ID-91.25,Puncak,regency,ID-91,91.25,,,9405
+ID-91.26,Dogiyai,regency,ID-91,91.26,,,9406
+ID-91.27,Intan Jaya,regency,ID-91,91.27,,,intanjaya|9407
+ID-91.28,Deiyai,regency,ID-91,91.28,,,9408
 ID-91.71,Kota Jayapura,regency,ID-91,91.71,,,kotajayapura
-ID-92.01,Sorong,regency,ID-92,92.01,,,
+ID-92.01,Sorong,regency,ID-92,92.01,,,9601
 ID-92.02,Manokwari,regency,ID-92,92.02,,,
 ID-92.03,Fak Fak,regency,ID-92,92.03,,,fakfak
-ID-92.04,Sorong Selatan,regency,ID-92,92.04,,,sorongselatan
-ID-92.05,Raja Ampat,regency,ID-92,92.05,,,rajaampat
+ID-92.04,Sorong Selatan,regency,ID-92,92.04,,,sorongselatan|9602
+ID-92.05,Raja Ampat,regency,ID-92,92.05,,,rajaampat|9603
 ID-92.06,Teluk Bintuni,regency,ID-92,92.06,,,telukbintuni
 ID-92.07,Teluk Wondama,regency,ID-92,92.07,,,telukwondama
 ID-92.08,Kaimana,regency,ID-92,92.08,,,
-ID-92.09,Tambrauw,regency,ID-92,92.09,,,
-ID-92.10,Maybrat,regency,ID-92,92.10,,,
+ID-92.09,Tambrauw,regency,ID-92,92.09,,,9604
+ID-92.10,Maybrat,regency,ID-92,92.10,,,9605
 ID-92.11,Manokwari Selatan,regency,ID-92,92.11,,,manokwariselatan
 ID-92.12,Pegunungan Arfak,regency,ID-92,92.12,,,pegununganarfak
-ID-92.71,Kota Sorong,regency,ID-92,92.71,,,kotasorong
+ID-92.71,Kota Sorong,regency,ID-92,92.71,,,kotasorong|9671

@@ -44,11 +44,12 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
+from decimal import Decimal
 from html import unescape
 from typing import Any
 from urllib.parse import urlparse
 
-from .base import Extractor, Landed
+from .base import ExtractionError, Extractor, Landed
 from .tabular import decode
 
 SOURCE_SLUG = "tradingeconomics-indonesia"
@@ -425,3 +426,101 @@ def _zip_cells(names: tuple[str, ...], cells: list[str]) -> dict[str, str]:
         if cells[index]:
             named[f"column_{index + 1}"] = cells[index]
     return named
+
+
+# -- chart history ----------------------------------------------------------
+
+
+#: The chart's frequency to how a point's date becomes a period. A quarter is
+#: dated by its last month (`2000-09-01` is the third quarter) and a year by
+#: its first day, which read as dates would file a year under January.
+def chart_period(point_date: str, frequency: str) -> str:
+    year, month = point_date[:4], int(point_date[5:7])
+    frequency = frequency.lower()
+    if frequency in ("yearly", "annual"):
+        return year
+    if frequency == "quarterly":
+        return f"{year}-Q{(month + 2) // 3}"
+    if frequency == "semesterly":
+        # Silver has no half-year resolution; the half is dated by its last
+        # month, which is what Trading Economics does too.
+        return point_date[:7]
+    if frequency in ("monthly", "bimonthly"):
+        return point_date[:7]
+    return point_date[:10]
+
+
+class TradingEconomicsChartExtractor(Extractor):
+    """A chart payload into one Bronze record per historical figure.
+
+    Filed under the index's dataset with the page's indicator key, like a
+    page's reading: the history and the reading are the same series, and a
+    third normalization pass rebuilds each charted indicator from its history.
+    Forecasts and projections are Trading Economics' own and are left out.
+    """
+
+    target = "records"
+
+    def handles(self, landed: Landed) -> bool:
+        return (
+            landed.source_slug == SOURCE_SLUG
+            and landed.path.suffix.lower() == ".json"
+            and (landed.extra or {}).get("kind") == "chart"
+        )
+
+    def extract(self, landed: Landed) -> Iterator[dict[str, Any]]:
+        from ..sources.trading_economics.charts import decode_payload
+
+        try:
+            payload = decode_payload(landed.path.read_bytes())
+        except Exception as exc:  # noqa: BLE001 - surfaced with the path attached
+            raise ExtractionError(str(landed.path), f"undecodable chart payload: {exc}") from exc
+
+        extra = landed.extra or {}
+        slug = str(extra.get("indicator") or landed.dataset or "")
+        country = country_of(str(extra.get("page_url") or landed.source_url or ""))
+        symbol = str(extra.get("symbol") or "").lower()
+
+        number = 0
+        for entry in payload:
+            for item in entry.get("series") or []:
+                serie = item.get("serie") or {}
+                # Only the page's own series: a comparison would be another
+                # country's figures under this indicator's name.
+                if symbol and str(serie.get("s", "")).lower().split(":")[0] != symbol:
+                    continue
+                frequency = str(serie.get("frequency") or extra.get("frequency") or "")
+                # One figure per period, the last one in it. A policy rate
+                # moved twice in a day, or a quarterly wage series with a
+                # point in January and another in March, would otherwise put
+                # two figures under one observation — which Silver refuses for
+                # the whole series. The last is the period's closing value,
+                # which is what the chart itself draws.
+                closing: dict[str, list] = {}
+                points = [
+                    p for p in serie.get("data") or [] if len(p) >= 4 and p[0] is not None and p[3]
+                ]
+                for point in sorted(points, key=lambda p: (p[1] or 0, str(p[3]))):
+                    closing[chart_period(str(point[3]), frequency)] = point
+                for period, point in closing.items():
+                    number += 1
+                    yield {
+                        "dataset": INDEX_DATASET,
+                        "row_number": number,
+                        "columns": {
+                            "country": country,
+                            "indicator_key": indicator_key(slug),
+                            "indicator_title": indicator_title(slug),
+                            "kind": "history",
+                            "indicator": slug,
+                            "period": period,
+                            "date": str(point[3]),
+                            # Positional rather than scientific: `1.2E+15` is not a
+                            # number every reader of Bronze parses.
+                            "value": format(Decimal(str(point[0])), "f"),
+                            "unit": str(serie.get("unit") or ""),
+                            "frequency": frequency,
+                            "symbol": symbol,
+                            "publisher": str(serie.get("source") or ""),
+                        },
+                    }

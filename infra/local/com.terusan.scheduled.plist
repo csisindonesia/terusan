@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The scheduled ingestion, as a launchd user agent.
+
+  A template: `make schedule-install` substitutes __PROJECT_ROOT__ and the
+  shell's PATH, then loads it. Kept in the repository rather than written by
+  hand into ~/Library/LaunchAgents so that what runs on the hour is reviewable.
+
+  Hourly, not daily, and this is the change worth explaining. Every source
+  declares a cron on its registry record — IHSG at 18:00 after the Jakarta
+  close, the commodity futures at 22:00 after New York, BMKG's earthquakes
+  every hour — and until `scripts/scheduled.sh` existed nothing read them: one
+  agent fired at 05:00 and ran a hand-written list of two slugs. Waking every
+  hour and asking the registry what that hour owes is what makes those records
+  the instruction rather than the documentation.
+
+  It is not sixty times the work. Most hours owe nothing, and an hour that owes
+  nothing exits in about a second without touching the lake.
+
+  launchd, not cron: on a laptop that is asleep at 22:00, cron simply skips the
+  run, while launchd fires it once the machine wakes. The script asks whether a
+  firing fell anywhere in the last hour rather than on this exact minute, so a
+  late wake collects what it missed instead of losing it.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.terusan.scheduled</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__PROJECT_ROOT__/scripts/scheduled.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__PROJECT_ROOT__</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- launchd starts with a minimal PATH that holds neither uv nor
+             Homebrew, and the script's first act is to call uv. -->
+        <key>PATH</key>
+        <string>__PATH__</string>
+    </dict>
+
+    <!-- Minute without Hour is launchd's spelling of "every hour, on the
+         hour". The script's own window is an hour wide to match: change one
+         and the other has to follow, or a firing falls between two runs. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- Not at load: installing the agent should not start fetching. -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>__PROJECT_ROOT__/.cache/logs/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__PROJECT_ROOT__/.cache/logs/launchd.err.log</string>
+</dict>
+</plist>

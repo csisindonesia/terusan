@@ -1,0 +1,96 @@
+# Indonesian news outlets monitored for collective violence reporting.
+#
+# Built from `news outlet.xlsx` — two titles per province plus two national
+# papers, the shortlist a coder would read. The spreadsheet holds three columns
+# (province, paper, a URL); everything else here was established by probing
+# each host, because the crawl needs what the sheet does not say: which host
+# actually answers, which publisher network's search page it runs, and which
+# province code to file its reports under.
+#
+# `base_url` is what discovery searches. `section_path` is the crime or law
+# section the sheet pointed at, kept as a listing fallback for outlets whose
+# search box ignores its query — it is a seed, not a filter, and articles found
+# by any route are coded the same way.
+#
+# `adapter` names the search-page shape: `wp_query` is the WordPress `?s=` form
+# and the default, because most provincial titles run WordPress. A wrong guess
+# is not fatal — an adapter that returns nothing falls through to the site's
+# sitemap and feed.
+#
+# `geo_id` is the BPS-keyed province from reference/geography. The two national
+# papers carry `IDN`: they cover the whole country, and filing them under a
+# province would put Jakarta's crime desk in Jakarta's figures.
+#
+# Probed 2026-09-23. Five titles in the sheet are vanity domains that redirect
+# into the Tribun network, and two are gone; both are recorded rather than
+# quietly dropped, so a later reader can see the sheet was not simply wrong.
+outlet,province,geo_id,bps_code,host,base_url,section_path,adapter,active,note
+AJNN,ACEH,ID-11,11,ajnn.net,https://www.ajnn.net,/category/hukum/index.html,wp_query,true,
+TRIBUN ACEH,ACEH,ID-11,11,aceh.tribunnews.com,https://aceh.tribunnews.com,/indeks,tribun,true,sheet lists serambinews.com which redirects here
+KILAS BALI,BALI,ID-51,51,kilasbali.com,https://kilasbali.com,,wp_query,true,
+RADAR BALI,BALI,ID-51,51,radarbali.jawapos.com,https://radarbali.jawapos.com,,jawapos,true,
+FAKTA BANTEN,BANTEN,ID-36,36,faktabanten.co.id,https://faktabanten.co.id,,wp_query,true,
+RADAR BANTEN,BANTEN,ID-36,36,radarbanten.co.id,https://www.radarbanten.co.id,,wp_query,true,
+Bengkulu Express,BENGKULU,ID-17,17,bengkuluekspress.disway.id,https://bengkuluekspress.disway.id,/kategori/kasus-dan-peristiwa,disway,true,numeric category id in the sheet redirects to this slug
+Warta Prima,BENGKULU,ID-17,17,wartaprima.com,https://wartaprima.com,/index.php/category/hukum,wp_query,true,
+KR JOGJA,DI YOGYAKARTA,ID-34,34,krjogja.com,https://www.krjogja.com,/kriminal,wp_query,true,
+TRIBUN JOGJA,DI YOGYAKARTA,ID-34,34,jogja.tribunnews.com,https://jogja.tribunnews.com,,tribun,true,
+POS KOTA,DKI JAKARTA,ID-31,31,poskota.co.id,https://www.poskota.co.id,/jakarta-raya,wp_query,true,
+WARTA KOTA,DKI JAKARTA,ID-31,31,wartakota.tribunnews.com,https://wartakota.tribunnews.com,/indeks,tribun,true,
+Gopos,GORONTALO,ID-75,75,gopos.id,https://gopos.id,,wp_query,true,
+AMPAR,JAMBI,ID-15,15,ampar.id,https://ampar.id,/category/hukum,wp_query,true,
+DETAIL,JAMBI,ID-15,15,detail.id,https://detail.id,/category/peristiwa,wp_query,true,
+Pikiran Rakyat,JAWA BARAT,ID-32,32,pikiran-rakyat.com,https://www.pikiran-rakyat.com,/jawa-barat,wp_query,true,refuses plain HTTP with 403; needs the browser fallback
+Tribun Jawa Barat,JAWA BARAT,ID-32,32,jabar.tribunnews.com,https://jabar.tribunnews.com,,tribun,true,
+DISWAY JATENG,JAWA TENGAH,ID-33,33,jateng.disway.id,https://jateng.disway.id,,disway,true,
+SIGI JATENG,JAWA TENGAH,ID-33,33,sigijateng.id,https://www.sigijateng.id,/hukum-kriminal,wp_query,true,
+JATIM POS,JAWA TIMUR,ID-35,35,jatimpos.co,https://jatimpos.co,,wp_query,true,
+TRIBUN JATIM,JAWA TIMUR,ID-35,35,jatim.tribunnews.com,https://jatim.tribunnews.com,/indeks,tribun,true,
+SUARA KALBAR,KALIMANTAN BARAT,ID-61,61,suarakalbar.co.id,https://www.suarakalbar.co.id,,wp_query,true,
+TRIBUN PONTIANAK,KALIMANTAN BARAT,ID-61,61,pontianak.tribunnews.com,https://pontianak.tribunnews.com,,tribun,true,
+POJOK BANUA,KALIMANTAN SELATAN,ID-63,63,pojokbanua.com,https://pojokbanua.com,/category/hukum-dan-kriminal,wp_query,true,
+TRIBUN BANJARMASIN,KALIMANTAN SELATAN,ID-63,63,banjarmasin.tribunnews.com,https://banjarmasin.tribunnews.com,,tribun,true,
+Berita Kalteng,KALIMANTAN TENGAH,ID-62,62,beritakalteng.com,https://beritakalteng.com,/category/hukum-dan-kriminal,wp_query,true,
+PRO KALTENG,KALIMANTAN TENGAH,ID-62,62,prokalteng.co,https://prokalteng.co,/category/prohukrim,wp_query,false,domain root answers 404; the title has no working site as of 2026-09-23
+Koran Kaltim,KALIMANTAN TIMUR,ID-64,64,korankaltim.com,https://korankaltim.com,/c/patroli,wp_query,true,refuses plain HTTP with 403; needs the browser fallback
+Prokal,KALIMANTAN TIMUR,ID-64,64,prokal.co,https://www.prokal.co,/kriminal,prokal,true,
+BENUANTA,KALIMANTAN UTARA,ID-65,65,benuanta.co.id,https://benuanta.co.id,/category/hukrim,wp_query,true,sheet's /index.php/ prefix redirects here
+TRIBUN KALTARA,KALIMANTAN UTARA,ID-65,65,kaltara.tribunnews.com,https://kaltara.tribunnews.com,/indeks,tribun,true,
+Bangka Pos,KEPULAUAN BANGKA BELITUNG,ID-19,19,bangka.tribunnews.com,https://bangka.tribunnews.com,,tribun,true,sheet lists bangkapos.com which redirects here
+Kabar Bangka,KEPULAUAN BANGKA BELITUNG,ID-19,19,kabarbangka.com,https://kabarbangka.com,/category/hukrim,wp_query,true,
+HALUAN KEPRI,KEPULAUAN RIAU,ID-21,21,kepri.harianhaluan.com,https://kepri.harianhaluan.com,,wp_query,true,refuses plain HTTP with 403; needs the browser fallback
+TRIBUN BATAM,KEPULAUAN RIAU,ID-21,21,batam.tribunnews.com,https://batam.tribunnews.com,,tribun,true,
+Online Koe,LAMPUNG,ID-18,18,onlinekoe.com,https://onlinekoe.com,/category/hukum-dan-kriminal,wp_query,true,
+RMOL LAMPUNG,LAMPUNG,ID-18,18,rmollampung.id,https://rmollampung.id,,wp_query,true,
+TRIBUN AMBON,MALUKU,ID-81,81,ambon.tribunnews.com,https://ambon.tribunnews.com,,tribun,true,sheet lists tribunambon.com which redirects here
+Teras Maluku,MALUKU,ID-81,81,terasmaluku.com,https://terasmaluku.com,/category/hukumkriminal,wp_query,true,
+TRIBUN TERNATE,MALUKU UTARA,ID-82,82,ternate.tribunnews.com,https://ternate.tribunnews.com,/indeks,tribun,true,sheet lists tribunternate.com which redirects here
+CNN Indonesia,NASIONAL,IDN,,cnnindonesia.com,https://www.cnnindonesia.com,/nasional/hukum-kriminal,cnn,true,
+Kompas,NASIONAL,IDN,,kompas.id,https://www.kompas.id,/kategori/kriminalitas,kompas,true,metered paywall; expect lead only on most articles
+RADAR LOMBOK,NUSA TENGGARA BARAT,ID-52,52,radarlombok.co.id,https://radarlombok.co.id,/kriminal,wp_query,true,answered 522 when probed; origin was down not the domain
+SUARA NTB,NUSA TENGGARA BARAT,ID-52,52,suarantb.com,https://suarantb.com,,wp_query,true,
+POS KUPANG,NUSA TENGGARA TIMUR,ID-53,53,kupang.tribunnews.com,https://kupang.tribunnews.com,,tribun,true,
+Jubi,PAPUA,ID-94,94,jubi.id,https://jubi.id,,wp_query,true,
+SEPUTAR PAPUA,PAPUA,ID-94,94,seputarpapua.com,https://seputarpapua.com,/hukrim,wp_query,true,
+Tribun Papua Barat,PAPUA BARAT,ID-91,91,papuabarat.tribunnews.com,https://papuabarat.tribunnews.com,/index-news,tribun,true,
+Sorong Raya,PAPUA BARAT DAYA,ID-92,92,sorongraya.co,https://sorongraya.co,/category/hukrim,wp_query,true,
+Noken Live,PAPUA PEGUNUNGAN,ID-97,97,nokenlive.com,https://www.nokenlive.com,/category/papua-pegunungan,wp_query,true,section is the province not a crime desk; lexicon does the filtering
+Papua Selatan Pos,PAPUA SELATAN,ID-95,95,papuaselatanpos.com,https://papuaselatanpos.com,/category/hukrim,wp_query,true,
+Antara Papua,PAPUA TENGAH,ID-96,96,papuatengah.antaranews.com,https://papuatengah.antaranews.com,/seputar-papua-tengah,antara,true,
+RIAU IN,RIAU,ID-14,14,riauin.com,https://www.riauin.com,/hukrim,wp_query,true,
+RIAU POS,RIAU,ID-14,14,riaupos.co,https://riaupos.co,,wp_query,true,
+TRIBUN SULBAR,SULAWESI BARAT,ID-76,76,sulbar.tribunnews.com,https://sulbar.tribunnews.com,,tribun,true,sheet lists tribun-sulbar.com which redirects here
+Halo Sulsel,SULAWESI SELATAN,ID-73,73,halosulsel.com,https://www.halosulsel.com,,wp_query,false,domain now serves a blogspot template farm; the paper is not there
+Tribun Makassar,SULAWESI SELATAN,ID-73,73,makassar.tribunnews.com,https://makassar.tribunnews.com,,tribun,true,
+SULAWESI TODAY,SULAWESI TENGAH,ID-72,72,sulawesitoday.com,https://www.sulawesitoday.com,/kriminal,wp_query,true,
+SULTENG TERKINI,SULAWESI TENGAH,ID-72,72,sultengterkini.id,https://sultengterkini.id,,wp_query,true,
+PENA SULTRA,SULAWESI TENGGARA,ID-74,74,penasultra.id,https://penasultra.id,/kanal/penahukrim,wp_query,true,
+SULTRA KINI,SULAWESI TENGGARA,ID-74,74,sultrakini.com,https://sultrakini.com,/kanal/hukum-kriminal,wp_query,true,
+Berita Totabuan,SULAWESI UTARA,ID-71,71,beritatotabuan.com,https://beritatotabuan.com,/node/berita-hukum,wp_query,true,
+Suara Sulut,SULAWESI UTARA,ID-71,71,suarasulut.com,https://suarasulut.com,,wp_query,true,
+INVESTIGASI,SUMATRA BARAT,ID-13,13,investigasi.news,https://investigasi.news,,wp_query,true,sheet's /hukum-dan-kriminal redirects to the root
+MJ NEWS,SUMATRA BARAT,ID-13,13,mjnews.id,https://www.mjnews.id,/category/kriminalitas,wp_query,true,
+Palembang Pos,SUMATRA SELATAN,ID-16,16,palpos.disway.id,https://palpos.disway.id,,disway,true,
+Tribun Sumsel,SUMATRA SELATAN,ID-16,16,sumsel.tribunnews.com,https://sumsel.tribunnews.com,,tribun,true,
+INILAH MEDAN,SUMATRA UTARA,ID-12,12,inilahmedan.com,https://www.inilahmedan.com,/search/label/Kriminal,blogger,true,
+RMOL SUMUT,SUMATRA UTARA,ID-12,12,rmolsumut.id,https://rmolsumut.id,,wp_query,true,slow to answer; timed out at 20s when probed

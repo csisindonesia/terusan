@@ -40,17 +40,31 @@ rice-medium-grade-1,Rice — medium grade I,agriculture,staple-food,1006,HS2022,
 rice-medium-grade-2,Rice — medium grade II,agriculture,staple-food,1006,HS2022,IDR/kg,Beras Kualitas Medium II
 rice-super-grade-1,Rice — super grade I,agriculture,staple-food,1006,HS2022,IDR/kg,Beras Kualitas Super I
 rice-super-grade-2,Rice — super grade II,agriculture,staple-food,1006,HS2022,IDR/kg,Beras Kualitas Super II
+rice-medium,Rice — medium,agriculture,staple-food,1006,HS2022,IDR/kg,Beras Medium
+rice-premium,Rice — premium,agriculture,staple-food,1006,HS2022,IDR/kg,Beras Premium
+rice-special,Rice — special grade,agriculture,staple-food,1006,HS2022,IDR/kg,Beras Khusus
+rice-sphp,Rice — SPHP Bulog,agriculture,staple-food,1006,HS2022,IDR/kg,Beras SPHP Bulog|Beras SPHP
 chicken-meat,Chicken meat,agriculture,livestock,0207,HS2022,IDR/kg,Daging Ayam
-chicken-meat-broiler-fresh,Chicken meat — broiler fresh,agriculture,livestock,0207,HS2022,IDR/kg,Daging Ayam Ras Segar
+chicken-meat-broiler-fresh,Chicken meat — broiler fresh,agriculture,livestock,0207,HS2022,IDR/kg,Daging Ayam Ras Segar|Daging Ayam Ras
+chicken-meat-free-range,Chicken meat — free range,agriculture,livestock,0207,HS2022,IDR/bird,Daging Ayam Kampung
 beef,Beef,agriculture,livestock,0201,HS2022,IDR/kg,Daging Sapi
 beef-grade-1,Beef — grade 1,agriculture,livestock,0201,HS2022,IDR/kg,Daging Sapi Kualitas 1
 beef-grade-2,Beef — grade 2,agriculture,livestock,0201,HS2022,IDR/kg,Daging Sapi Kualitas 2
+beef-hind-quarter,Beef — hind quarter,agriculture,livestock,0201,HS2022,IDR/kg,Daging Sapi Paha Belakang
+beef-forequarter,Beef — forequarter,agriculture,livestock,0201,HS2022,IDR/kg,Daging Sapi Paha Depan
+beef-brisket,Beef — brisket,agriculture,livestock,0201,HS2022,IDR/kg,Daging Sapi Sandung Lamur
+beef-trimmings,Beef — trimmings,agriculture,livestock,0201,HS2022,IDR/kg,Daging Sapi Tetelan
+beef-imported-frozen,Beef — imported frozen,agriculture,livestock,0202,HS2022,IDR/kg,Daging Sapi Impor Beku
 chicken-eggs,Chicken eggs,agriculture,livestock,0407,HS2022,IDR/kg,Telur Ayam
-chicken-eggs-broiler-fresh,Chicken eggs — broiler fresh,agriculture,livestock,0407,HS2022,IDR/kg,Telur Ayam Ras Segar
+chicken-eggs-broiler-fresh,Chicken eggs — broiler fresh,agriculture,livestock,0407,HS2022,IDR/kg,Telur Ayam Ras Segar|Telur Ayam Ras
+chicken-eggs-free-range,Chicken eggs — free range,agriculture,livestock,0407,HS2022,IDR/kg,Telur Ayam Kampung
 shallots,Shallots,agriculture,horticulture,070310,HS2022,IDR/kg,Bawang Merah
 shallots-medium,Shallots — medium size,agriculture,horticulture,070310,HS2022,IDR/kg,Bawang Merah Ukuran Sedang
 garlic,Garlic,agriculture,horticulture,070320,HS2022,IDR/kg,Bawang Putih
 garlic-medium,Garlic — medium size,agriculture,horticulture,070320,HS2022,IDR/kg,Bawang Putih Ukuran Sedang
+garlic-honan,Garlic — Honan,agriculture,horticulture,070320,HS2022,IDR/kg,Bawang Putih Honan
+garlic-kating,Garlic — Kating,agriculture,horticulture,070320,HS2022,IDR/kg,Bawang Putih Kating
+onion,Onion,agriculture,horticulture,070310,HS2022,IDR/kg,Bawang Bombai
 red-chili,Red chili,agriculture,horticulture,070960,HS2022,IDR/kg,Cabai Merah
 red-chili-large,Red chili — large,agriculture,horticulture,070960,HS2022,IDR/kg,Cabai Merah Besar
 red-chili-curly,Red chili — curly,agriculture,horticulture,070960,HS2022,IDR/kg,Cabai Merah Keriting
@@ -58,9 +72,31 @@ birds-eye-chili,Bird's eye chili,agriculture,horticulture,070960,HS2022,IDR/kg,C
 birds-eye-chili-green,Bird's eye chili — green,agriculture,horticulture,070960,HS2022,IDR/kg,Cabai Rawit Hijau
 birds-eye-chili-red,Bird's eye chili — red,agriculture,horticulture,070960,HS2022,IDR/kg,Cabai Rawit Merah
 cooking-oil,Cooking oil,agriculture,vegetable-oil,151190,HS2022,IDR/kg,Minyak Goreng
-cooking-oil-bulk,Cooking oil — bulk,agriculture,vegetable-oil,151190,HS2022,IDR/kg,Minyak Goreng Curah
+cooking-oil-bulk,Cooking oil — bulk,agriculture,vegetable-oil,151190,HS2022,IDR/kg,Minyak Goreng Curah|Minyak Goreng Sawit Curah
 cooking-oil-branded-1,Cooking oil — branded 1,agriculture,vegetable-oil,151190,HS2022,IDR/kg,Minyak Goreng Kemasan Bermerk 1
 cooking-oil-branded-2,Cooking oil — branded 2,agriculture,vegetable-oil,151190,HS2022,IDR/kg,Minyak Goreng Kemasan Bermerk 2
+cooking-oil-premium-packaged,Cooking oil — premium packaged,agriculture,vegetable-oil,151190,HS2022,IDR/kg,Minyak Goreng Sawit Kemasan Premium
+minyakita,Minyakita,agriculture,vegetable-oil,151190,HS2022,IDR/kg,Minyakita
 sugar,Granulated sugar,agriculture,staple-food,1701,HS2022,IDR/kg,Gula Pasir
 sugar-premium,Granulated sugar — premium,agriculture,staple-food,1701,HS2022,IDR/kg,Gula Pasir Kualitas Premium
 sugar-local,Granulated sugar — local,agriculture,staple-food,1701,HS2022,IDR/kg,Gula Pasir Lokal
+sugar-bulk,Granulated sugar — bulk,agriculture,staple-food,1701,HS2022,IDR/kg,Gula Pasir Curah
+sugar-packaged,Granulated sugar — packaged,agriculture,staple-food,1701,HS2022,IDR/kg,Gula Pasir Kemasan
+wheat-flour,Wheat flour,agriculture,staple-food,1101,HS2022,IDR/kg,Tepung Terigu
+soybeans-imported,Soybeans — imported,agriculture,staple-food,1201,HS2022,IDR/kg,Kedelai Impor
+soybeans-local,Soybeans — local,agriculture,staple-food,1201,HS2022,IDR/kg,Kedelai Lokal
+tofu,Tofu,agriculture,processed,210610,HS2022,IDR/kg,Tahu Putih|Tahu
+tempeh,Tempeh,agriculture,processed,210610,HS2022,IDR/kg,Tempe Bungkus|Tempe
+instant-noodles,Instant noodles,agriculture,processed,190230,HS2022,IDR/pack,Mie Instan
+milk-powder-toddler,Milk powder — toddler,agriculture,processed,0402,HS2022,IDR/400g,Susu Bubuk Balita
+salt-fine,Salt — fine,agriculture,staple-food,2501,HS2022,IDR/kg,Garam Halus
+cucumber,Cucumber,agriculture,horticulture,070700,HS2022,IDR/kg,Ketimun Sedang|Ketimun
+yardlong-bean,Yardlong bean,agriculture,horticulture,070820,HS2022,IDR/kg,Kacang Panjang
+mustard-greens,Mustard greens,agriculture,horticulture,070490,HS2022,IDR/kg,Sawi Hijau
+water-spinach,Water spinach,agriculture,horticulture,070990,HS2022,IDR/kg,Kangkung
+tomato,Tomato,agriculture,horticulture,070200,HS2022,IDR/kg,Tomat
+potato,Potato,agriculture,horticulture,070190,HS2022,IDR/kg,Kentang Sedang|Kentang
+banana,Banana,agriculture,horticulture,0803,HS2022,IDR/kg,Pisang Lokal|Pisang
+citrus,Citrus — local,agriculture,horticulture,0805,HS2022,IDR/kg,Jeruk Lokal|Jeruk
+mackerel,Mackerel,agriculture,fisheries,0302,HS2022,IDR/kg,Ikan Kembung
+shrimp,Shrimp — fresh,agriculture,fisheries,0306,HS2022,IDR/kg,Udang Basah

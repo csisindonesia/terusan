@@ -2,7 +2,7 @@
 #
 # Trading Economics' Indonesian indicators, Bronze into Silver.
 #
-# Two passes, in this order:
+# Three passes, in this order (the third is described beside it below):
 #
 #   1. The index page, which lists every indicator the country has. It carries
 #      the reference period each figure belongs to, but rounds the figure to
@@ -55,10 +55,29 @@ common=(
   --number-format en
 )
 
-echo "pass 1/2: the index, every indicator"
+echo "pass 1/3: the index, every indicator"
 uv --project pipelines run terusan silver normalize-each \
   "${common[@]}" --include kind=index --name-column indicator_title
 
-echo "pass 2/2: each page's own reading, at full precision"
+echo "pass 2/3: each page's own reading, at full precision"
 uv --project pipelines run terusan silver normalize-each \
   "${common[@]}" --include kind=reading
+
+# Last, and it wins: an indicator whose chart was collected is rebuilt from
+# its history, which includes the latest figure and dates every point at the
+# series' own frequency. The readings date everything by a month — `Dec 2025`
+# for an annual series — so they would otherwise sit beside the history as a
+# second, monthly copy of the same figure. An indicator with no chart (the
+# market pages) is not in this pass and keeps its reading.
+echo "pass 3/3: each chart's history"
+uv --project pipelines run terusan silver normalize-each \
+  --by indicator_key \
+  --dataset "$DATASET" \
+  --source "$SOURCE" \
+  --include kind=history \
+  --period-column period \
+  --value-column value \
+  --unit-column unit \
+  --geo-column country \
+  --publisher-column publisher \
+  --number-format en

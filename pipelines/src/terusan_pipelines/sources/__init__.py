@@ -42,6 +42,7 @@ from .legacy import LegacySource, directory_artifacts, legacy_source
 from .ratelimit import HostRateLimiter, TokenBucket, host_of
 from .registry import DuplicateSourceSlug, Registry, UnknownSource, registry
 from .runner import Runner, RunResult, RunStatus, summarize
+from .schedule import DEFAULT_WINDOW, BadSchedule, Cron, due, parse_cron
 from .sniff import (
     ContentMismatch,
     describe,
@@ -51,6 +52,9 @@ from .sniff import (
 )
 
 __all__ = [
+    "BadSchedule",
+    "Cron",
+    "DEFAULT_WINDOW",
     "Artifact",
     "ContentMismatch",
     "Category",
@@ -72,6 +76,7 @@ __all__ = [
     "UnknownSource",
     "UpdateFrequency",
     "Registry",
+    "due",
     "describe",
     "directory_artifacts",
     "fetcher",
@@ -80,6 +85,7 @@ __all__ = [
     "looks_like_html",
     "matches_extension",
     "legacy_source",
+    "parse_cron",
     "registry",
     "retrying",
     "summarize",

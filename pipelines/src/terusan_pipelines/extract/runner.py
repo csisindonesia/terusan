@@ -27,16 +27,22 @@ from ..warehouse import (
 from .bank_indonesia import ConsumerSurveyExtractor, RetailSalesExtractor
 from .base import PARSER_VERSION, ExtractionError, Extractor, Landed
 from .bnpb import BnpbDatastoreExtractor
+from .djpk import DjpkApbdExtractor
 from .documents import HtmlExtractor, PdfExtractor, TextExtractor
 from .fred import FredExtractor, FredSeriesPageExtractor
+from .gdelt import GdeltExtractor
 from .hdx_mobility import MovementDistributionExtractor
+from .news import NewsArticleExtractor, NewsScreenshotExtractor, NewsTallyExtractor
 from .pihps import PihpsPricesExtractor
 from .seki import SekiExtractor
 from .sipri import SipriMilexExtractor
+from .sp2kp import Sp2kpPricesExtractor
+from .sp2kp_national import Sp2kpNationalExtractor
 from .tabular import CsvExtractor, JsonExtractor
-from .trading_economics import TradingEconomicsExtractor
+from .trading_economics import TradingEconomicsChartExtractor, TradingEconomicsExtractor
 from .ucdp import UcdpOrganizedViolenceExtractor
 from .vews import VewsCollectiveViolenceExtractor
+from .wits import RcaSeedExtractor, WitsTradeStatsExtractor
 from .workbooks import (
     SpreadsheetMLExtractor,
     WorkbookExtractor,
@@ -57,6 +63,11 @@ PIPELINE_VERSION = "1"
 #: readers come first — a source publishing its own envelope is not readable by
 #: a generic one — then formats, then the catch-all text reader.
 DEFAULT_EXTRACTORS: tuple[Extractor, ...] = (
+    # Before the generic HTML reader, which would land a news page as one blob
+    # of prose with no outlet, no publication date and nothing coded.
+    NewsArticleExtractor(),
+    NewsScreenshotExtractor(),
+    NewsTallyExtractor(),
     WorldBankExtractor(),
     YahooChartExtractor(),
     FredExtractor(),
@@ -67,6 +78,9 @@ DEFAULT_EXTRACTORS: tuple[Extractor, ...] = (
     # about which row is which series.
     SekiExtractor(),
     TradingEconomicsExtractor(),
+    # Before the generic JSON reader, which would see a chart payload as one
+    # quoted string of base64.
+    TradingEconomicsChartExtractor(),
     # Before the generic CSV reader, which would put every country Meta
     # reports on into an Indonesian warehouse's Bronze.
     MovementDistributionExtractor(),
@@ -78,6 +92,14 @@ DEFAULT_EXTRACTORS: tuple[Extractor, ...] = (
     # and loses the province and the market type — both of which were query
     # parameters and appear nowhere in the returned bytes.
     PihpsPricesExtractor(),
+    # Before the generic CSV reader, which reads UTF-8 and would see this
+    # UTF-16 export as alternating nulls — and which would leave the date in
+    # a column header where nothing in Silver can reach it.
+    Sp2kpPricesExtractor(),
+    # Before the generic JSON reader, which would land a bare list of
+    # dates and prices with nothing saying which commodity it prices —
+    # that is on the landing record, not in the bytes.
+    Sp2kpNationalExtractor(),
     # Before the generic JSON reader, which sees CKAN's envelope as one object
     # and turns a whole table of disaster figures into a single row.
     BnpbDatastoreExtractor(),
@@ -85,10 +107,22 @@ DEFAULT_EXTRACTORS: tuple[Extractor, ...] = (
     # workbook in this one — and before the generic CSV reader, which would
     # land every country UCDP reports on as rows of seventy unnamed numbers.
     UcdpOrganizedViolenceExtractor(),
+    # Before the archive reader for the same reason: GDELT's archives hold a
+    # tab-separated file with no header, and the world in it.
+    GdeltExtractor(),
     # Before the workbook and CSV readers, which would land a year of
     # incidents as cells keyed by column letter — and before anything
     # counts them, which is the only place the counting can happen.
     VewsCollectiveViolenceExtractor(),
+    # Before the text reader, which would land WITS's SDMX as one blob of
+    # prose — and before anything could claim the seed files, which only mean
+    # something once summed per goods list.
+    WitsTradeStatsExtractor(),
+    RcaSeedExtractor(),
+    # Before the SpreadsheetML reader, which reads DJPK's export faithfully as
+    # cells and loses which government and which month it is — both were
+    # query parameters.
+    DjpkApbdExtractor(),
     ZippedWorkbookExtractor(),
     WorkbookExtractor(),
     # Before the generic readers: an `.xml` workbook would otherwise be
