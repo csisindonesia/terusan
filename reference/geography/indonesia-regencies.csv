@@ -43,12 +43,22 @@
 # roll-up puts Papua Tengah's figures under Papua. Registering the four new
 # provinces and re-parenting these twenty-six is what would fix that, and it
 # would move every series already collected against the old parents.
+#
+# BPS's inflation tables add two more kinds of alias. Three places carry a code
+# there that this file does not — Dumai 14.73, Berau 64.05, Luwu Timur 73.25 —
+# and each is aliased to its row after checking no other row answers to it.
+# BPS's codes for the renumbered Papua regencies are not aliased: they collide
+# with Kemendagri's (BPS 95.01 is Merauke, Kemendagri 95.01 Jayawijaya), so the
+# BPS extractor resolves those on the name instead. And the 150-city table names a regency
+# by its town: Meulaboh for Aceh Barat, Purwokerto for Banyumas, Timika for
+# Mimika. Those are aliased too, with `Kab Bandung`, `Kab Gorontalo` and `Kab
+# Sorong`, which the noise-stripping otherwise reduces to the city's name.
 geo_id,name,geo_type,parent_geo_id,bps_code,valid_from,valid_to,aliases
 ID-11.01,Aceh Selatan,regency,ID-11,11.01,,,acehselatan
 ID-11.02,Aceh Tenggara,regency,ID-11,11.02,,,acehtenggara
 ID-11.03,Aceh Timur,regency,ID-11,11.03,,,acehtimur
 ID-11.04,Aceh Tengah,regency,ID-11,11.04,,,acehtengah
-ID-11.05,Aceh Barat,regency,ID-11,11.05,,,acehbarat
+ID-11.05,Aceh Barat,regency,ID-11,11.05,,,acehbarat|Meulaboh
 ID-11.06,Aceh Besar,regency,ID-11,11.06,,,acehbesar
 ID-11.07,Pidie,regency,ID-11,11.07,,,
 ID-11.08,Aceh Utara,regency,ID-11,11.08,,,acehutara
@@ -122,7 +132,7 @@ ID-13.77,Kota Pariaman,regency,ID-13,13.77,,,Pariaman|kotapariaman
 ID-14.01,Kampar,regency,ID-14,14.01,,,
 ID-14.02,Indragiri Hulu,regency,ID-14,14.02,,,indragirihulu
 ID-14.03,Bengkalis,regency,ID-14,14.03,,,
-ID-14.04,Indragiri Hilir,regency,ID-14,14.04,,,indragirihilir
+ID-14.04,Indragiri Hilir,regency,ID-14,14.04,,,indragirihilir|Tembilahan
 ID-14.05,Pelalawan,regency,ID-14,14.05,,,
 ID-14.06,Rokan Hulu,regency,ID-14,14.06,,,rokanhulu
 ID-14.07,Rokan Hilir,regency,ID-14,14.07,,,rokanhilir
@@ -130,7 +140,7 @@ ID-14.08,Siak,regency,ID-14,14.08,,,
 ID-14.09,Kuantan Singingi,regency,ID-14,14.09,,,kuantansingingi
 ID-14.10,Kepulauan Meranti,regency,ID-14,14.10,,,kepulauanmeranti
 ID-14.71,Kota Pekanbaru,regency,ID-14,14.71,,,Pekanbaru|kotapekanbaru
-ID-14.72,Kota Dumai,regency,ID-14,14.72,,,Dumai|kotadumai
+ID-14.72,Kota Dumai,regency,ID-14,14.72,,,Dumai|kotadumai|14.73
 ID-15.01,Kerinci,regency,ID-15,15.01,,,
 ID-15.02,Merangin,regency,ID-15,15.02,,,
 ID-15.03,Sarolangun,regency,ID-15,15.03,,,
@@ -138,7 +148,7 @@ ID-15.04,Batanghari,regency,ID-15,15.04,,,
 ID-15.05,Muaro Jambi,regency,ID-15,15.05,,,muarojambi
 ID-15.06,Tanjung Jabung Barat,regency,ID-15,15.06,,,tanjungjabungbarat|tanjungjabungb|Tanjung Jabung B
 ID-15.07,Tanjung Jabung Timur,regency,ID-15,15.07,,,tanjungjabungtimur|tanjungjabungt|Tanjung Jabung T
-ID-15.08,Bungo,regency,ID-15,15.08,,,
+ID-15.08,Bungo,regency,ID-15,15.08,,,Muara Bungo
 ID-15.09,Tebo,regency,ID-15,15.09,,,
 ID-15.71,Kota Jambi,regency,ID-15,15.71,,,kotajambi
 ID-15.72,Kota Sungai Penuh,regency,ID-15,15.72,,,Sungai Penuh|kotasungaipenuh|sungaipenuh
@@ -185,7 +195,7 @@ ID-18.13,Pesisir Barat,regency,ID-18,18.13,,,pesisirbarat
 ID-18.71,Kota Bandar Lampung,regency,ID-18,18.71,,,Bandar Lampung|kotabandarlampung|bandarlampung
 ID-18.72,Kota Metro,regency,ID-18,18.72,,,Metro|kotametro
 ID-19.01,Bangka,regency,ID-19,19.01,,,
-ID-19.02,Belitung,regency,ID-19,19.02,,,
+ID-19.02,Belitung,regency,ID-19,19.02,,,Tanjung Pandan
 ID-19.03,Bangka Selatan,regency,ID-19,19.03,,,bangkaselatan
 ID-19.04,Bangka Tengah,regency,ID-19,19.04,,,bangkatengah
 ID-19.05,Bangka Barat,regency,ID-19,19.05,,,bangkabarat
@@ -207,7 +217,7 @@ ID-31.75,Kota Administrasi Jakarta Timur,regency,ID-31,31.75,,,Jakarta Timur|Kot
 ID-32.01,Bogor,regency,ID-32,32.01,,,
 ID-32.02,Sukabumi,regency,ID-32,32.02,,,
 ID-32.03,Cianjur,regency,ID-32,32.03,,,
-ID-32.04,Bandung,regency,ID-32,32.04,,,
+ID-32.04,Bandung,regency,ID-32,32.04,,,Kab Bandung
 ID-32.05,Garut,regency,ID-32,32.05,,,
 ID-32.06,Tasikmalaya,regency,ID-32,32.06,,,
 ID-32.07,Ciamis,regency,ID-32,32.07,,,
@@ -232,7 +242,7 @@ ID-32.77,Kota Cimahi,regency,ID-32,32.77,,,Cimahi|kotacimahi
 ID-32.78,Kota Tasikmalaya,regency,ID-32,32.78,,,kotatasikmalaya
 ID-32.79,Kota Banjar,regency,ID-32,32.79,,,kotabanjar
 ID-33.01,Cilacap,regency,ID-33,33.01,,,
-ID-33.02,Banyumas,regency,ID-33,33.02,,,
+ID-33.02,Banyumas,regency,ID-33,33.02,,,Purwokerto
 ID-33.03,Purbalingga,regency,ID-33,33.03,,,
 ID-33.04,Banjarnegara,regency,ID-33,33.04,,,
 ID-33.05,Kebumen,regency,ID-33,33.05,,,
@@ -324,7 +334,7 @@ ID-51.04,Gianyar,regency,ID-51,51.04,,,
 ID-51.05,Klungkung,regency,ID-51,51.05,,,
 ID-51.06,Bangli,regency,ID-51,51.06,,,
 ID-51.07,Karangasem,regency,ID-51,51.07,,,
-ID-51.08,Buleleng,regency,ID-51,51.08,,,
+ID-51.08,Buleleng,regency,ID-51,51.08,,,Singaraja
 ID-51.71,Kota Denpasar,regency,ID-51,51.71,,,Denpasar|kotadenpasar
 ID-52.01,Lombok Barat,regency,ID-52,52.01,,,lombokbarat
 ID-52.02,Lombok Tengah,regency,ID-52,52.02,,,lomboktengah
@@ -343,11 +353,11 @@ ID-53.03,Timor Tengah Utara,regency,ID-53,53.03,,,timortengahutara
 ID-53.04,Belu,regency,ID-53,53.04,,,
 ID-53.05,Alor,regency,ID-53,53.05,,,
 ID-53.06,Flores Timur,regency,ID-53,53.06,,,florestimur
-ID-53.07,Sikka,regency,ID-53,53.07,,,
+ID-53.07,Sikka,regency,ID-53,53.07,,,Maumere
 ID-53.08,Ende,regency,ID-53,53.08,,,
 ID-53.09,Ngada,regency,ID-53,53.09,,,
 ID-53.10,Manggarai,regency,ID-53,53.10,,,
-ID-53.11,Sumba Timur,regency,ID-53,53.11,,,sumbatimur
+ID-53.11,Sumba Timur,regency,ID-53,53.11,,,sumbatimur|Waingapu
 ID-53.12,Sumba Barat,regency,ID-53,53.12,,,sumbabarat
 ID-53.13,Lembata,regency,ID-53,53.13,,,
 ID-53.14,Rote Ndao,regency,ID-53,53.14,,,rotendao
@@ -374,7 +384,7 @@ ID-61.12,Kubu Raya,regency,ID-61,61.12,,,kuburaya
 ID-61.71,Kota Pontianak,regency,ID-61,61.71,,,Pontianak|kotapontianak
 ID-61.72,Kota Singkawang,regency,ID-61,61.72,,,Singkawang|kotasingkawang
 ID-62.01,Kotawaringin Barat,regency,ID-62,62.01,,,kotawaringinbarat
-ID-62.02,Kotawaringin Timur,regency,ID-62,62.02,,,kotawaringintimur
+ID-62.02,Kotawaringin Timur,regency,ID-62,62.02,,,kotawaringintimur|Sampit
 ID-62.03,Kapuas,regency,ID-62,62.03,,,
 ID-62.04,Barito Selatan,regency,ID-62,62.04,,,baritoselatan
 ID-62.05,Barito Utara,regency,ID-62,62.05,,,baritoutara
@@ -395,14 +405,14 @@ ID-63.05,Tapin,regency,ID-63,63.05,,,
 ID-63.06,Hulu Sungai Selatan,regency,ID-63,63.06,,,hulusungaiselatan
 ID-63.07,Hulu Sungai Tengah,regency,ID-63,63.07,,,hulusungaitengah
 ID-63.08,Hulu Sungai Utara,regency,ID-63,63.08,,,hulusungaiutara
-ID-63.09,Tabalong,regency,ID-63,63.09,,,
+ID-63.09,Tabalong,regency,ID-63,63.09,,,Tanjung
 ID-63.10,Tanah Bumbu,regency,ID-63,63.10,,,tanahbumbu
 ID-63.11,Balangan,regency,ID-63,63.11,,,
 ID-63.71,Kota Banjarmasin,regency,ID-63,63.71,,,Banjarmasin|kotabanjarmasin
 ID-63.72,Kota Banjarbaru,regency,ID-63,63.72,,,Banjarbaru|kotabanjarbaru
 ID-64.01,Paser,regency,ID-64,64.01,,,
 ID-64.02,Kutai Kartanegara,regency,ID-64,64.02,,,kutaikartanegara
-ID-64.03,Berau,regency,ID-64,64.03,,,
+ID-64.03,Berau,regency,ID-64,64.03,,,64.05
 ID-64.07,Kutai Barat,regency,ID-64,64.07,,,kutaibarat
 ID-64.08,Kutai Timur,regency,ID-64,64.08,,,kutaitimur
 ID-64.09,Penajam Paser Utara,regency,ID-64,64.09,,,penajampaserutara
@@ -410,7 +420,7 @@ ID-64.11,Mahakam Ulu,regency,ID-64,64.11,,,mahakamulu
 ID-64.71,Kota Balikpapan,regency,ID-64,64.71,,,Balikpapan|kotabalikpapan
 ID-64.72,Kota Samarinda,regency,ID-64,64.72,,,Samarinda|kotasamarinda
 ID-64.74,Kota Bontang,regency,ID-64,64.74,,,Bontang|kotabontang
-ID-65.01,Bulungan,regency,ID-65,65.01,,,
+ID-65.01,Bulungan,regency,ID-65,65.01,,,Tanjung Selor
 ID-65.02,Malinau,regency,ID-65,65.02,,,
 ID-65.03,Nunukan,regency,ID-65,65.03,,,
 ID-65.04,Tana Tidung,regency,ID-65,65.04,,,tanatidung
@@ -431,7 +441,7 @@ ID-71.71,Kota Manado,regency,ID-71,71.71,,,Manado|kotamanado
 ID-71.72,Kota Bitung,regency,ID-71,71.72,,,Bitung|kotabitung
 ID-71.73,Kota Tomohon,regency,ID-71,71.73,,,Tomohon|kotatomohon
 ID-71.74,Kota Kotamobagu,regency,ID-71,71.74,,,Kotamobagu|kotakotamobagu
-ID-72.01,Banggai,regency,ID-72,72.01,,,
+ID-72.01,Banggai,regency,ID-72,72.01,,,Luwuk
 ID-72.02,Poso,regency,ID-72,72.02,,,
 ID-72.03,Donggala,regency,ID-72,72.03,,,
 ID-72.04,Toli Toli,regency,ID-72,72.04,,,tolitoli
@@ -451,7 +461,7 @@ ID-73.04,Jeneponto,regency,ID-73,73.04,,,
 ID-73.05,Takalar,regency,ID-73,73.05,,,
 ID-73.06,Gowa,regency,ID-73,73.06,,,
 ID-73.07,Sinjai,regency,ID-73,73.07,,,
-ID-73.08,Bone,regency,ID-73,73.08,,,
+ID-73.08,Bone,regency,ID-73,73.08,,,Watampone
 ID-73.09,Maros,regency,ID-73,73.09,,,
 ID-73.10,Pangkajene Kepulauan,regency,ID-73,73.10,,,pangkajenekepulauan|pangkajenedankepulauan|Pangkajene Dan Kepulauan|Pangkajene dan Kepulauan|Pangkep
 ID-73.11,Barru,regency,ID-73,73.11,,,
@@ -463,7 +473,7 @@ ID-73.16,Enrekang,regency,ID-73,73.16,,,
 ID-73.17,Luwu,regency,ID-73,73.17,,,
 ID-73.18,Tana Toraja,regency,ID-73,73.18,,,tanatoraja
 ID-73.22,Luwu Utara,regency,ID-73,73.22,,,luwuutara
-ID-73.24,Luwu Timur,regency,ID-73,73.24,,,luwutimur
+ID-73.24,Luwu Timur,regency,ID-73,73.24,,,luwutimur|73.25
 ID-73.26,Toraja Utara,regency,ID-73,73.26,,,torajautara
 ID-73.71,Kota Makassar,regency,ID-73,73.71,,,Makassar|kotamakassar
 ID-73.72,Kota Pare Pare,regency,ID-73,73.72,,,Pare Pare|kotaparepare|parepare
@@ -485,7 +495,7 @@ ID-74.14,Buton Tengah,regency,ID-74,74.14,,,butontengah
 ID-74.15,Buton Selatan,regency,ID-74,74.15,,,butonselatan
 ID-74.71,Kota Kendari,regency,ID-74,74.71,,,Kendari|kotakendari
 ID-74.72,Kota Bau Bau,regency,ID-74,74.72,,,Bau Bau|kotabaubau|baubau
-ID-75.01,Gorontalo,regency,ID-75,75.01,,,kabupatengorontalo|Kabupaten Gorontalo
+ID-75.01,Gorontalo,regency,ID-75,75.01,,,kabupatengorontalo|Kabupaten Gorontalo|Kab Gorontalo
 ID-75.02,Boalemo,regency,ID-75,75.02,,,
 ID-75.03,Bone Bolango,regency,ID-75,75.03,,,bonebolango
 ID-75.04,Pohuwato,regency,ID-75,75.04,,,Pahuwato
@@ -526,7 +536,7 @@ ID-91.05,Kepulauan Yapen,regency,ID-91,91.05,,,kepulauanyapen
 ID-91.06,Biak Numfor,regency,ID-91,91.06,,,biaknumfor
 ID-91.07,Puncak Jaya,regency,ID-91,91.07,,,puncakjaya|9402
 ID-91.08,Paniai,regency,ID-91,91.08,,,9403
-ID-91.09,Mimika,regency,ID-91,91.09,,,9404
+ID-91.09,Mimika,regency,ID-91,91.09,,,9404|Timika
 ID-91.10,Sarmi,regency,ID-91,91.10,,,
 ID-91.11,Keerom,regency,ID-91,91.11,,,
 ID-91.12,Pegunungan Bintang,regency,ID-91,91.12,,,pegununganbintang|9502
@@ -547,7 +557,7 @@ ID-91.26,Dogiyai,regency,ID-91,91.26,,,9406
 ID-91.27,Intan Jaya,regency,ID-91,91.27,,,intanjaya|9407
 ID-91.28,Deiyai,regency,ID-91,91.28,,,9408
 ID-91.71,Kota Jayapura,regency,ID-91,91.71,,,kotajayapura
-ID-92.01,Sorong,regency,ID-92,92.01,,,9601
+ID-92.01,Sorong,regency,ID-92,92.01,,,9601|Kab Sorong
 ID-92.02,Manokwari,regency,ID-92,92.02,,,
 ID-92.03,Fak Fak,regency,ID-92,92.03,,,fakfak
 ID-92.04,Sorong Selatan,regency,ID-92,92.04,,,sorongselatan|9602

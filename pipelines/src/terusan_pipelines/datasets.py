@@ -323,6 +323,21 @@ DATASETS: tuple[DatasetMeta, ...] = (
         tags=("food", "agriculture", "prices", "inflation", "households"),
     ),
     DatasetMeta(
+        slug="bps-indicators",
+        title="BPS statistical tables",
+        source="bps-indicators",
+        description=(
+            "Every table in Statistics Indonesia's national catalogue, from its "
+            "web API: some 1,750 variables across 51 subjects — population, "
+            "poverty, labour, prices and inflation, national and regional "
+            "accounts, trade, agriculture, education, health and the SDG "
+            "indicators — by province, city or category, one series per "
+            "variable and breakdown. The publisher's own figures, where "
+            "Kemendagri and Trading Economics republish them."
+        ),
+        tags=("population", "poverty", "labour", "prices", "growth", "sdg"),
+    ),
+    DatasetMeta(
         slug="sp2kp-national-prices",
         title="National weighted food prices",
         source="kemendag-sp2kp-national",

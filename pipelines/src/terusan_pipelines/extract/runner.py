@@ -27,6 +27,7 @@ from ..warehouse import (
 from .bank_indonesia import ConsumerSurveyExtractor, RetailSalesExtractor
 from .base import PARSER_VERSION, ExtractionError, Extractor, Landed
 from .bnpb import BnpbDatastoreExtractor
+from .bps import BpsDataExtractor
 from .djpk import DjpkApbdExtractor
 from .documents import HtmlExtractor, PdfExtractor, TextExtractor
 from .fred import FredExtractor, FredSeriesPageExtractor
@@ -100,6 +101,9 @@ DEFAULT_EXTRACTORS: tuple[Extractor, ...] = (
     # dates and prices with nothing saying which commodity it prices —
     # that is on the landing record, not in the bytes.
     Sp2kpNationalExtractor(),
+    # Before the generic JSON reader, which would land a BPS table as one
+    # object whose cells are keyed by five ids run together.
+    BpsDataExtractor(),
     # Before the generic JSON reader, which sees CKAN's envelope as one object
     # and turns a whole table of disaster figures into a single row.
     BnpbDatastoreExtractor(),

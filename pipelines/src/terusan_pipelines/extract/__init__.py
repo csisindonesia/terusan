@@ -8,6 +8,7 @@ later — which is the whole reason the original is preserved.
 from .bank_indonesia import ConsumerSurveyExtractor, RetailSalesExtractor
 from .base import PARSER_VERSION, ExtractionError, Extractor, Landed
 from .bnpb import BnpbDatastoreExtractor
+from .bps import BpsDataExtractor
 from .djpk import DjpkApbdExtractor
 from .documents import HtmlExtractor, PdfExtractor, TextExtractor, collapse
 from .fred import FredExtractor, FredSeriesPageExtractor
@@ -40,6 +41,7 @@ from .yahoo_finance import YahooChartExtractor
 
 __all__ = [
     "DEFAULT_EXTRACTORS",
+    "BpsDataExtractor",
     "PARSER_VERSION",
     "PIPELINE_VERSION",
     "BnpbDatastoreExtractor",

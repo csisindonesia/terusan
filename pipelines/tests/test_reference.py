@@ -46,7 +46,7 @@ def test_comment_lines_carry_provenance_and_are_skipped():
     """Where a code set came from belongs next to it, not in a separate doc."""
     text = (GEOGRAPHY_DIR / "indonesia-provinces.csv").read_text()
     assert text.startswith("#")
-    assert "VERIFY BEFORE PRODUCTION USE" in text
+    assert "have since been checked against" in text
     rows = list(_rows(GEOGRAPHY_DIR / "indonesia-provinces.csv"))
     assert all(not row["geo_id"].startswith("#") for row in rows)
 

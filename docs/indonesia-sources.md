@@ -4,7 +4,7 @@ This is the survey in `indonesia_dataset_sources.xlsx` turned into code. Each of
 its fifty rows has a source registered against it, so `terusan sources list` is
 the answer to "do we hold X" rather than a spreadsheet in somebody's folder.
 
-Twenty-six of the fifty collect today. Twenty-four are registered and cannot,
+Twenty-seven of the fifty collect today. Twenty-three are registered and cannot,
 and that is the more useful half of this document: each says in its `access`
 note exactly what would open it. Not one of them is blocked on parsing. Every
 gap is an account, a key, a subscription, a reconnaissance session, or a
@@ -24,11 +24,10 @@ terusan sources run osm-geofabrik --param full=true    # the 1 GB extract, delib
 
 ## The gaps, by what would close them
 
-**A free registration.** Three, and between them the largest hole in the lake:
+**A free registration.** Two:
 
 | Source | What it opens | How |
 |---|---|---|
-| `bps-webapi` | The primary statistical source for the country — population, prices, poverty, labour, trade, at every level of region | Register an application at [webapi.bps.go.id/developer](https://webapi.bps.go.id/developer), put the key in `.env` as `BPS_API_KEY`, flip `active` |
 | `eog-viirs-nighttime-lights` | Economic activity below the level official statistics reach | Free account at [eogdata.mines.edu](https://eogdata.mines.edu/products/vnl/) |
 | `copernicus-sentinel` | Radar and optical imagery — the independent check on any spatial claim | Free account at [dataspace.copernicus.eu](https://dataspace.copernicus.eu/) |
 
@@ -87,7 +86,7 @@ something today.
 | # | Sheet row | Priority | Source slug | State |
 |---|---|---|---|---|
 | 1 | Satu Data Indonesia | High | `satudata-indonesia` | collecting |
-| 2 | BPS Statistics Indonesia | Critical | `bps-webapi` | registered, gated |
+| 2 | BPS Statistics Indonesia | Critical | `bps-webapi` | collecting (catalogues) |
 | 3 | PODES / Village Potential Statistics | Critical | `bps-podes` | registered, gated |
 | 4 | Bank Indonesia Statistics | Critical | `bi-seki`, `bi-sdds-real-sector`, `bi-consumer-survey`, `bi-retail-sales-survey`, `bi-pihps-food-prices` | collecting |
 | 5 | OJK Statistics | High | `ojk-banking-spi`, `ojk-fintech-p2p` | collecting |
@@ -153,6 +152,7 @@ Two of these sources have that mapping today.
 | `comtrade-indonesia` | 2 | Annual exports and imports to the world in US dollars, [scripts/normalize-comtrade.sh](../scripts/normalize-comtrade.sh) |
 | `wits-tradestats` | 86 × 21 economies | RCA, exports and export shares by HS section, SITC group and stage of processing, for Indonesia, ASEAN and peers, [scripts/normalize-rca.sh](../scripts/normalize-rca.sh) |
 | `djpk-apbd` | 26 regional totals + 26 per government | Budget and realisation of revenue, PAD, transfers, expenditure by type, financing and the fiscal balance, monthly and cumulative within the year — for the nation, each province's governments summed, and each provincial government, regency and city on its own, [scripts/normalize-apbd.sh](../scripts/normalize-apbd.sh) |
+| `bps-indicators` | one per variable × breakdown, across the ~1,750 variables of BPS's national catalogue | Everything BPS's web API publishes for the national domain — population, poverty, labour, prices, national accounts, trade, agriculture, SDG indicators — by province, city or category, one Silver indicator per series named from BPS's own titles, [scripts/normalize-bps.sh](../scripts/normalize-bps.sh); `make bps-silver` monthly, `make bps-backfill` for the whole history |
 | `rca-seed` | 59 | Environmental goods lists' exports, basket RCA and advantaged-product counts, plus ECI, from the HS6 working files, [scripts/normalize-rca.sh](../scripts/normalize-rca.sh) |
 
 ESDM's energy handbook is the one source here held as a document and nothing

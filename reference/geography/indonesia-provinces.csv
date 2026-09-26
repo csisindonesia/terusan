@@ -8,11 +8,10 @@
 # 2015 figure against a 2022 province would file it under an area that did not
 # exist when the figure was collected.
 #
-# VERIFY BEFORE PRODUCTION USE: the BPS codes for the four provinces created in
-# 2022 — Papua Barat Daya, Papua Selatan, Papua Tengah, Papua Pegunungan — are
-# recorded here from secondary knowledge, not from a BPS publication. The names,
-# dates and parent relationships are sound; the numeric codes should be checked
-# against BPS Kode dan Data Wilayah before anything depends on them.
+# The BPS codes for the four provinces created in 2022 — Papua Barat Daya 92,
+# Papua Selatan 95, Papua Tengah 96, Papua Pegunungan 97, with Papua itself 94 —
+# were recorded from secondary knowledge and have since been checked against
+# BPS's web API (the `vervar` list of var 543, 2026), which numbers them the same.
 #
 # Kemendagri publishes province codes as `NN.00`, and those spellings are
 # aliased here because its register is what several ministries key their
