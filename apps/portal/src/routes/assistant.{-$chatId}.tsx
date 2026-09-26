@@ -22,6 +22,7 @@ import {
   type RefObject,
 } from "react";
 
+import { AssistantChart } from "~/components/assistant-chart";
 import { CollectButton } from "~/components/collect-button";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
@@ -265,8 +266,14 @@ function Assistant() {
           onText: (text) =>
             patchLast((last) => ({ ...last, content: last.content + text })),
           onSources: (sources) => patchLast((last) => ({ ...last, sources })),
+          onChart: (chart) => patchLast((last) => ({ ...last, chart })),
           onReplace: (text) =>
-            patchLast((last) => ({ ...last, content: text, sources: [] })),
+            patchLast((last) => ({
+              ...last,
+              content: text,
+              sources: [],
+              chart: undefined,
+            })),
           onConversation: (conversationId, title) => {
             id = conversationId;
             if (shownRef.current !== conversationId) {
@@ -602,6 +609,9 @@ function Message({
         <IconSparkles className="size-4" />
       </span>
       <div className="min-w-0 flex-1">
+        {message.chart ? (
+          <AssistantChart chart={message.chart} className="mb-4" />
+        ) : null}
         {message.content ? (
           <div
             className="markdown chat-reply"

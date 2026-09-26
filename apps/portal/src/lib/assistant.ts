@@ -20,6 +20,33 @@ import type { NewItem } from "~/lib/workspace";
 
 export type ChatRole = "user" | "assistant";
 
+/**
+ * A chart the assistant drew beside a reply: the series it chose, read by the
+ * server at one granularity and lined up period by period.
+ */
+export type ChartKind = "line" | "dual_axis" | "indexed" | "scatter" | "bar";
+
+export type ChartSpec = {
+  kind: ChartKind;
+  title: string;
+  /** Why this kind of chart, in the reader's language. */
+  reason?: string;
+  granularity: "month" | "quarter" | "year";
+  periods: string[];
+  series: {
+    id: string;
+    label: string;
+    unit?: string;
+    /** The place or commodity drawn, where the series has several. */
+    member?: string;
+    /** One per period; null where the period has no figure. */
+    values: (number | null)[];
+  }[];
+  /** Pearson's r where there are two series, and over how many periods. */
+  correlation?: number;
+  overlap?: number;
+};
+
 export type ChatMessage = {
   role: ChatRole;
   content: string;
@@ -35,6 +62,8 @@ export type ChatMessage = {
    * replies kept from before the server sent it.
    */
   sources?: string[];
+  /** The chart drawn beside this reply, where the question asked for one. */
+  chart?: ChartSpec;
 };
 
 export type Conversation = {
@@ -50,6 +79,7 @@ export type ChatSummary = { id: string; title: string; updatedAt: number };
 type StreamEvent =
   | { type: "conversation"; id: string; title: string }
   | { type: "sources"; sources: { kind: string; id: string }[] }
+  | { type: "chart"; chart: ChartSpec }
   | { type: "delta"; text: string }
   /** The server stopped the reply and put this in place of all of it. */
   | { type: "replace"; text: string }
@@ -66,6 +96,7 @@ export type TurnCallbacks = {
   onText: (text: string) => void;
   onConversation?: (id: string, title: string) => void;
   onSources?: (sources: string[]) => void;
+  onChart?: (chart: ChartSpec) => void;
   onReplace?: (text: string) => void;
 };
 
@@ -117,6 +148,7 @@ export async function streamTurn(
       else if (event.type === "conversation")
         callbacks.onConversation?.(event.id, event.title);
       else if (event.type === "replace") callbacks.onReplace?.(event.text);
+      else if (event.type === "chart") callbacks.onChart?.(event.chart);
       else if (event.type === "sources")
         callbacks.onSources?.(
           event.sources.map((source) => `${source.kind}:${source.id}`),
@@ -146,6 +178,7 @@ type ServerMessage = {
   error?: string;
   sources?: string[];
   collection_id?: string;
+  chart?: ChartSpec;
 };
 
 type ServerConversation = {
@@ -198,6 +231,7 @@ export async function fetchConversation(id: string): Promise<Conversation | null
       error: m.error || undefined,
       sources: m.sources ?? [],
       collectionId: m.collection_id || undefined,
+      chart: m.chart ?? undefined,
     })),
   };
 }
