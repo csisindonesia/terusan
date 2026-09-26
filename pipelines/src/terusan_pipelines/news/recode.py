@@ -58,6 +58,7 @@ ARTICLES_DATASET = "news-articles"
 #: invisible to all of it.
 RECODE_VERSION = "1"
 
+
 def _newest(records: str, dataset: str) -> str:
     """The newest row per URL in one collection, at the current parser version.
 
@@ -180,9 +181,7 @@ def _differences(before: dict[str, str], after: dict[str, str]) -> dict[str, tup
     number alone cannot tell them apart.
     """
     return {
-        key: (before.get(key, ""), after[key])
-        for key in after
-        if before.get(key, "") != after[key]
+        key: (before.get(key, ""), after[key]) for key in after if before.get(key, "") != after[key]
     }
 
 

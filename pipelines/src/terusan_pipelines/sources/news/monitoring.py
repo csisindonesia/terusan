@@ -191,9 +191,7 @@ class NewsMonitoring(Source):
         index = int(shard) if shard is not None else datetime.now().hour
         wanted_shard = index % SHARDS
         return [
-            outlet
-            for position, outlet in enumerate(outlets)
-            if position % SHARDS == wanted_shard
+            outlet for position, outlet in enumerate(outlets) if position % SHARDS == wanted_shard
         ]
 
     def _since(self, ctx: ScrapeContext) -> date:
@@ -212,9 +210,7 @@ class NewsMonitoring(Source):
         partition segment. Without it the answer would need the bytes, and a
         daily crawl would re-fetch every article it has ever collected.
         """
-        directory = Path(
-            self._resolver.resolve(Layer.RAW, *self._segments(outlet, url, published))
-        )
+        directory = Path(self._resolver.resolve(Layer.RAW, *self._segments(outlet, url, published)))
         return directory.is_dir() and any(directory.iterdir())
 
     def _segments(self, outlet: Outlet, url: str, published: date | None) -> list[str]:
@@ -398,12 +394,9 @@ class NewsMonitoring(Source):
             landed=produced,
         )
 
-
     # -- the keep-or-discard decision ---------------------------------------
 
-    def _gate(
-        self, issue: Profile, article: Any, found: Match
-    ) -> tuple[bool, float | None, str]:
+    def _gate(self, issue: Profile, article: Any, found: Match) -> tuple[bool, float | None, str]:
         """Whether this article is about the issue, and how sure we are.
 
         Two stages, cheapest first. The dictionary is free and rejects the

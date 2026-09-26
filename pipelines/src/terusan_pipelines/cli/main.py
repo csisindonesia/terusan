@@ -56,9 +56,7 @@ sources_app = typer.Typer(help="List and run data sources.", no_args_is_help=Tru
 warehouse_app = typer.Typer(help="Extract, compact and query the lake.", no_args_is_help=True)
 catalog_app = typer.Typer(help="Inspect and sync the PostgreSQL catalog.", no_args_is_help=True)
 silver_app = typer.Typer(help="Normalize Bronze into Silver.", no_args_is_help=True)
-news_app = typer.Typer(
-    help="Cluster and score the news monitoring corpus.", no_args_is_help=True
-)
+news_app = typer.Typer(help="Cluster and score the news monitoring corpus.", no_args_is_help=True)
 app.add_typer(storage_app, name="storage")
 app.add_typer(sources_app, name="sources")
 app.add_typer(warehouse_app, name="warehouse")
@@ -1373,9 +1371,7 @@ if __name__ == "__main__":
 
 @news_app.command("cluster")
 def news_cluster(
-    profile: Annotated[
-        str, typer.Option("--profile", help="Which issue to cluster.")
-    ] = "violence",
+    profile: Annotated[str, typer.Option("--profile", help="Which issue to cluster.")] = "violence",
     since: Annotated[
         str | None,
         typer.Option("--since", help="Only cluster codings dated on or after this, YYYY-MM-DD."),
@@ -1405,9 +1401,7 @@ def news_cluster(
 
 @news_app.command("recode")
 def news_recode(
-    profile: Annotated[
-        str, typer.Option("--profile", help="Which issue to recode.")
-    ] = "violence",
+    profile: Annotated[str, typer.Option("--profile", help="Which issue to recode.")] = "violence",
     url: Annotated[
         str | None, typer.Option("--url", help="Recode one article, by its URL.")
     ] = None,
@@ -1469,9 +1463,7 @@ def news_recode(
 @news_app.command("validate")
 def news_validate(
     period: Annotated[str, typer.Argument(help="The month to score, as YYYY-MM.")],
-    profile: Annotated[
-        str, typer.Option("--profile", help="Which issue to score.")
-    ] = "violence",
+    profile: Annotated[str, typer.Option("--profile", help="Which issue to score.")] = "violence",
 ) -> None:
     """Score a month of machine coding against the human VEWS record.
 
@@ -1498,8 +1490,7 @@ def news_outlets(
     for outlet in rows:
         flag = "" if outlet.active else "  (retired)"
         typer.echo(
-            f"{outlet.province:28} {outlet.outlet:22} "
-            f"{outlet.host:30} {outlet.adapter}{flag}"
+            f"{outlet.province:28} {outlet.outlet:22} {outlet.host:30} {outlet.adapter}{flag}"
         )
     typer.echo(f"\n{len(rows)} outlets")
 

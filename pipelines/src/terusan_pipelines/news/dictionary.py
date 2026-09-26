@@ -97,9 +97,26 @@ EVIDENCE_FLOOR = 2
 #: Prefixes Indonesian verbs and nouns take. Longest first, because `meng` must
 #: be tried before `me` or `mengeroyok` stems to `ngeroyok`.
 PREFIXES = (
-    "memper", "menper", "keber", "keter",
-    "meng", "meny", "mem", "men", "peng", "peny", "pem", "pen",
-    "ber", "ter", "per", "se", "me", "pe", "di", "ke",
+    "memper",
+    "menper",
+    "keber",
+    "keter",
+    "meng",
+    "meny",
+    "mem",
+    "men",
+    "peng",
+    "peny",
+    "pem",
+    "pen",
+    "ber",
+    "ter",
+    "per",
+    "se",
+    "me",
+    "pe",
+    "di",
+    "ke",
 )
 
 #: Suffixes, longest first for the same reason.
@@ -109,10 +126,14 @@ SUFFIXES = ("kannya", "annya", "kan", "an", "nya", "i")
 #: becomes `mengeroyok`, so stripping the prefix leaves `eroyok` and the
 #: letter has to be put back before the stem is recognisable.
 ELISION: dict[str, str] = {
-    "meng": "k", "peng": "k",
-    "meny": "s", "peny": "s",
-    "mem": "p", "pem": "p",
-    "men": "t", "pen": "t",
+    "meng": "k",
+    "peng": "k",
+    "meny": "s",
+    "peny": "s",
+    "mem": "p",
+    "pem": "p",
+    "men": "t",
+    "pen": "t",
 }
 
 #: A stem shorter than this is not a word, it is what is left of one. Stripping

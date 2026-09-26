@@ -56,8 +56,7 @@ GATE_INSTRUCTION = (
     "peristiwa kekerasannya sendiri. Jawab TIDAK juga jika tidak ada kekerasan fisik."
 )
 GATE_YES = (
-    "Ya, berita menceritakan peristiwa kekerasan kolektif itu sendiri, kapan dan di "
-    "mana terjadinya"
+    "Ya, berita menceritakan peristiwa kekerasan kolektif itu sendiri, kapan dan di mana terjadinya"
 )
 GATE_NO = (
     "Tidak — berita hanya membahas tindak lanjut hukum, penyidikan, persidangan, "
@@ -79,16 +78,14 @@ ESCALATION: dict[str, str] = {
         "Ketegangan, ancaman, saling ejek, atau pengerahan massa tanpa kekerasan fisik"
     ),
     "KEKERASAN TERBATAS": (
-        "Kekerasan fisik terjadi tetapi terbatas — satu perkelahian atau pengeroyokan, "
-        "tanpa meluas"
+        "Kekerasan fisik terjadi tetapi terbatas — satu perkelahian atau pengeroyokan, tanpa meluas"
     ),
     "KEKERASAN MELUAS": (
         "Kekerasan menyebar ke banyak orang atau tempat: bentrokan berulang, serangan "
         "balasan, perusakan atau pembakaran"
     ),
     "KERUSUHAN": (
-        "Kerusuhan massal — massa besar, penjarahan, pembakaran luas, atau lumpuhnya "
-        "wilayah"
+        "Kerusuhan massal — massa besar, penjarahan, pembakaran luas, atau lumpuhnya wilayah"
     ),
     "MEREDA": "Kekerasan sudah berhenti atau berhasil diredam pada saat berita ditulis",
     ENUM_MISSING: "Tidak dapat ditentukan dari berita",
@@ -560,14 +557,11 @@ def recode(stored: dict[str, str], article: dict[str, Any]) -> dict[str, Any]:
     nothing made.
     """
     values = {
-        field: (stored.get(field) or ENUM_MISSING)
-        for field in (*CHOICE_FIELDS, *BOOLEAN_FIELDS)
+        field: (stored.get(field) or ENUM_MISSING) for field in (*CHOICE_FIELDS, *BOOLEAN_FIELDS)
     }
     labels = {*CHOICE_FIELDS, *BOOLEAN_FIELDS}
     return {
-        field: value
-        for field, value in _assemble(article, values).items()
-        if field not in labels
+        field: value for field, value in _assemble(article, values).items() if field not in labels
     }
 
 

@@ -96,8 +96,11 @@ class Score:
             "recall": round(self.recall, 3),
             "precision": round(self.precision, 3),
             "agreement": {
-                name: {"agreed": agreed, "compared": compared,
-                       "rate": round(agreed / compared, 3) if compared else None}
+                name: {
+                    "agreed": agreed,
+                    "compared": compared,
+                    "rate": round(agreed / compared, 3) if compared else None,
+                }
                 for name, (agreed, compared) in sorted(self.agreement.items())
             },
             "outlets_with_articles": len([n for n in self.reach.values() if n]),

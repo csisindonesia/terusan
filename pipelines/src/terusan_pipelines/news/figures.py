@@ -23,9 +23,23 @@ NUM_MISSING = -99
 #: Indonesian number words, up to the range casualty reporting uses. Beyond a
 #: dozen, reports give digits.
 _WORDS = {
-    "nol": 0, "satu": 1, "seorang": 1, "seseorang": 1, "dua": 2, "tiga": 3,
-    "empat": 4, "lima": 5, "enam": 6, "tujuh": 7, "delapan": 8, "sembilan": 9,
-    "sepuluh": 10, "sebelas": 11, "belasan": 12, "puluhan": 20, "ratusan": 100,
+    "nol": 0,
+    "satu": 1,
+    "seorang": 1,
+    "seseorang": 1,
+    "dua": 2,
+    "tiga": 3,
+    "empat": 4,
+    "lima": 5,
+    "enam": 6,
+    "tujuh": 7,
+    "delapan": 8,
+    "sembilan": 9,
+    "sepuluh": 10,
+    "sebelas": 11,
+    "belasan": 12,
+    "puluhan": 20,
+    "ratusan": 100,
 }
 
 #: Words meaning nobody. Distinct from absence: "tidak ada korban jiwa" is a

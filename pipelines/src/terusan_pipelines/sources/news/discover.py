@@ -276,9 +276,7 @@ def by_listing(outlet: Outlet, fetcher, since: date, render=None) -> list[Hit]:
         # they changed most recently, and prefer the ones that call themselves
         # news: an outlet's `sitemap_news.xml` is the recent end of its
         # archive, which is the only part a daily crawl wants.
-        children = [
-            (when, url) for url, when in entries if url.endswith((".xml", ".xml.gz"))
-        ]
+        children = [(when, url) for url, when in entries if url.endswith((".xml", ".xml.gz"))]
         children.sort(
             key=lambda pair: (
                 "news" not in pair[1].lower(),
@@ -333,9 +331,7 @@ def by_listing(outlet: Outlet, fetcher, since: date, render=None) -> list[Hit]:
             hits.setdefault(hit.url, hit)
 
     found = list(hits.values())[:MAX_CANDIDATES]
-    log.info(
-        "news.discover.listing", outlet=outlet.host, hits=len(hits), considered=len(found)
-    )
+    log.info("news.discover.listing", outlet=outlet.host, hits=len(hits), considered=len(found))
     return found
 
 

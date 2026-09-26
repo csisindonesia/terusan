@@ -28,8 +28,18 @@ log = structlog.get_logger(__name__)
 
 #: Nodes that are never article text.
 _STRIP = (
-    "script", "style", "noscript", "nav", "header", "footer", "aside", "form",
-    "iframe", "figure", "figcaption", "button",
+    "script",
+    "style",
+    "noscript",
+    "nav",
+    "header",
+    "footer",
+    "aside",
+    "form",
+    "iframe",
+    "figure",
+    "figcaption",
+    "button",
 )
 
 #: Where a page states its own publication time, best first.
@@ -44,10 +54,29 @@ _DATE_META = (
 )
 
 _MONTHS = {
-    "januari": 1, "februari": 2, "maret": 3, "april": 4, "mei": 5, "juni": 6,
-    "juli": 7, "agustus": 8, "september": 9, "oktober": 10, "november": 11,
-    "desember": 12, "des": 12, "jan": 1, "feb": 2, "mar": 3, "apr": 4,
-    "jun": 6, "jul": 7, "agu": 8, "sep": 9, "okt": 10, "nov": 11,
+    "januari": 1,
+    "februari": 2,
+    "maret": 3,
+    "april": 4,
+    "mei": 5,
+    "juni": 6,
+    "juli": 7,
+    "agustus": 8,
+    "september": 9,
+    "oktober": 10,
+    "november": 11,
+    "desember": 12,
+    "des": 12,
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "jun": 6,
+    "jul": 7,
+    "agu": 8,
+    "sep": 9,
+    "okt": 10,
+    "nov": 11,
 }
 
 _ID_DATE = re.compile(r"\b(\d{1,2})\s+([A-Za-z]+)\s+(20\d{2})\b")
@@ -187,13 +216,14 @@ def parse(html: bytes, url: str) -> Article:
         heading = tree.css_first("h1") or tree.css_first("title")
         title = " ".join((heading.text() or "").split()) if heading else ""
 
-    lead = _meta(tree, 'meta[property="og:description"]') or _meta(
-        tree, 'meta[name="description"]'
-    ) or ""
+    lead = (
+        _meta(tree, 'meta[property="og:description"]')
+        or _meta(tree, 'meta[name="description"]')
+        or ""
+    )
 
     paragraphs = [
-        " ".join((node.text() or "").split())
-        for node in tree.css("article p") or tree.css("p")
+        " ".join((node.text() or "").split()) for node in tree.css("article p") or tree.css("p")
     ]
     # Two-word paragraphs are captions, bylines and share prompts.
     body = "\n".join(p for p in paragraphs if len(p.split()) > 6)
