@@ -49,7 +49,31 @@ type Config struct {
 	Collections Collections
 	// Accounts, sessions, and whether the data routes need one.
 	Auth Auth
+	// The chat that suggests what to read. Off without a Cloudflare account
+	// and token.
+	Assistant Assistant
 }
+
+// Assistant is the model behind `POST /v1/assistant/chat`.
+//
+// Workers AI, on the account the news classifier already bills to. Off unless
+// both the account and a token are set: the portal asks the capability report
+// and hides the chat rather than offering a box that answers with an error.
+type Assistant struct {
+	AccountID string
+	Token     string
+	// A Workers AI model id.
+	Model string
+	// Optional: route through a named AI Gateway, for its own meter.
+	GatewayID string
+	// The classifier that routes each question and guards the chat before
+	// the writing model is called (see httpapi/assistant_guard.go). Empty
+	// turns it off, and the keyword rule routes alone.
+	RouterModel string
+}
+
+// Enabled reports whether the chat can answer.
+func (a Assistant) Enabled() bool { return a.AccountID != "" && a.Token != "" }
 
 // Auth is how people log in, and what a session is worth.
 //
@@ -60,7 +84,8 @@ type Config struct {
 // keeps.
 type Auth struct {
 	// Whether every route but the probes, the capability report and the login
-	// routes needs a session.
+	// routes needs a session or an API token. On unless AUTH_REQUIRED=false:
+	// a public lake is a choice somebody makes, not a default they inherit.
 	Required bool
 	// Force `Secure` on the session cookie. Set it wherever the portal is
 	// served over TLS but the API sits behind a proxy that terminates it, so
@@ -72,6 +97,15 @@ type Auth struct {
 	// PBKDF2 iterations for new passwords. Raising it re-hashes each password
 	// the next time it is used rather than invalidating anything.
 	Iterations int
+	// Whether the portal's "request access" form answers. Requests land as
+	// pending accounts that an admin approves; nobody gets in by filling it.
+	Registration bool
+	// Whether to believe the client address and location a proxy in front
+	// of this process reports (CF-Connecting-IP, CF-IPCountry,
+	// X-Forwarded-For). Only for the access log: set it where Cloudflare or
+	// another proxy is the only way in, since anyone who can reach the API
+	// directly can write those headers.
+	TrustProxy bool
 }
 
 // Collections is whether the shelf accepts changes.
@@ -176,16 +210,47 @@ func Load() (*Config, error) {
 		AppDB:       envOr("APP_DB", os.Getenv("COLLECTIONS_DB")),
 		Collections: Collections{Write: collectionsWrite},
 		Auth:        authCfg,
+		Assistant: Assistant{
+			AccountID: os.Getenv("CF_ACCOUNT_ID"),
+			// Its own token where one is issued; otherwise the classifier's,
+			// which is already scoped to Workers AI on the same account.
+			Token:     envOr("CF_AI_TOKEN", os.Getenv("JEV_CLOUDFLARE")),
+			Model:     envOr("ASSISTANT_MODEL", "@cf/zai-org/glm-4.7-flash"),
+			GatewayID: os.Getenv("AI_GATEWAY_ID"),
+			// "off" rather than empty to switch it off, since an empty
+			// variable in a compose file is indistinguishable from unset.
+			RouterModel: routerModel(),
+		},
 	}, nil
+}
+
+// routerModel is the assistant's router: Jev unless switched off.
+func routerModel() string {
+	switch model := strings.TrimSpace(os.Getenv("ASSISTANT_ROUTER_MODEL")); model {
+	case "":
+		return "typesafe/jev"
+	case "off", "none", "false":
+		return ""
+	default:
+		return model
+	}
 }
 
 // loadAuth reads how long a session lasts and whether one is required.
 func loadAuth() (Auth, error) {
-	required, err := boolEnv("AUTH_REQUIRED", false)
+	required, err := boolEnv("AUTH_REQUIRED", true)
 	if err != nil {
 		return Auth{}, err
 	}
 	secure, err := boolEnv("AUTH_SECURE_COOKIES", false)
+	if err != nil {
+		return Auth{}, err
+	}
+	registration, err := boolEnv("AUTH_REGISTRATION", true)
+	if err != nil {
+		return Auth{}, err
+	}
+	trustProxy, err := boolEnv("AUTH_TRUST_PROXY", false)
 	if err != nil {
 		return Auth{}, err
 	}
@@ -221,6 +286,8 @@ func loadAuth() (Auth, error) {
 		TTL:           time.Duration(ttl) * time.Hour,
 		RememberTTL:   time.Duration(remember) * 24 * time.Hour,
 		Iterations:    iterations,
+		Registration:  registration,
+		TrustProxy:    trustProxy,
 	}, nil
 }
 

@@ -7,6 +7,8 @@
 //	go run ./cmd/authctl create -email you@example.org
 //	go run ./cmd/authctl list
 //	go run ./cmd/authctl disable -email someone@example.org
+//	go run ./cmd/authctl approve -email someone@example.org -role researcher
+//	go run ./cmd/authctl token -email you@example.org -name "notebook" -days 90
 //
 // The password is read from the terminal without echoing unless -password is
 // given, which exists for scripts and puts the password in the shell history
@@ -40,7 +42,7 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: authctl <create|list|disable|enable> [flags]")
+		return errors.New("usage: authctl <create|list|approve|disable|enable|token> [flags]")
 	}
 
 	command, rest := args[0], args[1:]
@@ -50,7 +52,9 @@ func run(args []string) error {
 	password := flags.String("password", "",
 		"the password; read from the terminal when this is not given")
 	name := flags.String("name", "", "what to call the person")
-	role := flags.String("role", "member", "member or admin; carried, not yet enforced")
+	role := flags.String("role", auth.RoleResearcher,
+		"researcher or admin; guests, who need an end date, are made from the Users page")
+	days := flags.Int("days", auth.DefaultTokenDays, "token: days until it expires")
 	if err := flags.Parse(rest); err != nil {
 		return err
 	}
@@ -127,6 +131,8 @@ func run(args []string) error {
 			state := ""
 			if user.Disabled {
 				state = " (disabled)"
+			} else if user.Status == auth.StatusPending {
+				state = " (awaiting approval)"
 			}
 			fmt.Printf("%-34s %-8s last login %s%s\n", user.Email, user.Role, last, state)
 		}
@@ -145,8 +151,49 @@ func run(args []string) error {
 		fmt.Printf("%s is now %sd\n", *email, command)
 		return nil
 
+	case "approve":
+		// A registration from the portal, let in from the terminal.
+		if *email == "" {
+			return errors.New("-email is required")
+		}
+		user, err := accounts.UserByEmail(ctx, *email)
+		if err != nil {
+			if errors.Is(err, auth.ErrNotFound) {
+				return fmt.Errorf("no account for %s", *email)
+			}
+			return err
+		}
+		approved, err := accounts.Approve(ctx, user.ID, *role, nil)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("%s is approved as %s\n", approved.Email, approved.Role)
+		return nil
+
+	case "token":
+		// An API token for a script or another service, printed once. The
+		// account's display name flag doubles as the token's label here.
+		if *email == "" || *name == "" {
+			return errors.New("-email and -name (what the token is for) are required")
+		}
+		user, err := accounts.UserByEmail(ctx, *email)
+		if err != nil {
+			if errors.Is(err, auth.ErrNotFound) {
+				return fmt.Errorf("no account for %s", *email)
+			}
+			return err
+		}
+		secret, token, err := accounts.CreateToken(ctx, user.ID, *name, *days)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "token %q for %s, expires %s — shown once, store it now:\n",
+			token.Name, user.Email, token.ExpiresAt.Format(time.RFC3339))
+		fmt.Println(secret)
+		return nil
+
 	default:
-		return fmt.Errorf("unknown command %q: try create, list, disable or enable", command)
+		return fmt.Errorf("unknown command %q: try create, list, approve, disable, enable or token", command)
 	}
 }
 

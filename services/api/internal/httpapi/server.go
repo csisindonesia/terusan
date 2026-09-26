@@ -12,6 +12,7 @@ import (
 	"github.com/csis/terusan/services/api/internal/cache"
 	"github.com/csis/terusan/services/api/internal/collections"
 	"github.com/csis/terusan/services/api/internal/config"
+	"github.com/csis/terusan/services/api/internal/conversations"
 	"github.com/csis/terusan/services/api/internal/query"
 	"github.com/csis/terusan/services/api/internal/runner"
 	"github.com/csis/terusan/services/api/internal/storage"
@@ -30,7 +31,14 @@ type Server struct {
 	shelf       *collections.Store
 	auth        *auth.Service
 	suggestions *suggestions.Store
-	log         *slog.Logger
+	// The chat's catalogue and rate limit (see assistant.go), and where its
+	// conversations are kept — nil without an application database, and the
+	// portal then keeps them in the browser.
+	assistant assistantState
+	chats     *conversations.Store
+	// Per-address limit on the "request access" form (see users.go).
+	registrations registrationLimiter
+	log           *slog.Logger
 }
 
 // New returns a Server over cfg.
@@ -43,7 +51,7 @@ type Server struct {
 func New(
 	cfg *config.Config, warehouse *query.Warehouse, c cache.Cache,
 	shelf *collections.Store, accounts *auth.Service, asked *suggestions.Store,
-	log *slog.Logger,
+	chats *conversations.Store, log *slog.Logger,
 ) *Server {
 	if c == nil {
 		c = cache.Nothing{}
@@ -56,6 +64,7 @@ func New(
 		shelf:       shelf,
 		auth:        accounts,
 		suggestions: asked,
+		chats:       chats,
 		log:         log,
 	}
 	// Disabled unless the deployment asked for it, and then the only thing it
@@ -99,6 +108,13 @@ func (s *Server) Routes() http.Handler {
 	// the exception — it streams from disk with range support, and holding
 	// that in Redis would trade a fast local read for a slow network one.
 	mux.HandleFunc("GET /v1/observations", s.withCache(s.handleObservations))
+	// Before the list route in spirit though not in matching: what the filters
+	// on a series can offer, counted in the warehouse rather than off whatever
+	// page of rows a browser happens to hold.
+	mux.HandleFunc("GET /v1/observations/facets", s.withCache(s.handleObservationFacets))
+	// The same figures as a chart needs them: a line per member, bucketed to a
+	// granularity the span can be drawn at rather than sent row by row.
+	mux.HandleFunc("GET /v1/observations/series", s.withCache(s.handleObservationSeries))
 	mux.HandleFunc("GET /v1/indicators", s.withCache(s.handleIndicators))
 	mux.HandleFunc("GET /v1/indicators/{id}", s.withCache(s.handleIndicator))
 	// What the series was read out of, which is the question a reader looking
@@ -140,6 +156,28 @@ func (s *Server) Routes() http.Handler {
 
 	// What this deployment will do beyond answering questions, so the portal
 	// can show a button that works rather than one that explains itself.
+	// News monitoring. Its own routes rather than folded into documents: an
+	// article is not a ministry PDF, and a few thousand news links dropped into
+	// that list would bury what it exists to serve.
+	mux.HandleFunc("GET /v1/news/outlets", s.withCache(s.handleNewsOutlets))
+	mux.HandleFunc("GET /v1/news/outlets/{host}", s.withCache(s.handleNewsOutlet))
+	// The outlet page's own list, which is the same query narrowed to one host.
+	mux.HandleFunc("GET /v1/news/outlets/{host}/articles", s.withCache(s.handleNewsArticles))
+	// The crawl's own log for one paper, a row per day: what discovery turned
+	// up, what was read, what matched and what was kept. The only place the
+	// articles that were read and thrown away are counted — they are never
+	// stored, so nothing else can count them.
+	mux.HandleFunc("GET /v1/news/outlets/{host}/tallies", s.withCache(s.handleNewsOutletTallies))
+	mux.HandleFunc("GET /v1/news/articles", s.withCache(s.handleNewsArticles))
+	// What the corpus can be narrowed by, counted under the filters already
+	// on. More specific than the article route below it, so the mux prefers it.
+	mux.HandleFunc("GET /v1/news/articles/facets", s.withCache(s.handleNewsArticleFacets))
+	mux.HandleFunc("GET /v1/news/articles/{id}", s.withCache(s.handleNewsArticle))
+	// The page as it stood the day it was collected. Not cached through the
+	// response cache: it is a file, served with range support.
+	mux.HandleFunc("GET /v1/news/articles/{id}/screenshot", s.handleNewsScreenshot)
+	mux.HandleFunc("GET /v1/news/events", s.withCache(s.handleNewsEvents))
+
 	mux.HandleFunc("GET /v1/capabilities", s.handleCapabilities)
 
 	// The one write surface, and it writes nothing itself: it asks a pipeline
@@ -166,7 +204,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("DELETE /v1/collections/{id}/items/{kind}/{ref}", s.handleRemoveItem)
 
 	// Who is asking. Identity, not authority: every route answers the same way
-	// to everyone who gets past AUTH_REQUIRED (see auth.go).
+	// to everyone who gets past AUTH_REQUIRED, which is on unless the
+	// deployment turned it off (see auth.go).
 	// The first account on a deployment that has none, from the machine the
 	// API runs on. After that it is a conflict and accounts come from authctl.
 	mux.HandleFunc("POST /v1/auth/bootstrap", s.handleBootstrap)
@@ -182,6 +221,22 @@ func (s *Server) Routes() http.Handler {
 	// Before the {id} route, which would otherwise swallow it.
 	mux.HandleFunc("DELETE /v1/auth/sessions/others", s.handleRevokeOtherLogins)
 	mux.HandleFunc("DELETE /v1/auth/sessions/{id}", s.handleRevokeLogin)
+	// API tokens, for callers without a browser. Managed only from a cookie
+	// session: a token cannot list, mint or revoke tokens (see auth.go).
+	mux.HandleFunc("GET /v1/auth/tokens", s.handleTokens)
+	mux.HandleFunc("POST /v1/auth/tokens", s.handleCreateToken)
+	mux.HandleFunc("DELETE /v1/auth/tokens/{id}", s.handleRevokeToken)
+	// A stranger asking for an account. Lands as pending; an admin decides.
+	mux.HandleFunc("POST /v1/auth/register", s.handleRegister)
+
+	// The Users page. Admins only, on a cookie session (see users.go).
+	mux.HandleFunc("GET /v1/admin/users", s.handleUsers)
+	mux.HandleFunc("POST /v1/admin/users", s.handleCreateUser)
+	mux.HandleFunc("GET /v1/admin/users/{id}", s.handleUser)
+	mux.HandleFunc("PATCH /v1/admin/users/{id}", s.handleUpdateUser)
+	mux.HandleFunc("DELETE /v1/admin/users/{id}", s.handleRejectUser)
+	mux.HandleFunc("POST /v1/admin/users/{id}/approve", s.handleApproveUser)
+	mux.HandleFunc("POST /v1/admin/users/{id}/reset-password", s.handleResetUserPassword)
 
 	// What readers have asked the warehouse to collect. A queue rather than a
 	// message: it keeps a status, and the next person about to ask for the
@@ -195,6 +250,15 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/queries", s.handleSaveQuery)
 	mux.HandleFunc("PATCH /v1/queries/{id}", s.handleRenameQuery)
 	mux.HandleFunc("DELETE /v1/queries/{id}", s.handleDeleteQuery)
+
+	// The chat that points a reader at what is here. Streamed, and so never
+	// cached; off without a Workers AI account (see assistant.go).
+	mux.HandleFunc("POST /v1/assistant/chat", s.handleAssistantChat)
+	// Its conversations, by UUID (see assistant_conversations.go).
+	mux.HandleFunc("GET /v1/assistant/conversations", s.handleConversations)
+	mux.HandleFunc("GET /v1/assistant/conversations/{id}", s.handleConversation)
+	mux.HandleFunc("DELETE /v1/assistant/conversations/{id}", s.handleDeleteConversation)
+	mux.HandleFunc("PATCH /v1/assistant/conversations/{id}/messages/{seq}", s.handleSetMessageCollection)
 
 	// Outermost first: CORS answers the browser's preflight before anything
 	// else looks at the request, the log records what arrived, the session is

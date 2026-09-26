@@ -15,6 +15,7 @@ import (
 	"github.com/csis/terusan/services/api/internal/cache"
 	"github.com/csis/terusan/services/api/internal/collections"
 	"github.com/csis/terusan/services/api/internal/config"
+	"github.com/csis/terusan/services/api/internal/conversations"
 	"github.com/csis/terusan/services/api/internal/httpapi"
 	"github.com/csis/terusan/services/api/internal/query"
 	"github.com/csis/terusan/services/api/internal/storage"
@@ -66,9 +67,19 @@ func run(log *slog.Logger) error {
 	// answer, only the ability to address a folder by URL and to say who is
 	// asking. A configured path that cannot be opened is an error — somebody
 	// meant to keep this here.
+	// Sign-in required and nowhere to keep accounts is a deployment nobody can
+	// get into — or, if the gate were ever relaxed to match, one everybody
+	// can. Neither is what whoever set it up meant, so it does not start.
+	if cfg.Auth.Required && cfg.AppDB == "" {
+		return errors.New("AUTH_REQUIRED is on (the default) but APP_DB is unset: " +
+			"set APP_DB and create an account with authctl, " +
+			"or set AUTH_REQUIRED=false to serve the lake to anyone")
+	}
+
 	var shelf *collections.Store
 	var accounts *auth.Service
 	var asked *suggestions.Store
+	var chats *conversations.Store
 	if cfg.AppDB != "" {
 		db, err := appdb.Open(cfg.AppDB)
 		if err != nil {
@@ -89,6 +100,10 @@ func run(log *slog.Logger) error {
 			return err
 		}
 		asked, err = suggestions.New(db)
+		if err != nil {
+			return err
+		}
+		chats, err = conversations.New(db)
 		if err != nil {
 			return err
 		}
@@ -115,7 +130,7 @@ func run(log *slog.Logger) error {
 	srv := &http.Server{
 		Addr: cfg.Addr(),
 		Handler: httpapi.New(
-			cfg, warehouse, responses, shelf, accounts, asked, log,
+			cfg, warehouse, responses, shelf, accounts, asked, chats, log,
 		).Routes(),
 		ReadTimeout:  cfg.ReadTimeout,
 		WriteTimeout: cfg.WriteTimeout,

@@ -22,6 +22,10 @@ type Meta struct {
 	Limit   int   `json:"limit,omitempty"`
 	Offset  int   `json:"offset,omitempty"`
 	HasMore bool  `json:"has_more"`
+	// Where the next page starts, for a caller walking a series rather than
+	// jumping about in it. Opaque on purpose: it is this server's bookmark and
+	// not a filter to compose (see cursor.go).
+	NextCursor string `json:"next_cursor,omitempty"`
 	// Where the numbers came from, so a figure lifted out of an API response
 	// can still be traced (program.md §2.2).
 	Source string `json:"source,omitempty"`

@@ -29,6 +29,10 @@ var identifierPattern = regexp.MustCompile(`^[A-Za-z0-9_.:@+-]{1,200}$`)
 // 2026-Q1, 2026-S1, 2026-01-15.
 var periodPattern = regexp.MustCompile(`^\d{4}(-(\d{2}|Q[1-4]|S[12])(-\d{2})?)?$`)
 
+// yearPattern is a calendar year on its own — what a year filter takes, as
+// against `periodPattern`, which would also admit a month or a quarter.
+var yearPattern = regexp.MustCompile(`^\d{4}$`)
+
 type paramError struct {
 	param  string
 	reason string
@@ -38,8 +42,53 @@ func (e *paramError) Error() string { return fmt.Sprintf("%s: %s", e.param, e.re
 
 // searchPattern is what a free-text query may contain. Narrow on purpose: the
 // value reaches SQL bound, but a query of punctuation matches everything and
-// costs a full scan to discover it.
-var searchPattern = regexp.MustCompile(`^[\p{L}\p{N} ._:@+-]{1,100}$`)
+// costs a full scan to discover it. Apostrophes and dashes are allowed because
+// names carry them — "Bird's eye chili", "Red chili — curly" — and a name
+// that cannot be searched for cannot be linked to.
+var searchPattern = regexp.MustCompile(`^[\p{L}\p{N} ._:@+'’—–-]{1,100}$`)
+
+// codePattern is what a coded label may contain: a value from one of the
+// vocabularies the human coders pick from, as they spell it. Wider than
+// `searchPattern` because those labels carry punctuation a query never should
+// — `SERANGAN INFRASTRUKTUR/PENUTUPAN PAKSA`, `KENDARAAN, DILUAR BOM`,
+// `SENJATA API (TERMASUK SENAPAN ANGIN, SENJATA RAKITAN, DSB)`. The value
+// reaches SQL bound, and is matched for equality rather than for a pattern.
+var codePattern = regexp.MustCompile(`^[\p{L}\p{N} ._:@+\-/(),]{1,120}$`)
+
+// codeListParam returns the coded labels a parameter was given.
+//
+// Repeats only — `?form=a&form=b` — and never comma-split, which is the whole
+// reason this exists beside `stringListParam`: a coded label can contain a
+// comma, so splitting on one turns `KENDARAAN, DILUAR BOM` into two filters
+// that match nothing and a list that quietly returns an empty page.
+func codeListParam(r *http.Request, name string) ([]string, error) {
+	raw := r.URL.Query()[name]
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	seen := make(map[string]bool)
+	values := make([]string, 0, len(raw))
+	for _, entry := range raw {
+		value := strings.TrimSpace(entry)
+		if value == "" {
+			continue
+		}
+		if !codePattern.MatchString(value) {
+			return nil, &paramError{param: name, reason: "contains a value that is not well-formed"}
+		}
+		if !seen[value] {
+			seen[value] = true
+			values = append(values, value)
+		}
+	}
+	return values, nil
+}
+
+// cursorPattern is base64url, which is what a cursor is encoded as. Validated
+// like everything else even though the decoder would refuse a malformed one: a
+// parameter that never reaches SQL is still a parameter. A thousand characters
+// is Go's ceiling on a repeat count and some fifty times what a cursor needs.
+var cursorPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,1000}$`)
 
 // stringListParam returns validated values for a parameter that may repeat or
 // carry a comma-separated list.

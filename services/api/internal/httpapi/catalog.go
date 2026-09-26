@@ -102,7 +102,11 @@ func (s *Server) indicatorRows(
 	only ...string,
 ) ([]Indicator, error) {
 	if !s.warehouse.Exists(ctx, storage.LayerSilver, "observations") {
-		return nil, nil
+		// Empty rather than nil. This is marshalled straight into `data`, and
+		// a nil slice reaches the browser as `null` — which is not an empty
+		// list to anything that maps over it, so a lake with nothing
+		// normalized yet takes the portal down instead of showing no rows.
+		return []Indicator{}, nil
 	}
 
 	// `only` narrows the scan to one series' own partition where the caller

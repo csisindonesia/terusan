@@ -10,7 +10,7 @@ import (
 	"github.com/csis/terusan/services/api/internal/storage"
 )
 
-// Regulation is one regional regulation as BPK catalogues it.
+// Regulation is one regulation as BPK catalogues it, regional or central.
 //
 // The grain is the catalogue record, not the parsed text: BPK publishes
 // entries whose PDF never converted, and serving only the parsed ones would
@@ -24,11 +24,12 @@ type Regulation struct {
 	BPKID    *string `json:"bpk_id,omitempty"`
 	SourceID string  `json:"source_id"`
 
-	// perda or pkd. The corpus never spells the second one "perkada", and a
-	// filter that does silently drops three quarters of the rows.
+	// perda or pkd for regional instruments, pusat or kementerian for central
+	// ones. The corpus never spells pkd "perkada", and a filter that does
+	// silently drops two thirds of the rows.
 	Track string `json:"track"`
-	// Perda, Pergub, Perbup, Perwali — read off the document itself, so it is
-	// absent wherever the text was never parsed.
+	// Perda, Perbup, UU, PP, Permen… — read off the document itself, so it
+	// is absent wherever the text was never parsed.
 	Instrument *string `json:"instrument,omitempty"`
 	Scope      *string `json:"scope,omitempty"`
 

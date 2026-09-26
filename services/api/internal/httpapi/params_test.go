@@ -264,7 +264,9 @@ func TestMultipleValuesStillBindEveryArgument(t *testing.T) {
 // ---- free-text search -----------------------------------------------------
 
 func TestSearchAcceptsOrdinaryText(t *testing.T) {
-	for _, value := range []string{"Jawa Barat", "IDN", "gdp_current_usd", "Aceh"} {
+	for _, value := range []string{
+		"Jawa Barat", "IDN", "gdp_current_usd", "Aceh", "Bird's eye chili", "Red chili — curly",
+	} {
 		if _, err := stringParam(request("q", value), "q", searchPattern); err != nil {
 			t.Errorf("search %q rejected: %v", value, err)
 		}

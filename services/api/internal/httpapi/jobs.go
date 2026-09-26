@@ -50,9 +50,16 @@ type Capabilities struct {
 	// Whether a session is needed to read anything. False on the public
 	// warehouse this is usually deployed as.
 	AuthRequired bool `json:"auth_required"`
+	// Whether the login page can offer "request access".
+	Registration bool `json:"registration"`
 	// Whether readers can ask for a source to be collected, which needs
 	// somewhere to keep the queue.
 	Suggestions bool `json:"suggestions"`
+	// Whether `POST /v1/assistant/chat` has a model behind it.
+	Assistant bool `json:"assistant"`
+	// Whether this deployment keeps the assistant's conversations, so a chat
+	// has a URL that opens anywhere. Without it they live in the browser.
+	AssistantHistory bool `json:"assistant_history"`
 }
 
 func (s *Server) handleCapabilities(w http.ResponseWriter, _ *http.Request) {
@@ -62,7 +69,10 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, _ *http.Request) {
 		CollectionsWrite: s.shelf.Writable(),
 		Auth:             s.auth != nil,
 		AuthRequired:     s.auth != nil && s.cfg.Auth.Required,
+		Registration:     s.auth != nil && s.cfg.Auth.Registration,
 		Suggestions:      s.suggestions != nil,
+		Assistant:        s.cfg.Assistant.Enabled(),
+		AssistantHistory: s.cfg.Assistant.Enabled() && s.chats != nil,
 	}, nil)
 }
 

@@ -1,12 +1,19 @@
 // Package auth is who is asking.
 //
-// An email address, a password, and a session cookie — nothing more. There are
-// no roles that grant anything yet, no organisations, no per-record
-// permissions: a session says which person is reading, and everyone who has
-// one sees the same warehouse and the same shelf. Saying that plainly is worth
-// more than a permissions model nothing enforces, and the schema in
-// db/migrations has the shape the real one takes when there is something to
-// scope (program.md §35, §36).
+// An email address, a password, and a session cookie. Three roles, and they
+// grant little on purpose:
+//
+//   - admin       manages accounts — creates them, approves the requests that
+//     come in through the registration form, changes roles.
+//   - researcher  the ordinary account: reads the warehouse, keeps a shelf.
+//   - guest       a researcher with an end date. After access_expires_at the
+//     account stops signing in, and every session and API token
+//     it holds stops working with it.
+//
+// There are no organisations and no per-record permissions: everyone who can
+// sign in sees the same warehouse. The schema in db/migrations has the shape
+// the fuller model takes when there is something to scope (program.md §35,
+// §36).
 //
 // Passwords are stored as PBKDF2-SHA256 with a per-password salt, from the
 // standard library. Not because PBKDF2 is the best of the modern choices —
@@ -19,7 +26,8 @@
 // Sessions are opaque random tokens. What the database holds is the SHA-256 of
 // the token, never the token itself: a leaked database then yields no cookie
 // anybody can present, which is the same reason the password is not in there
-// either.
+// either. API tokens (tokens.go) are the same idea for callers without a
+// browser.
 package auth
 
 import (
@@ -59,6 +67,29 @@ var (
 	ErrWeakPassword = errors.New("password is too short")
 	// ErrNotFound is an account this deployment does not have.
 	ErrNotFound = errors.New("no such account")
+	// ErrPending is an account that asked to join and has not been approved.
+	ErrPending = errors.New("this account is waiting for an administrator to approve it")
+	// ErrExpired is a guest whose access period has ended.
+	ErrExpired = errors.New("this account's access period has ended")
+)
+
+// The roles an account can hold.
+const (
+	RoleAdmin      = "admin"
+	RoleResearcher = "researcher"
+	RoleGuest      = "guest"
+)
+
+// ValidRole reports whether this is one of the three roles.
+func ValidRole(role string) bool {
+	return role == RoleAdmin || role == RoleResearcher || role == RoleGuest
+}
+
+// Account states. Pending is a registration nobody has approved yet; it can
+// hold no session.
+const (
+	StatusActive  = "active"
+	StatusPending = "pending"
 )
 
 // User is an account, as every surface above this sees it. The password hash
@@ -67,12 +98,32 @@ type User struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`
 	Name  string `json:"name,omitempty"`
-	// What the person is here to do — `admin`, `analyst`. Carried and shown;
-	// nothing is refused on it yet, and the handlers do not pretend otherwise.
+	// admin, researcher or guest (see the package comment).
 	Role        string     `json:"role"`
+	Department  string     `json:"department,omitempty"`
+	Status      string     `json:"status"`
 	CreatedAt   time.Time  `json:"created_at"`
 	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
-	Disabled    bool       `json:"disabled,omitempty"`
+	// The last time any request arrived as this person, to the few minutes
+	// the access log is kept at (see access.go).
+	LastActiveAt *time.Time `json:"last_active_at,omitempty"`
+	// When a guest's access ends. Nil for every other role.
+	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
+	Disabled        bool       `json:"disabled,omitempty"`
+}
+
+// usable is whether this account may hold a session right now, and if not,
+// why not.
+func (u User) usable(now time.Time) error {
+	switch {
+	case u.Disabled:
+		return ErrDisabled
+	case u.Status == StatusPending:
+		return ErrPending
+	case u.Role == RoleGuest && u.AccessExpiresAt != nil && !now.Before(*u.AccessExpiresAt):
+		return ErrExpired
+	}
+	return nil
 }
 
 // Session is a live login.
@@ -134,6 +185,9 @@ type Service struct {
 	// database do work.
 	mu       sync.Mutex
 	failures map[string]*attempts
+	// When each (account, address, kind) was last written to the access log,
+	// so a busy page is one row per few minutes rather than one per request.
+	touched map[string]time.Time
 }
 
 type attempts struct {
@@ -180,6 +234,14 @@ CREATE TABLE IF NOT EXISTS sessions (
 // missing and the error is ignored where the engine reports it differently.
 var additions = []string{
 	`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS session_id TEXT`,
+	`ALTER TABLE users ADD COLUMN IF NOT EXISTS department TEXT`,
+	`ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT`,
+	`ALTER TABLE users ADD COLUMN IF NOT EXISTS access_expires_at TIMESTAMP WITH TIME ZONE`,
+	`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMP WITH TIME ZONE`,
+	// Every account that existed before approval did was an approved one.
+	`UPDATE users SET status = 'active' WHERE status IS NULL`,
+	// "member" was the only non-admin role before there were three.
+	`UPDATE users SET role = 'researcher' WHERE role NOT IN ('admin', 'researcher', 'guest')`,
 }
 
 // New prepares the accounts tables in the application database.
@@ -187,7 +249,7 @@ func New(db *appdb.DB, cfg Config) (*Service, error) {
 	if db == nil {
 		return nil, errors.New("no database")
 	}
-	if _, err := db.Exec(schema); err != nil {
+	if _, err := db.Exec(schema + tokenSchema + accessSchema); err != nil {
 		return nil, fmt.Errorf("auth schema: %w", err)
 	}
 	for _, statement := range additions {
@@ -202,7 +264,10 @@ func New(db *appdb.DB, cfg Config) (*Service, error) {
 	); err != nil {
 		return nil, fmt.Errorf("auth schema: %w", err)
 	}
-	return &Service{db: db, cfg: cfg.withDefaults(), failures: map[string]*attempts{}}, nil
+	return &Service{
+		db: db, cfg: cfg.withDefaults(),
+		failures: map[string]*attempts{}, touched: map[string]time.Time{},
+	}, nil
 }
 
 // Count is how many accounts exist, which is what tells a fresh deployment
@@ -288,9 +353,10 @@ func verifyPassword(encoded, password string) bool {
 
 // PutUser creates an account or resets an existing one's password.
 //
-// The one way accounts come into being on this deployment, used by `authctl`.
-// There is no self-service sign-up: the portal serves one organisation's
-// warehouse, and an account is something somebody grants rather than takes.
+// Used by `authctl` and the bootstrap route. The account is active at once:
+// whoever runs these is already trusted with the database. Accounts from the
+// portal come in through CreateUser (an admin) or Register (a request an admin
+// approves), both in admin.go.
 func (s *Service) PutUser(ctx context.Context, email, password, name, role string) (User, error) {
 	address := NormalizeEmail(email)
 	if !ValidEmail(address) {
@@ -301,7 +367,12 @@ func (s *Service) PutUser(ctx context.Context, email, password, name, role strin
 		return User{}, err
 	}
 	if role == "" {
-		role = "member"
+		role = RoleResearcher
+	}
+	if !ValidRole(role) || role == RoleGuest {
+		// A guest needs an end date, which this path has no way to take.
+		return User{}, fmt.Errorf("role must be %s or %s here; make guests from the portal",
+			RoleAdmin, RoleResearcher)
 	}
 
 	now := time.Now().UTC()
@@ -312,12 +383,15 @@ func (s *Service) PutUser(ctx context.Context, email, password, name, role strin
 			name = existing.Name
 		}
 		if _, err := s.db.ExecContext(ctx, `
-			UPDATE users SET password_hash = ?, name = ?, role = ?, updated_at = ?
+			UPDATE users SET password_hash = ?, name = ?, role = ?, status = 'active',
+			    access_expires_at = NULL, updated_at = ?
 			WHERE user_id = ?`, hash, nullable(name), role, now, existing.ID); err != nil {
 			return User{}, err
 		}
 		existing.Name = name
 		existing.Role = role
+		existing.Status = StatusActive
+		existing.AccessExpiresAt = nil
 		return existing, nil
 
 	case errors.Is(err, ErrNotFound):
@@ -326,11 +400,12 @@ func (s *Service) PutUser(ctx context.Context, email, password, name, role strin
 			Email:     address,
 			Name:      name,
 			Role:      role,
+			Status:    StatusActive,
 			CreatedAt: now,
 		}
 		if _, err := s.db.ExecContext(ctx, `
-			INSERT INTO users (user_id, email, name, role, password_hash, disabled, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, FALSE, ?, ?)`,
+			INSERT INTO users (user_id, email, name, role, password_hash, disabled, created_at, updated_at, status)
+			VALUES (?, ?, ?, ?, ?, FALSE, ?, ?, 'active')`,
 			user.ID, user.Email, nullable(user.Name), user.Role, hash, now, now); err != nil {
 			return User{}, err
 		}
@@ -362,9 +437,7 @@ func (s *Service) SetDisabled(ctx context.Context, email string, disabled bool) 
 
 // Users lists the accounts, for `authctl list`.
 func (s *Service) Users(ctx context.Context) ([]User, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT user_id, email, COALESCE(name, ''), role, disabled, created_at, last_login_at
-		FROM users ORDER BY email`)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+userColumns+` FROM users u ORDER BY u.email`)
 	if err != nil {
 		return nil, err
 	}
@@ -385,24 +458,39 @@ type scanner interface {
 	Scan(dest ...any) error
 }
 
-func scanUser(row scanner) (User, error) {
+// userColumns is what scanUser reads, in its order, off a `users u`.
+const userColumns = `u.user_id, u.email, COALESCE(u.name, ''), u.role, u.disabled,
+	u.created_at, u.last_login_at, COALESCE(u.department, ''),
+	COALESCE(u.status, 'active'), u.access_expires_at, u.last_active_at`
+
+// scanUser reads userColumns, then whatever extra destinations the query
+// selected after them.
+func scanUser(row scanner, extra ...any) (User, error) {
 	var user User
-	var lastLogin sql.NullTime
-	if err := row.Scan(&user.ID, &user.Email, &user.Name, &user.Role,
-		&user.Disabled, &user.CreatedAt, &lastLogin); err != nil {
+	var lastLogin, expires, lastActive sql.NullTime
+	dest := append([]any{&user.ID, &user.Email, &user.Name, &user.Role,
+		&user.Disabled, &user.CreatedAt, &lastLogin, &user.Department,
+		&user.Status, &expires, &lastActive}, extra...)
+	if err := row.Scan(dest...); err != nil {
 		return User{}, err
 	}
-	if lastLogin.Valid {
-		at := lastLogin.Time.UTC()
-		user.LastLoginAt = &at
-	}
+	user.CreatedAt = user.CreatedAt.UTC()
+	user.LastLoginAt = utcPointer(lastLogin)
+	user.AccessExpiresAt = utcPointer(expires)
+	user.LastActiveAt = utcPointer(lastActive)
 	return user, nil
 }
 
+func utcPointer(value sql.NullTime) *time.Time {
+	if !value.Valid {
+		return nil
+	}
+	at := value.Time.UTC()
+	return &at
+}
+
 func (s *Service) byEmail(ctx context.Context, address string) (User, error) {
-	row := s.db.QueryRowContext(ctx, `
-		SELECT user_id, email, COALESCE(name, ''), role, disabled, created_at, last_login_at
-		FROM users WHERE email = ?`, address)
+	row := s.db.QueryRowContext(ctx, `SELECT `+userColumns+` FROM users u WHERE u.email = ?`, address)
 	user, err := scanUser(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrNotFound
@@ -426,15 +514,9 @@ func (s *Service) Login(
 	}
 
 	var hash string
-	var disabled bool
-	row := s.db.QueryRowContext(ctx, `
-		SELECT user_id, email, COALESCE(name, ''), role, disabled, created_at, last_login_at, password_hash
-		FROM users WHERE email = ?`, address)
-
-	var user User
-	var lastLogin sql.NullTime
-	err = row.Scan(&user.ID, &user.Email, &user.Name, &user.Role, &disabled,
-		&user.CreatedAt, &lastLogin, &hash)
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+userColumns+`, u.password_hash FROM users u WHERE u.email = ?`, address)
+	user, err := scanUser(row, &hash)
 	if errors.Is(err, sql.ErrNoRows) {
 		// Hashed anyway, against a throwaway encoding, so that "no such
 		// account" and "wrong password" take the same time to answer.
@@ -450,17 +532,12 @@ func (s *Service) Login(
 		s.failed(address)
 		return "", Session{}, ErrInvalidCredentials
 	}
-	// Checked after the password, so a wrong password on a disabled account
-	// does not reveal that the account exists.
-	if disabled {
-		return "", Session{}, ErrDisabled
+	// Checked after the password, so a wrong password on a disabled, pending
+	// or lapsed account does not reveal that the account exists.
+	if err := user.usable(time.Now()); err != nil {
+		return "", Session{}, err
 	}
 	s.succeeded(address)
-
-	if lastLogin.Valid {
-		at := lastLogin.Time.UTC()
-		user.LastLoginAt = &at
-	}
 
 	token, id, expires, err := s.startSession(ctx, user.ID, userAgent, remember)
 	if err != nil {
@@ -529,17 +606,12 @@ func (s *Service) Session(ctx context.Context, token string) (Session, error) {
 	}
 	var session Session
 	var expires time.Time
-	var disabled bool
-	var lastLogin sql.NullTime
 	var id sql.NullString
 
-	err := s.db.QueryRowContext(ctx, `
-		SELECT s.expires_at, s.session_id, u.user_id, u.email, COALESCE(u.name, ''), u.role,
-		       u.disabled, u.created_at, u.last_login_at
+	user, err := scanUser(s.db.QueryRowContext(ctx, `
+		SELECT `+userColumns+`, s.expires_at, s.session_id
 		FROM sessions s JOIN users u ON u.user_id = s.user_id
-		WHERE s.token_hash = ?`, hashToken(token),
-	).Scan(&expires, &id, &session.User.ID, &session.User.Email, &session.User.Name,
-		&session.User.Role, &disabled, &session.User.CreatedAt, &lastLogin)
+		WHERE s.token_hash = ?`, hashToken(token)), &expires, &id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Session{}, ErrNoSession
 	}
@@ -547,20 +619,18 @@ func (s *Service) Session(ctx context.Context, token string) (Session, error) {
 		return Session{}, err
 	}
 
-	if time.Now().UTC().After(expires) {
+	now := time.Now().UTC()
+	if now.After(expires) {
 		// Cleared on the way past rather than left to a sweep: an expired
 		// session that is still being presented is exactly the row worth
 		// removing now.
 		_, _ = s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token_hash = ?`, hashToken(token))
 		return Session{}, ErrNoSession
 	}
-	if disabled {
-		return Session{}, ErrDisabled
+	if err := user.usable(now); err != nil {
+		return Session{}, err
 	}
-	if lastLogin.Valid {
-		at := lastLogin.Time.UTC()
-		session.User.LastLoginAt = &at
-	}
+	session.User = user
 	session.ID = id.String
 	session.ExpiresAt = expires.UTC()
 	return session, nil
@@ -607,9 +677,7 @@ func (s *Service) Rename(ctx context.Context, userID, name string) (User, error)
 }
 
 func (s *Service) byID(ctx context.Context, userID string) (User, error) {
-	row := s.db.QueryRowContext(ctx, `
-		SELECT user_id, email, COALESCE(name, ''), role, disabled, created_at, last_login_at
-		FROM users WHERE user_id = ?`, userID)
+	row := s.db.QueryRowContext(ctx, `SELECT `+userColumns+` FROM users u WHERE u.user_id = ?`, userID)
 	user, err := scanUser(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrNotFound

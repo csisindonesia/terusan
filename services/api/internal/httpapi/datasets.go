@@ -105,16 +105,36 @@ func (s *Server) datasetSelect(ctx context.Context) (string, error) {
 func (s *Server) handleDatasets(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	if !s.warehouse.Exists(ctx, storage.LayerSilver, "observations") {
+		// Nothing normalized yet. The collections are derived from the
+		// observations, so there is nothing to derive them from — and
+		// read_parquet over a directory holding no files is an error, not an
+		// empty scan, which would answer a bare lake with a 500.
+		writeData(w, []Dataset{}, &Meta{Total: 0, Layer: "silver"})
+		return
+	}
+
+	datasets, err := s.datasetRows(ctx)
+	if err != nil {
+		internalError(w, s.log, "query datasets", err)
+		return
+	}
+
+	writeData(w, datasets, &Meta{Total: int64(len(datasets)), Layer: "silver"})
+}
+
+// datasetRows returns every collection, by id.
+//
+// The caller has checked that the observations exist.
+func (s *Server) datasetRows(ctx context.Context) ([]Dataset, error) {
 	query, err := s.datasetSelect(ctx)
 	if err != nil {
-		internalError(w, s.log, "resolve datasets", err)
-		return
+		return nil, err
 	}
 
 	rows, err := s.warehouse.DB().QueryContext(ctx, query+" ORDER BY o.dataset_id")
 	if err != nil {
-		internalError(w, s.log, "query datasets", err)
-		return
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -122,17 +142,11 @@ func (s *Server) handleDatasets(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		d, err := scanDataset(rows)
 		if err != nil {
-			internalError(w, s.log, "scan dataset", err)
-			return
+			return nil, err
 		}
 		datasets = append(datasets, d)
 	}
-	if err := rows.Err(); err != nil {
-		internalError(w, s.log, "read datasets", err)
-		return
-	}
-
-	writeData(w, datasets, &Meta{Total: int64(len(datasets)), Layer: "silver"})
+	return datasets, rows.Err()
 }
 
 // handleDataset returns one collection.
@@ -146,6 +160,11 @@ func (s *Server) handleDataset(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !identifierPattern.MatchString(id) {
 		badRequest(w, "invalid parameter", "id: is not a well-formed identifier")
+		return
+	}
+
+	if !s.warehouse.Exists(ctx, storage.LayerSilver, "observations") {
+		notFound(w, "dataset not found", id)
 		return
 	}
 
