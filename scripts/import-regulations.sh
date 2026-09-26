@@ -183,3 +183,9 @@ SELECT source_id, track, count(*) AS rows, count(parse_status) AS parsed
 FROM read_parquet('$SILVER/regulations/**/*.parquet', hive_partitioning = true)
 GROUP BY ALL ORDER BY source_id, track;
 "
+
+# The assistant searches the regulations through an index built from what
+# was just landed; one left from before the import would point at rows that
+# are no longer there.
+echo
+STORAGE_ROOT="$STORAGE_ROOT" ./scripts/index-regulations.sh

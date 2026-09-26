@@ -1386,6 +1386,55 @@ follow-up question about is a dead end — and it lives in the same application
 database as the shelf, so a deployment without `APP_DB` shows the reader the
 contact address instead of a form that would swallow their message.
 
+## How the assistant finds a regulation
+
+The assistant answers only from what the portal's own search hands it, so a
+regulation the search misses is one the assistant says does not exist. It used
+to match the question's words against titles, through hand-kept tables of
+acronyms and synonyms, and every word the tables did not know was a miss
+nobody saw: "PKPU syarat capres" found nothing, though PKPU 19/2023 Pasal 13
+lists exactly that.
+
+It now searches a full-text index, built into Gold from the regulations in
+Silver:
+
+```bash
+make regulations-index      # ~4 minutes; scripts/import-regulations.sh runs it too
+make eval-assistant         # how well it finds what it should, against this lake
+```
+
+The index holds every regulation's title, subject and region, and the text of
+every article in the central and ministerial corpora (`PASAL_TRACKS` widens
+that). Words are stemmed with the Indonesian Snowball stemmer, so *persyaratan*,
+*syarat* and *pencalonan*/*calon* meet; ranking is BM25, so a word as common as
+*tidak* weighs almost nothing without a stop list saying so. The definitions
+article and the closing provisions are left out of the article text: both
+quote the titles of other regulations and matched every question better than
+the article that answers it. What the stemmer cannot know is still read from
+the acronym table in `services/api/internal/httpapi/assistant.go` — that KPU is
+the Komisi Pemilihan Umum.
+
+A regulation's score is its title match counted twice, plus its best three
+articles, lifted for a higher instrument (UU, then PP, then Perpres) and for
+being recent; no more than three come from one body's one kind of instrument,
+and a title that holds two of the question's words side by side counts for
+more. The article that matched best is quoted to the model, so "is there a
+rule on X?" is answered from what the rule says.
+
+It searches on every question, not only those that say *peraturan*. Where the
+reader did not ask for regulations, they are shown only when one matches
+nearly the whole question, names some of it in its title, and matches it
+clearly better than the portal's datasets and series do — "kurs rupiah
+terhadap dolar" is covered as fully by a Bank Indonesia regulation as by the
+exchange-rate series, and is a question about the series.
+
+`make eval-assistant` asks every question in
+`services/api/internal/httpapi/testdata/regulation_eval.json` the way the
+assistant does, without the router, and reports which it found, where, and
+how the old title matching did on the same cases. It fails below a floor set
+in the test. When a reader reports a miss, add it there first; a lake without
+the index skips the test, so CI does not run it.
+
 ## What is not wired up yet
 
 The portal (`make dev-portal`) is a shell — it does not read the catalog. The

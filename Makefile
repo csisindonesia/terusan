@@ -369,6 +369,22 @@ pihps-silver: ## Normalize PIHPS food prices into one Silver indicator per marke
 bnpb-silver: ## Normalize BNPB disaster impact into one Silver indicator per measure and hazard
 	@./scripts/normalize-bnpb.sh
 
+.PHONY: bps-silver
+bps-silver: ## Land the last two years of every BPS national variable, extract and normalize into Silver (~1 h, needs BPS_API_KEY)
+	cd pipelines && uv run terusan sources run bps-indicators
+	cd pipelines && uv run terusan warehouse extract statistics bps-indicators
+	@./scripts/normalize-bps.sh
+
+.PHONY: bps-backfill
+bps-backfill: ## Land every year of every BPS national variable (~9,000 requests, several hours), then extract and normalize
+	cd pipelines && uv run terusan sources run bps-indicators --param full=true
+	cd pipelines && uv run terusan warehouse extract statistics bps-indicators
+	@./scripts/normalize-bps.sh
+
+.PHONY: regulations-index
+regulations-index: ## Rebuild the assistant's full-text index of the regulations into Gold (~4 min)
+	@./scripts/index-regulations.sh
+
 .PHONY: vews-ingest
 vews-ingest: ## Land the VEWS yearly exports from tmp/vews (or $$VEWS_DROP_DIR) into RAW
 	cd pipelines && uv run terusan sources run vews-collective-violence
@@ -410,6 +426,10 @@ test: test-go test-python ## Run every test suite
 .PHONY: test-go
 test-go: ## Run Go tests
 	cd services/api && go test ./...
+
+.PHONY: eval-assistant
+eval-assistant: ## Measure the assistant's regulation search against the local lake (needs `make regulations-index`)
+	cd services/api && go test ./internal/httpapi/ -run TestRegulationSearchAgainstTheLake -count=1 -v
 
 .PHONY: test-python
 test-python: ## Run pipeline tests

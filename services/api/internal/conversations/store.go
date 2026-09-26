@@ -52,8 +52,11 @@ type Message struct {
 	// What the reply was allowed to link to, as `kind:id`.
 	Sources []string `json:"sources,omitempty"`
 	// The collection this reply's suggestions were saved into.
-	CollectionID string    `json:"collection_id,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
+	CollectionID string `json:"collection_id,omitempty"`
+	// The chart drawn beside the reply, as the portal received it. Kept as
+	// the JSON it was sent as: nothing here reads inside it.
+	Chart     json.RawMessage `json:"chart,omitempty"`
+	CreatedAt time.Time       `json:"created_at"`
 }
 
 // Conversation is one chat, with its turns when read whole.
@@ -93,6 +96,7 @@ CREATE TABLE IF NOT EXISTS assistant_messages (
     created_at       TIMESTAMP WITH TIME ZONE NOT NULL,
     PRIMARY KEY (conversation_id, seq)
 );
+ALTER TABLE assistant_messages ADD COLUMN IF NOT EXISTS chart TEXT;
 `
 
 func New(db *appdb.DB) (*Store, error) {
@@ -143,7 +147,7 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Conversation, error
 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT seq, role, content, coalesce(error, ''), coalesce(sources, ''),
-		       coalesce(collection_id, ''), created_at
+		       coalesce(collection_id, ''), coalesce(chart, ''), created_at
 		FROM assistant_messages WHERE conversation_id = ? ORDER BY seq`, id)
 	if err != nil {
 		return Conversation{}, err
@@ -152,13 +156,16 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Conversation, error
 	c.Messages = []Message{}
 	for rows.Next() {
 		var m Message
-		var sources string
+		var sources, chart string
 		if err := rows.Scan(&m.Seq, &m.Role, &m.Content, &m.Error, &sources,
-			&m.CollectionID, &m.CreatedAt); err != nil {
+			&m.CollectionID, &chart, &m.CreatedAt); err != nil {
 			return Conversation{}, err
 		}
 		if sources != "" {
 			_ = json.Unmarshal([]byte(sources), &m.Sources)
+		}
+		if chart != "" && json.Valid([]byte(chart)) {
+			m.Chart = json.RawMessage(chart)
 		}
 		c.Messages = append(c.Messages, m)
 	}
@@ -216,10 +223,14 @@ func (s *Store) Append(ctx context.Context, id string, m Message) (Message, erro
 		encoded, _ := json.Marshal(m.Sources)
 		sources = string(encoded)
 	}
+	var chart any
+	if len(m.Chart) > 0 {
+		chart = string(m.Chart)
+	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO assistant_messages (conversation_id, seq, role, content, error, sources, collection_id, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, m.Seq, m.Role, m.Content, nullable(m.Error), sources, nullable(m.CollectionID), m.CreatedAt,
+		INSERT INTO assistant_messages (conversation_id, seq, role, content, error, sources, collection_id, chart, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, m.Seq, m.Role, m.Content, nullable(m.Error), sources, nullable(m.CollectionID), chart, m.CreatedAt,
 	); err != nil {
 		return Message{}, err
 	}

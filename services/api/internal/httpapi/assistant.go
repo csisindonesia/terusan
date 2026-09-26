@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -183,6 +184,8 @@ func (s *Server) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 	// Written to the stream as it happens, and to the conversation once the
 	// reply is over — however it ended.
 	var emit func(any)
+	// The chart drawn beside the reply, where the question asked for one.
+	var chart *chartSpec
 	start := func() {
 		emit = startStream(w)
 		if chat != nil {
@@ -197,8 +200,12 @@ func (s *Server) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 		// the half of the reply they saw, marked as cut off.
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
 		defer cancel()
+		var drawn json.RawMessage
+		if chart != nil {
+			drawn, _ = json.Marshal(chart)
+		}
 		if _, err := s.chats.Append(ctx, chat.ID, conversations.Message{
-			Role: "assistant", Content: content, Sources: sources, Error: failure,
+			Role: "assistant", Content: content, Sources: sources, Error: failure, Chart: drawn,
 		}); err != nil {
 			s.log.Warn("assistant.record_failed", "conversation", chat.ID, "error", err)
 		}
@@ -225,6 +232,12 @@ func (s *Server) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 		// Answered without them rather than not at all.
 		s.log.Warn("assistant.regulation_search_failed", "error", err)
 	}
+	// A question that never said "peraturan" is still about one when a
+	// regulation matches nearly all of it.
+	found = regulationsWorthShowing(found, question.aboutRegulation, catalogueCoverage(catalogue, question))
+	if len(found) > 0 {
+		question.aboutRegulation = true
+	}
 
 	// The router's language guess is overruled when the question is plainly
 	// Indonesian by its own words: it has called "cari dataset terkait
@@ -233,6 +246,19 @@ func (s *Server) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 		route.Language = "id"
 	}
 	prompt, sources := assistantPrompt(catalogue, found, question)
+	if wantsAnalysis(question.latest) {
+		// Planned and measured before the reply starts, so the chart is on
+		// the page before the words that describe it.
+		if chart = s.analyse(r.Context(), catalogue, question.latest, route.Language); chart != nil {
+			prompt = analysisInstructions(prompt) + chartPrompt(chart)
+			sources = withChartSources(sources, chart)
+			if route.Source != "jev" {
+				// The chart's section is long and in English, and without the
+				// router's pin the reply follows it rather than the reader.
+				prompt += routing{Source: "jev", Language: route.Language}.replyLanguage()
+			}
+		}
+	}
 	prompt += route.replyLanguage()
 	if yesNoQuestion(lastQuestion(messages)) {
 		// Said outright: a small model given the rule in general still
@@ -260,6 +286,9 @@ func (s *Server) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 
 	start()
 	emit(map[string]any{"type": "sources", "sources": sources})
+	if chart != nil {
+		emit(map[string]any{"type": "chart", "chart": chart})
+	}
 	keys := make([]string, len(sources))
 	for i, source := range sources {
 		keys[i] = source.Kind + ":" + source.ID
@@ -296,6 +325,7 @@ func (s *Server) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 	failure := ""
 	switch {
 	case leaked:
+		chart = nil
 		record(refusalText("injection", route.Language), nil, "")
 	case err != nil && errors.Is(err, context.Canceled):
 		// The reader stopped it, and has seen what was sent so far.
@@ -609,6 +639,11 @@ func assistantPrompt(
 				if len(parts) > 0 {
 					fmt.Fprintf(&b, " — %s", strings.Join(parts, "; "))
 				}
+				if r.Excerpt != "" {
+					// The article that matched, so "is there a rule on X?" is
+					// answered from what the rule says rather than its title.
+					fmt.Fprintf(&b, "\n  Pasal %s: %q", r.Pasal, r.Excerpt)
+				}
 				b.WriteString("\n")
 				sources = append(sources, assistantSource{Kind: "regulation", ID: r.Key, Label: r.Title})
 			}
@@ -666,6 +701,9 @@ type assistantQuery struct {
 	topic []string
 	// The question as asked, for the injection pattern.
 	text string
+	// The two questions it was read from, apart: the full-text search weighs
+	// the earlier one less.
+	latest, previous string
 }
 
 func (q assistantQuery) regulationQuery() string {
@@ -686,6 +724,12 @@ func readQuestion(messages []assistantMessage) assistantQuery {
 	}
 	text := strings.Join(asked, " ")
 	q := assistantQuery{terms: searchTerms(text), text: text}
+	if len(asked) > 0 {
+		q.latest = asked[0]
+	}
+	if len(asked) > 1 {
+		q.previous = asked[1]
+	}
 
 	words := strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
@@ -714,9 +758,13 @@ func readQuestion(messages []assistantMessage) assistantQuery {
 // Words that mean the reader wants law rather than figures.
 var regulationWords = func() map[string]bool {
 	set := map[string]bool{}
+	// The last line is the regulations of one body, which readers name by
+	// their own abbreviation and no title spells: "PKPU" is written out as
+	// "Peraturan Komisi Pemilihan Umum" in every one of the 301 it names.
 	for _, word := range strings.Fields(`regulasi peraturan aturan hukum undang pasal kebijakan
 		ketentuan keputusan regulation regulations law laws legal rule rules decree policy
-		ordinance bylaw bylaws statute legislation`) {
+		ordinance bylaw bylaws statute legislation
+		pkpu perbawaslu pojk pbi pmk permenkeu perma perkap perban`) {
 		set[word] = true
 	}
 	return set
@@ -728,11 +776,22 @@ var instrumentWords = map[string]string{
 	"permen": "Permen", "pp": "PP", "perpres": "Perpres", "uu": "UU", "keppres": "Keppres",
 	"qanun": "Qanun", "permendagri": "Permendagri", "inpres": "Inpres", "perpu": "Perpu",
 	"perppu": "Perpu", "kepmen": "Kepmen", "perka": "Perka",
+	// "undang-undang pemilu" asks for the act, not for every regulation
+	// that implements it.
+	"undang": "UU",
 }
 
 // regulationHit is one regulation the internal search found.
 type regulationHit struct {
 	Key, Title, Region, Subject, Status string
+	// Set by the full-text index: the article that matched best, and the
+	// words of it that did.
+	Pasal, Excerpt string
+	// How well it matched, and what share of the question's words it has —
+	// in its title or best article, and in its title alone.
+	Score, Coverage, TitleCoverage float64
+	track                          string
+	year                           sql.NullInt64
 }
 
 // assistantRegulationLimit is how many regulations reach the model: enough to
@@ -749,7 +808,19 @@ const assistantRegulationTerms = 8
 // newest wins among equals. Scanned in the warehouse, so of 300,000 rows only
 // the best few are ever serialised, and never at all unless the question is
 // about regulations.
+//
+// Where the lake has the full-text index, that is used instead, and for every
+// question rather than only those that say "peraturan"; see rankRegulations.
 func (s *Server) searchRegulations(ctx context.Context, q assistantQuery) ([]regulationHit, error) {
+	if s.warehouse.Exists(ctx, storage.LayerGold, regulationIndex) {
+		return s.rankRegulations(ctx, q)
+	}
+	return s.matchRegulationTitles(ctx, q)
+}
+
+// matchRegulationTitles is the search a lake without the index gets: the
+// question's words, and the acronyms' phrases, matched against titles.
+func (s *Server) matchRegulationTitles(ctx context.Context, q assistantQuery) ([]regulationHit, error) {
 	if !q.aboutRegulation || !s.warehouse.Exists(ctx, storage.LayerSilver, "regulations") {
 		return nil, nil
 	}
@@ -933,6 +1004,13 @@ var acronyms = map[string]string{
 	"ispo": "kelapa sawit berkelanjutan", "cpo": "crude palm oil", "bbm": "bahan bakar minyak",
 	"ikn": "ibu kota nusantara", "kek": "kawasan ekonomi khusus", "tkdd": "transfer ke daerah",
 	"dak": "dana alokasi khusus", "dau": "dana alokasi umum",
+	"pkpu": "peraturan komisi pemilihan umum", "perbawaslu": "peraturan badan pengawas pemilihan umum",
+	"pojk": "peraturan otoritas jasa keuangan", "pbi": "peraturan bank indonesia",
+	"pmk": "peraturan menteri keuangan", "perma": "peraturan mahkamah agung",
+	"kuhp": "kitab undang hukum pidana", "pdp": "pelindungan data pribadi",
+	"pinjol": "pinjam meminjam uang berbasis teknologi", "ktr": "kawasan tanpa rokok",
+	"phk": "pemutusan hubungan kerja", "thr": "tunjangan hari raya",
+	"minerba": "mineral dan batubara", "jkn": "jaminan kesehatan nasional",
 }
 
 // indonesianFor is translations the other way, for regulations: every title
@@ -976,14 +1054,24 @@ var translations = map[string]string{
 	"energi": "energy", "listrik": "electricity", "investasi": "investment",
 	"produksi": "production", "konsumsi": "consumption", "cabai": "chili chilli",
 	"bawang": "onion shallot garlic", "gula": "sugar", "jagung": "maize corn",
-	"kedelai": "soybean", "daging": "meat beef", "telur": "egg", "ayam": "chicken",
-	"saham": "stock index", "obligasi": "bond", "uang": "money", "bank": "bank",
+	"rawit": "bird's", "kedelai": "soybean", "daging": "meat beef", "telur": "egg", "ayam": "chicken",
+	"saham": "stock index", "obligasi": "bond", "uang": "money currency", "bank": "bank",
 	"provinsi": "province provincial", "daerah": "regional", "kabupaten": "regency",
 	"pendapatan": "revenue income", "belanja": "spending expenditure", "komoditas": "commodity",
 	"industri": "industry manufacturing", "pertanian": "agriculture", "tambang": "mining",
 	"pariwisata": "tourism tourist", "kendaraan": "vehicle", "mobil": "car vehicle",
 	"penjualan": "sales", "cadangan": "reserve", "devisa": "foreign reserve",
 	"regulasi": "regulation", "peraturan": "regulation", "berita": "news",
+	// The words of elections and of the law, which the KPU's datasets are
+	// named in English and every regulation is titled in Indonesian.
+	"pemilihan": "election elections", "calon": "candidate candidates", "kampanye": "campaign",
+	"partai": "party parties", "presiden": "president", "pelindungan": "protection",
+	"perlindungan": "protection", "pribadi": "personal private", "pidana": "criminal",
+	"kesehatan": "health", "pendidikan": "education", "lingkungan": "environment",
+	"hutan": "forest forestry", "tanah": "land", "dolar": "dollar usd",
+	// Currencies as readers abbreviate them, and series never do: FRED's
+	// rupiah is "Exchange Rate to U.S. Dollar for Indonesia".
+	"rupiah": "exchange", "idr": "rupiah exchange", "usd": "dollar exchange",
 }
 
 // English and Indonesian words that match everything and so mean nothing.
@@ -994,7 +1082,9 @@ var stopWords = func() map[string]bool {
 		some also like get tell please look looking over per all show me
 		yang dan untuk dengan dari ini itu ada apa apakah bagaimana saya kami bisa tolong data
 		tentang pada atau juga mau ingin cari carikan berapa mana adakah punya kah
-		harusnya seharusnya bukan kan sudah belum mencover cover mencakup termasuk`)
+		harusnya seharusnya bukan kan sudah belum mencover cover mencakup termasuk
+		tidak menjadi adalah bagi oleh sebagai
+		kalau gimana aja sih dong yg utk dgn baru terbaru lama terkini berlaku terhadap`)
 	set := make(map[string]bool, len(words))
 	for _, word := range words {
 		set[word] = true
@@ -1190,14 +1280,6 @@ func (s *Server) callAssistantModel(
 	ctx context.Context, messages []assistantMessage,
 ) (io.ReadCloser, error) {
 	cfg := s.cfg.Assistant
-	endpoint := fmt.Sprintf(
-		"https://api.cloudflare.com/client/v4/accounts/%s/ai/v1/chat/completions", cfg.AccountID)
-	if cfg.GatewayID != "" {
-		endpoint = fmt.Sprintf(
-			"https://gateway.ai.cloudflare.com/v1/%s/%s/workers-ai/v1/chat/completions",
-			cfg.AccountID, cfg.GatewayID)
-	}
-
 	payload, err := json.Marshal(map[string]any{
 		"model":      cfg.Model,
 		"messages":   messages,
@@ -1213,7 +1295,7 @@ func (s *Server) callAssistantModel(
 	if err != nil {
 		return nil, err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, s.assistantEndpoint(), bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
@@ -1231,6 +1313,17 @@ func (s *Server) callAssistantModel(
 			strings.TrimSpace(string(detail)))
 	}
 	return response.Body, nil
+}
+
+// assistantEndpoint is Workers AI's chat completions route, through the AI
+// Gateway where one is named.
+func (s *Server) assistantEndpoint() string {
+	cfg := s.cfg.Assistant
+	if cfg.GatewayID != "" {
+		return fmt.Sprintf("https://gateway.ai.cloudflare.com/v1/%s/%s/workers-ai/v1/chat/completions",
+			cfg.AccountID, cfg.GatewayID)
+	}
+	return fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/ai/v1/chat/completions", cfg.AccountID)
 }
 
 // completionUsage is what a turn cost, as the upstream counts it.
