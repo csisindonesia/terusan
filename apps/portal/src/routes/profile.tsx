@@ -3,7 +3,9 @@ import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   IconAlertTriangle,
   IconCheck,
+  IconCopy,
   IconDeviceDesktop,
+  IconKey,
   IconLogout,
   IconShieldLock,
 } from "@tabler/icons-react";
@@ -23,10 +25,18 @@ import {
 } from "~/components/ui/card";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
-import { ApiRequestError, api, type LoginRecord } from "~/lib/api";
+import { ApiRequestError, api, type ApiToken, type LoginRecord } from "~/lib/api";
 import { formatMoment, formatRelative } from "~/lib/format";
 import { SESSION_KEY, useSessionState, useSignOut } from "~/lib/session";
+import { ROLES, roleLabel } from "~/lib/users";
 
 /**
  * The account, and everything that belongs to the person rather than to the
@@ -107,11 +117,13 @@ function Profile() {
           role={user.role}
           createdAt={user.created_at}
           lastLoginAt={user.last_login_at}
+          accessExpiresAt={user.access_expires_at}
         />
         <PasswordCard />
       </div>
 
       <LoginsCard currentExpiry={session.expires_at} />
+      <TokensCard />
     </div>
   );
 }
@@ -122,12 +134,14 @@ function ProfileCard({
   role,
   createdAt,
   lastLoginAt,
+  accessExpiresAt,
 }: {
   name: string;
   email: string;
   role: string;
   createdAt: string;
   lastLoginAt?: string;
+  accessExpiresAt?: string;
 }) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState(name);
@@ -203,7 +217,7 @@ function ProfileCard({
         </form>
 
         <dl className="grid gap-3 border-t pt-4 text-sm sm:grid-cols-3">
-          <Fact label="Role" value={<Badge variant="secondary">{role}</Badge>} />
+          <Fact label="Role" value={<Badge variant="secondary">{roleLabel(role)}</Badge>} />
           <Fact label="Account created" value={formatMoment(createdAt)} />
           <Fact
             label="Last login"
@@ -211,11 +225,11 @@ function ProfileCard({
           />
         </dl>
 
-        {/* Roles are carried and shown, and enforce nothing yet. Saying so
-            here is better than letting the badge imply a permission model. */}
         <p className="text-xs text-muted-foreground">
-          Roles are recorded but not yet enforced: everyone who can sign in sees the
-          same warehouse and the same collections.
+          {ROLES.find((entry) => entry.value === role)?.description}
+          {role === "guest" && accessExpiresAt
+            ? ` Your access ends ${formatMoment(accessExpiresAt)}.`
+            : null}
         </p>
       </CardContent>
     </Card>
@@ -458,6 +472,212 @@ function LoginRow({
           {ending ? "Ending…" : "End"}
         </Button>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * How long a new token lasts. The API accepts 1–365 days; these are the spans
+ * people actually ask for, from a week's experiment to a year-long service.
+ */
+const TOKEN_EXPIRIES = [
+  { days: 7, label: "7 days" },
+  { days: 30, label: "30 days" },
+  { days: 60, label: "60 days" },
+  { days: 90, label: "90 days" },
+  { days: 180, label: "180 days" },
+  { days: 365, label: "1 year" },
+] as const;
+
+function expiryFrom(days: number): string {
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+/**
+ * API tokens: how a script or a notebook reads the warehouse as this account.
+ *
+ * The secret is shown once, straight after it is made, and never again — the
+ * API keeps only its hash. The list shows a hint instead, which is enough to
+ * tell which row is the token in a given script.
+ */
+function TokensCard() {
+  const queryClient = useQueryClient();
+  const tokens = useQuery({
+    queryKey: ["api-tokens"],
+    queryFn: async () => (await api.apiTokens()).data,
+    retry: false,
+  });
+  const [name, setName] = useState("");
+  const [days, setDays] = useState(90);
+  const [fresh, setFresh] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const create = useMutation({
+    mutationFn: () => api.createApiToken(name.trim(), days),
+    onSuccess: (created) => {
+      setFresh(created.data.token);
+      setCopied(false);
+      setName("");
+      void queryClient.invalidateQueries({ queryKey: ["api-tokens"] });
+    },
+  });
+  const revoke = useMutation({
+    mutationFn: (id: string) => api.revokeApiToken(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["api-tokens"] }),
+  });
+
+  const rows = tokens.data ?? [];
+
+  return (
+    <Card id="tokens" className="scroll-mt-24">
+      <CardHeader>
+        <CardTitle>API tokens</CardTitle>
+        <CardDescription>
+          For reading the API from a script or another service. Send it as{" "}
+          <code className="font-mono">Authorization: Bearer …</code>. A token reads what
+          you can read, and cannot change your account.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {fresh ? (
+          <Alert>
+            <IconKey />
+            <AlertDescription className="space-y-2">
+              <p>Copy this token now. It will not be shown again.</p>
+              <div className="flex items-center gap-2">
+                <code className="min-w-0 flex-1 truncate rounded border bg-muted px-2 py-1 font-mono text-xs">
+                  {fresh}
+                </code>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(fresh).then(() => setCopied(true));
+                  }}
+                >
+                  {copied ? <IconCheck className="size-4" /> : <IconCopy className="size-4" />}
+                  {copied ? "Copied" : "Copy"}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setFresh(null)}>
+                  Done
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        <form
+          className="flex flex-wrap items-end gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (name.trim()) create.mutate();
+          }}
+        >
+          <Field className="min-w-48 flex-1">
+            <FieldLabel htmlFor="token-name">What it is for</FieldLabel>
+            <Input
+              id="token-name"
+              value={name}
+              maxLength={80}
+              placeholder="e.g. monthly report notebook"
+              onChange={(event) => setName(event.target.value)}
+            />
+          </Field>
+          <Field className="w-40">
+            <FieldLabel htmlFor="token-days">Expires in</FieldLabel>
+            <Select
+              value={String(days)}
+              onValueChange={(value) => setDays(Number(value))}
+              items={TOKEN_EXPIRIES.map((entry) => ({
+                value: String(entry.days),
+                label: entry.label,
+              }))}
+            >
+              <SelectTrigger id="token-days" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TOKEN_EXPIRIES.map((entry) => (
+                  <SelectItem key={entry.days} value={String(entry.days)}>
+                    {entry.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Button type="submit" size="sm" disabled={!name.trim() || create.isPending}>
+            <IconKey className="size-4" />
+            {create.isPending ? "Creating…" : "Create token"}
+          </Button>
+        </form>
+        <FieldDescription>
+          {/* The date rather than only the span: "90 days" is a duration, and
+              what somebody puts in a calendar reminder is the day it stops. */}
+          Expires {formatMoment(expiryFrom(days))}. After that the token stops working
+          and a new one has to be made.
+        </FieldDescription>
+        {create.isError ? (
+          <Alert variant="destructive">
+            <IconAlertTriangle />
+            <AlertDescription>{message(create.error)}</AlertDescription>
+          </Alert>
+        ) : null}
+
+        {tokens.isLoading ? (
+          <Skeleton className="h-16 w-full" />
+        ) : tokens.isError ? (
+          <Alert variant="destructive">
+            <IconAlertTriangle />
+            <AlertDescription>{message(tokens.error)}</AlertDescription>
+          </Alert>
+        ) : rows.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No API tokens yet.</p>
+        ) : (
+          <div className="divide-y rounded-lg border">
+            {rows.map((token) => (
+              <TokenRow
+                key={token.id}
+                token={token}
+                onRevoke={() => revoke.mutate(token.id)}
+                revoking={revoke.isPending && revoke.variables === token.id}
+              />
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TokenRow({
+  token,
+  onRevoke,
+  revoking,
+}: {
+  token: ApiToken;
+  onRevoke: () => void;
+  revoking: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2.5">
+      <IconKey className="size-4 shrink-0 text-muted-foreground" />
+      <div className="min-w-0 flex-1 leading-tight">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-medium">{token.name}</span>
+          <code className="shrink-0 font-mono text-xs text-muted-foreground">
+            {token.hint}…
+          </code>
+        </div>
+        <div className="truncate text-xs text-muted-foreground">
+          {token.last_used_at
+            ? `Used ${formatRelative(token.last_used_at) ?? formatMoment(token.last_used_at)}`
+            : "Never used"}{" "}
+          · expires {formatMoment(token.expires_at)}
+        </div>
+      </div>
+      <Button variant="ghost" size="sm" disabled={revoking} onClick={onRevoke}>
+        {revoking ? "Revoking…" : "Revoke"}
+      </Button>
     </div>
   );
 }

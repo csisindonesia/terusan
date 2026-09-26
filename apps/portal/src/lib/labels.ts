@@ -93,6 +93,102 @@ export function titleFromId(id: string): string {
 }
 
 /**
+ * Abbreviations inside a coded label, which stay as they are written.
+ *
+ * Deliberately short, and deliberately without `API` or `DSB`: `SENJATA API`
+ * is a firearm, where `api` is the Indonesian word for fire, and `dsb` is
+ * written lowercase wherever a person writes it. A list that guesses is worse
+ * than a list that shouts, because a reader cannot tell a guess from a name.
+ */
+const CODED_ACRONYMS = new Set([
+  "TNI",
+  "POLRI",
+  "KKB",
+  "OPM",
+  "TPNPB",
+  "PMI",
+  "DPR",
+  "DPRD",
+  "MRP",
+  "KPU",
+  "ASN",
+  "PNS",
+  "BUMN",
+  "NKRI",
+  "HAM",
+  "LSM",
+  "TKI",
+  "PKL",
+  "SPBU",
+  "BBM",
+  "KTP",
+  "SAR",
+  "SD",
+  "SMP",
+  "SMA",
+  "SMK",
+  "RT",
+  "RW",
+  "PT",
+  "CV",
+]);
+
+/**
+ * A label from the coders' vocabularies, as a sentence rather than a shout.
+ *
+ * VEWS's dropdowns are stored in capitals — `SERANGAN TANPA SENJATA API` — as
+ * coding forms have been since they were printed on paper. A column of them
+ * reads as an alarm, and a table where every cell shouts has no emphasis left
+ * for the cells that matter.
+ *
+ * The stored value is never changed, only the rendering: it is what the API
+ * filters by and what the human record spells, so anywhere the two are being
+ * compared — an article's own coding page — the capitals stay.
+ */
+export function codedLabel(value: string): string {
+  const lowered = value
+    .split(/(\s+)/)
+    .map((token) => {
+      const bare = token.replace(/[^\p{L}\p{N}]/gu, "").toUpperCase();
+      return CODED_ACRONYMS.has(bare) ? token.toUpperCase() : token.toLowerCase();
+    })
+    .join("");
+  // The first letter of the label, wherever it falls: some values open on a
+  // parenthesis or a number.
+  return lowered.replace(/\p{L}/u, (letter) => letter.toUpperCase());
+}
+
+/**
+ * Words inside a place name that are not words: the two provinces whose names
+ * open on an abbreviation.
+ */
+const PLACE_ACRONYMS = new Set(["DKI", "DI"]);
+
+/**
+ * A place name as a person writes it, out of the capitals it is stored in.
+ *
+ * The outlet dimension and the geography reference both hold `NUSA TENGGARA
+ * TIMUR`, which is how the spreadsheets they were built from spell it. A
+ * column of those reads as an alarm; a column of `Nusa Tenggara Timur` reads
+ * as a list of places.
+ *
+ * Title case rather than the sentence case a coded label gets, because these
+ * are proper nouns: `Jawa barat` is not a thing anybody writes.
+ */
+export function placeLabel(value: string): string {
+  return value
+    .split(/(\s+)/)
+    .map((token) => {
+      const bare = token.replace(/[^\p{L}\p{N}]/gu, "").toUpperCase();
+      if (!bare) return token;
+      if (PLACE_ACRONYMS.has(bare)) return token.toUpperCase();
+      const lower = token.toLowerCase();
+      return lower.replace(/\p{L}/u, (letter) => letter.toUpperCase());
+    })
+    .join("");
+}
+
+/**
  * What to call an indicator in a table or a heading.
  *
  * The published name where the pipeline has one, and a name derived from the

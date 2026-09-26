@@ -40,27 +40,27 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { Skeleton } from "~/components/ui/skeleton";
 import { summarise, gapsByStatus, type Figure } from "~/lib/analytics";
 import {
-  axisMemberOf,
   commodityOf,
   dimensionLabel,
   dimensionNoun,
-  dimensionOf,
+  dimensionOfMembers,
   geoOf,
-  memberOf,
   primaryAxis,
-  seriesOf,
-  yearOf,
-  yearsOf,
   type Dimension,
+  type Series,
 } from "~/lib/series";
 import { toggle } from "~/lib/multi";
 import { asText, asTextList, listParam, textParam } from "~/lib/search-params";
 import {
   api,
   apiBaseUrl,
+  type Facet,
   type Indicator,
   type Observation,
+  type ObservationQuery,
   type PipelineRun,
+  type SeriesLine,
+  type SeriesPoint,
   type Source,
 } from "~/lib/api";
 import { describeSchedule } from "~/lib/cron";
@@ -110,7 +110,12 @@ const searchSchema = z.object({
   q: textParam,
   // How the figures table is ordered. In the URL like everything else here, so
   // a table someone sorted is a link they can send.
-  sort: z.enum(["period", "member", "value"]).optional(),
+  //
+  // The values are the table's own column ids, because the header hands those
+  // back when it is clicked: an enum of its own would have to be translated in
+  // both directions, and the direction that was missing left the `Place` header
+  // writing a `sort` the route then refused to parse.
+  sort: z.enum(["period", "bounds", "geography", "commodity", "value"]).optional(),
   dir: z.enum(["asc", "desc"]).optional(),
   page: z.number().int().min(0).optional(),
 });
@@ -132,10 +137,64 @@ const PAGE_SIZE = 25;
  */
 const DEFAULT_SORT = "period" as const;
 
-/** Enough to hold a long annual series in one request; paging a chart is worse. */
-const MAX_FIGURES = 5000;
+/**
+ * The column the table sorts on, as an order the API takes.
+ *
+ * `bounds` prints the dates a period label stands for, so it sorts the same
+ * way the label does. The dimension columns sort on the printed name — see
+ * `observationSorts` in the API, which orders the other dimension second so a
+ * table sorted by place still keeps each place's commodities together.
+ */
+function orderFor(column: SortColumn, descending: boolean): string {
+  const key = {
+    period: "period",
+    bounds: "period",
+    geography: "place",
+    commodity: "commodity",
+    value: "value",
+  }[column];
+  return `${descending ? "-" : ""}${key}`;
+}
+
+type SortColumn = "period" | "bounds" | "geography" | "commodity" | "value";
+
+/**
+ * How many rows an export fetches.
+ *
+ * A CSV is a file someone opens in a spreadsheet, and the series behind this
+ * page can be millions of rows. The cap is stated on the button rather than
+ * silently applied, and a reader who wants the whole of a long series has the
+ * API request on the tab beside it.
+ */
+const EXPORT_LIMIT = 5000;
 
 type TabName = "metadata" | "data" | "api" | "logs" | "settings";
+
+/**
+ * The cursors the table has been handed, kept for as long as the sort and the
+ * filters they belong to.
+ *
+ * A cursor is a bookmark for the page after one already seen, so it accumulates
+ * as the reader pages forward and is worthless the moment the order changes —
+ * a boundary row in one sort is in the middle of another. Held in a ref rather
+ * than in the URL: it is an optimisation, and a link that carried one would
+ * still have to work for a reader who opens it on page twelve.
+ */
+function useCursors(signature: unknown[]) {
+  const held = useRef(new Map<number, string>());
+  const key = JSON.stringify(signature);
+  const last = useRef(key);
+  if (last.current !== key) {
+    held.current = new Map();
+    last.current = key;
+  }
+  return {
+    at: (page: number) => (page === 0 ? undefined : held.current.get(page)),
+    remember: (page: number, cursor: string) => {
+      held.current.set(page, cursor);
+    },
+  };
+}
 
 /**
  * A period label as the URL should carry it.
@@ -272,82 +331,86 @@ function columnsFor(dimension: Dimension): ColumnDef<Observation>[] {
 }
 
 /**
- * The rows, indexed by the series and period they belong to.
+ * Every bucket any line has a point for, in order.
  *
- * Built once rather than searched per point: eighteen cities across a hundred
- * and sixty-six months is three thousand lookups, and a linear scan for each
- * would walk the whole result set every time.
+ * Shared across the lines so they are plotted against one axis: a line drawn
+ * against only the periods it has figures for would shift left and misdate
+ * everything after its first gap.
  */
-function indexRows(
-  rows: Observation[],
-  dimension: Dimension,
-): Map<string, Observation> {
-  const index = new Map<string, Observation>();
-  for (const row of rows) {
-    index.set(`${memberOf(row, dimension) ?? ""}\u0000${row.period}`, row);
-  }
-  return index;
+function periodsOf(series: SeriesLine[]): string[] {
+  return [...new Set(series.flatMap((line) => line.points.map((p) => p.period)))].sort();
 }
 
 /**
- * One point of one line.
+ * What a bucket stands for, in the words a tooltip can carry.
  *
- * A period a series has no row for becomes a null rather than being skipped:
- * every line is plotted against the same periods, so a missing figure has to
- * hold its place or the line would shift left and misdate everything after it.
+ * A point that is one published figure says what that figure's status was. A
+ * point that is a mean says so and says how many figures it is the mean of,
+ * because a monthly mean of three daily prices and one of thirty are different
+ * claims and the chart cannot show the difference.
  */
-function pointAt(
-  index: Map<string, Observation>,
-  period: string,
-  member: string,
-): Point {
-  const row = index.get(`${member}\u0000${period}`);
-  if (!row || row.value === null) {
+function pointStatus(point: SeriesPoint): string {
+  const present = point.count - point.missing;
+  if (point.value === null) return statusLabel("missing");
+  if (point.count === 1) return statusLabel("ok");
+  if (point.missing) {
+    return `mean of ${formatCount(present)} of ${formatCount(point.count)} figures`;
+  }
+  return `mean of ${formatCount(point.count)} figures`;
+}
+
+/** The served lines, padded onto the shared axis and muted where the legend says. */
+function linesFrom(
+  series: SeriesLine[],
+  periods: string[],
+  hidden: string[],
+  fallbackName: string,
+): Line[] {
+  return series.map((line) => {
+    const byPeriod = new Map(line.points.map((point) => [point.period, point]));
     return {
-      label: period,
-      value: null,
-      status: statusLabel(row?.status ?? "missing"),
+      name: line.member || fallbackName,
+      hidden: hidden.includes(line.member),
+      points: periods.map((period): Point => {
+        const point = byPeriod.get(period);
+        if (!point || point.value === null) {
+          return { label: period, value: null, status: statusLabel("missing") };
+        }
+        return { label: period, value: Number(point.value), status: pointStatus(point) };
+      }),
     };
-  }
-  return { label: period, value: Number(row.value), status: statusLabel(row.status) };
+  });
 }
 
-type SortColumn = "period" | "member" | "value";
+/** How a chart says what its points are, where they are not figures as published. */
+function granularityNote(granularity: string, rows: number): string | null {
+  const bucket = { month: "Monthly", quarter: "Quarterly", year: "Annual" }[granularity];
+  if (!bucket) return null;
+  return `${bucket} means of ${formatCount(rows)} figures — the series is longer than a chart can draw point by point. Narrow to a shorter span for the figures as published.`;
+}
+
+/** A facet list as the narrowing controls take it. */
+function optionsOf(facets: Facet[] | undefined): Series[] {
+  return (facets ?? []).map((facet) => ({
+    key: facet.value,
+    label: facet.value,
+    count: facet.count,
+  }));
+}
 
 /**
- * How two rows compare on one column.
+ * The upper bound a period label stands for, as a label.
  *
- * Periods compare by their start date rather than their label: `2026-Q1` and
- * `2026-01` sort alphabetically into the wrong order, and a daily series'
- * labels only happen to sort right. Values compare as numbers — as text,
- * `1000` comes before `9` — and a row with no figure sorts last in either
- * direction, because a gap is not the smallest value.
+ * Periods are compared as text, here and in the warehouse, and a coarse bound
+ * compared that way excludes what sits inside it: `2015` sorts before
+ * `2015-06`, so a reader asking for everything until 2015 would lose every
+ * month of it but January. Padding the bound to the end of the year or the
+ * month it names is what makes "until 2015" mean the whole of 2015.
  */
-function compareRows(
-  left: Observation,
-  right: Observation,
-  column: SortColumn,
-  dimension: Dimension,
-): number {
-  if (column === "value") {
-    const a = left.value === null ? null : Number(left.value);
-    const b = right.value === null ? null : Number(right.value);
-    if (a === null && b === null) return 0;
-    if (a === null) return 1;
-    if (b === null) return -1;
-    return a - b;
-  }
-
-  if (column === "member") {
-    return (memberOf(left, dimension) ?? "").localeCompare(
-      memberOf(right, dimension) ?? "",
-    );
-  }
-
-  return (
-    left.period_start.localeCompare(right.period_start) ||
-    left.period.localeCompare(right.period)
-  );
+function periodCeiling(label: string): string {
+  if (/^\d{4}$/.test(label)) return `${label}-12-31`;
+  if (/^\d{4}-\d{2}$/.test(label)) return `${label}-31`;
+  return label;
 }
 
 const EXPORT_COLUMNS = [
@@ -375,14 +438,14 @@ function IndicatorDetail() {
     queryFn: () => api.indicator(indicatorId),
   });
 
-  const observations = useQuery({
-    queryKey: ["observations", "series", indicatorId],
-    queryFn: () =>
-      api.observations({
-        indicator: [indicatorId],
-        order: "period",
-        limit: MAX_FIGURES,
-      }),
+  // What the filters can offer, counted in the warehouse. Asked without the
+  // filters that are on, unlike the documents page: which control a chip
+  // belongs to depends on the dimension the series varies along, and a `Place`
+  // list narrowed to the one place already chosen is a list a reader cannot add
+  // a second place from.
+  const facets = useQuery({
+    queryKey: ["observation-facets", indicatorId],
+    queryFn: () => api.observationFacets({ indicator: [indicatorId] }),
   });
 
   // The registry is a handful of rows and every indicator page wants one of
@@ -407,10 +470,9 @@ function IndicatorDetail() {
   // as the identifier for as long as that is in flight rather than flashing an
   // empty heading.
   const heading = meta ? indicatorLabel(meta) : titleFromId(indicatorId);
-  const rows = observations.data?.data ?? [];
   const source = meta?.sources[0];
-  const sourceRecord = sources.data?.data.find((entry) => entry.source_id === source);
-  const dataset = datasets.data?.data.find((entry) =>
+  const sourceRecord = sources.data?.data?.find((entry) => entry.source_id === source);
+  const dataset = datasets.data?.data?.find((entry) =>
     entry.indicators.includes(indicatorId),
   );
   const documentRows = documents.data?.data ?? [];
@@ -427,76 +489,123 @@ function IndicatorDetail() {
   // what is here, not to guess a commodity before being shown anything — and
   // narrowing is a filter beside the others rather than a gate in front of the
   // page.
-  const dimension = dimensionOf(rows);
-  // The lines a chart would draw: one per place *and* commodity where both
-  // vary, because neither alone identifies a figure.
-  const series = seriesOf(rows, dimension);
+  //
+  // Read off the facet counts rather than the rows, because the rows are a page
+  // of the series and not the series: 2.6 million daily food prices reach the
+  // browser twenty-five at a time.
+  const available = facets.data?.data;
+  const dimension = dimensionOfMembers(
+    available?.places.length ?? 0,
+    available?.commodities.length ?? 0,
+  );
 
-  // The narrowing controls work one axis at a time, which is not the same
-  // split. `series` holds the primary axis — the place, where there is one —
-  // and `commodity` the other, so a reader can ask for shallots without
-  // naming a province.
+  // The narrowing controls work one axis at a time. `series` holds the primary
+  // axis — the place, where there is one — and `commodity` the other, so a
+  // reader can ask for shallots without naming a province.
   const axis = primaryAxis(dimension);
-  const axisOptions = axis ? seriesOf(rows, axis) : [];
-  const commodityOptions = dimension === "both" ? seriesOf(rows, "commodity") : [];
+  const axisOptions = optionsOf(
+    axis === "commodity" ? available?.commodities : available?.places,
+  );
+  const commodityOptions =
+    dimension === "both" ? optionsOf(available?.commodities) : [];
+  const statuses = (available?.statuses ?? []).map((facet) => facet.value);
+  const years = optionsOf(available?.years);
 
   const chosenSeries = asTextList(search.series);
   const chosenCommodities = asTextList(search.commodity);
-  const inSeries = rows.filter(
-    (row) =>
-      (!axis ||
-        chosenSeries.length === 0 ||
-        chosenSeries.includes(axisMemberOf(row, axis) ?? "")) &&
-      (chosenCommodities.length === 0 ||
-        chosenCommodities.includes(commodityOf(row) ?? "")),
-  );
-
   const chosenStatuses = asTextList(search.status);
   const chosenYears = asTextList(search.year);
   const hidden = asTextList(search.hide);
   const from = asText(search.from);
   const until = asText(search.until);
-  const needle = asText(search.q)?.toLowerCase() ?? "";
-  // Everything the filters admit, before the legend has its say. The chart
-  // needs this set rather than the muted one: a series muted out of existence
-  // would leave nothing in the legend to click to bring it back.
-  const narrowed = inSeries.filter(
-    (row) =>
-      (!chosenStatuses.length || chosenStatuses.includes(row.status)) &&
-      (!chosenYears.length || chosenYears.includes(yearOf(row))) &&
-      // Compared as text, like the API does. The upper bound is padded so a
-      // coarse label includes what sits inside it: `2015` has to admit
-      // `2015-06`, which sorts after it.
-      (!from || row.period >= from) &&
-      (!until || row.period <= `${until}\uffff`) &&
-      (!needle ||
-        row.period.toLowerCase().includes(needle) ||
-        (memberOf(row, dimension) ?? "").toLowerCase().includes(needle)),
-  );
 
-  const isHidden = (row: Observation) =>
-    hidden.includes(memberOf(row, dimension) ?? "");
-  const filtered = narrowed.filter((row) => !isHidden(row));
+  const tab: TabName = search.tab ?? "metadata";
+  const page = search.page ?? 0;
 
-  // What the chart draws: one line per member in view, on a shared set of
-  // periods. Built from the same rows as the table, so the two never disagree.
-  const inView = seriesOf(narrowed, dimension);
-  const plotted = inView.slice(0, MAX_SERIES);
-  const periods = [...new Set(narrowed.map((row) => row.period))].sort();
-  const index = indexRows(narrowed, dimension);
-  const lines: Line[] =
-    dimension === "none" || plotted.length === 0
-      ? [
-          {
-            name: heading,
-            points: periods.map((period) => pointAt(index, period, "")),
-          },
-        ]
-      : plotted.map((entry) => ({
-          name: entry.label,
-          hidden: hidden.includes(entry.key),
-          points: periods.map((period) => pointAt(index, period, entry.key)),
-        }));
+  // Newest first unless the reader has said otherwise. A series is stored in
+  // period order, which is right for the chart — a line has to be drawn left to
+  // right — and wrong for the table: a daily series since 2017 would open on
+  // January 2017 and the figure someone came for would be on page 40,000.
+  const sortColumn = search.sort ?? DEFAULT_SORT;
+  // Only the default carries its own direction. Once the reader has picked a
+  // column, the table's header supplies `dir` on every click, so an absent one
+  // there means a hand-written URL and ascending is the least surprising
+  // reading of it.
+  const descending = search.sort ? search.dir === "desc" : true;
+
+  // Every filter the reader has set, as the API takes them.
+  //
+  // One object, used by both queries and printed on the API tab, because the
+  // three have to agree: a table paged in the warehouse under one filter and
+  // charted in the browser under another is two answers to one question.
+  const filters: ObservationQuery = {
+    indicator: [indicatorId],
+    // The primary axis chip narrows by place for most series and by commodity
+    // for the ones that vary only that way. Places go by the name they were
+    // published under rather than by `geo`, whose identifier most survey cities
+    // do not have.
+    ...(axis === "commodity"
+      ? { commodity: chosenSeries }
+      : { geo_name: chosenSeries }),
+    ...(dimension === "both" ? { commodity: chosenCommodities } : {}),
+    status: chosenStatuses,
+    year: chosenYears,
+    period_start: from,
+    // Padded so a coarse bound includes what sits inside it: compared as text,
+    // `2015` would exclude `2015-06`, which sorts after it.
+    period_end: until ? periodCeiling(until) : undefined,
+    q: asText(search.q),
+  };
+
+  // One page of figures, ordered and narrowed where the rows are rather than
+  // where they are read. Sorting a page in the browser orders twenty-five rows
+  // against two million others' positions, which reads as a table that has
+  // quietly lost rows.
+  //
+  // Paged by cursor where there is one for the page being asked for — which is
+  // the page after one already seen. The warehouse can seek to a named boundary
+  // row; an offset makes it produce and discard every row ahead of it, which at
+  // the end of a daily series is 2.4s against 0.1s.
+  const order = orderFor(sortColumn, descending);
+  const cursors = useCursors([filters, order]);
+  const observations = useQuery({
+    queryKey: ["observations", "page", filters, order, page],
+    queryFn: () =>
+      api.observations({
+        ...filters,
+        order,
+        limit: PAGE_SIZE,
+        ...(cursors.at(page) !== undefined
+          ? { after: cursors.at(page) }
+          : { offset: page * PAGE_SIZE }),
+      }),
+  });
+
+  // What the chart draws, aggregated where the figures are. A decade of daily
+  // prices across 34 provinces is 2.6 million rows and a chart a thousand
+  // pixels wide; the warehouse returns a line per member at a granularity the
+  // span can be drawn at, and says which.
+  const chart = useQuery({
+    queryKey: ["observations", "series", filters, dimension],
+    queryFn: () =>
+      api.observationSeries({ ...filters, dimension, members: MAX_SERIES }),
+  });
+
+  const paged = observations.data?.data ?? [];
+  const total = observations.data?.meta?.total ?? 0;
+  useEffect(() => {
+    const next = observations.data?.meta?.next_cursor;
+    if (next) cursors.remember(page + 1, next);
+  }, [cursors, page, observations.data?.meta?.next_cursor]);
+
+  const drawn = chart.data?.data;
+  const granularity = drawn?.granularity ?? "native";
+  // How many figures the chart stands for, and how many members there are
+  // against the eight a palette can tell apart.
+  const charted = chart.data?.meta?.total ?? 0;
+  const memberCount = drawn?.members ?? 0;
+  const periods = periodsOf(drawn?.series ?? []);
+  const lines = linesFrom(drawn?.series ?? [], periods, hidden, heading);
 
   // Analytics describe one series. Averaged across rice and chilli they would
   // describe nothing, so they follow the chart only when a single series is in
@@ -511,57 +620,42 @@ function IndicatorDetail() {
   const stats = summarise(figures);
   const gaps = gapsByStatus(figures);
 
-  const statuses = [...new Set(inSeries.map((row) => row.status))].sort();
-  const years = yearsOf(inSeries);
-  const tab: TabName = search.tab ?? "metadata";
-  const page = search.page ?? 0;
+  // A row to show the shape of the response with, and to carry the source link
+  // at the foot of the page.
+  const sample = paged[0];
 
-  // The request that would return what is on screen. Built from the filters
-  // the API can actually express: status is applied in the browser and has no
-  // server-side equivalent, and a place is filtered here by the name it was
-  // published under, which is not the identifier `geo` expects.
+  // Fetched when it is asked for rather than held against the chance it will
+  // be: the rows behind this page are the warehouse's, and the browser has one
+  // screen of them.
+  const [exporting, setExporting] = useState(false);
+  async function exportFigures() {
+    setExporting(true);
+    try {
+      const rows = await api.observations({ ...filters, order, limit: EXPORT_LIMIT });
+      downloadCsv(
+        `${indicatorId}.csv`,
+        toCsv(rows.data as unknown as Record<string, unknown>[], EXPORT_COLUMNS),
+      );
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  // The request that would return what is on screen — the same filters, in the
+  // same order, so a reader can copy it rather than translating a filter into
+  // query parameters by hand.
   const apiQuery: ApiQuery = [
-    { key: "indicator", value: indicatorId },
-    // A commodity the API can filter on; a place it cannot, because the chip
-    // narrows by the name the source published and `geo` expects an id.
-    ...(dimension === "commodity"
-      ? chosenSeries.map((value) => ({ key: "commodity", value }))
-      : chosenCommodities.map((value) => ({ key: "commodity", value }))),
-    // Period labels sort as text — `2020-05` falls between `2020` and
-    // `2020-12-31` — so a year selection becomes the range it spans.
-    ...(chosenYears.length
-      ? [
-          { key: "period_start", value: [...chosenYears].sort()[0]! },
-          {
-            key: "period_end",
-            value: `${[...chosenYears].sort().at(-1)!}-12-31`,
-          },
-        ]
-      : []),
-    ...(asText(search.q) ? [{ key: "q", value: asText(search.q)! }] : []),
-    { key: "limit", value: "100" },
+    ...Object.entries(filters).flatMap(([key, value]) =>
+      value === undefined || value === "" || (Array.isArray(value) && !value.length)
+        ? []
+        : Array.isArray(value)
+          ? value.map((entry) => ({ key, value: entry }))
+          : [{ key, value: String(value) }],
+    ),
+    { key: "order", value: order },
+    { key: "limit", value: String(PAGE_SIZE) },
+    ...(page ? [{ key: "offset", value: String(page * PAGE_SIZE) }] : []),
   ];
-  // Sorted before it is paged: sorting the page would order twenty-five rows
-  // against the other four hundred's position, which reads as a table that has
-  // quietly lost rows.
-  //
-  // Newest first unless the reader has said otherwise. The API returns a series
-  // in period order, which is right for the chart — a line has to be drawn left
-  // to right — and wrong for the table: a daily series since 2019 opens on
-  // January 2019 and the figure someone came for is on page 48. What a reader
-  // wants of a table of figures is the most recent one, and they want it
-  // without paging to the end to find where the series stops.
-  const sortColumn = search.sort ?? DEFAULT_SORT;
-  // Only the default carries its own direction. Once the reader has picked a
-  // column, the table's header supplies `dir` on every click, so an absent one
-  // there means a hand-written URL and ascending is the least surprising
-  // reading of it.
-  const descending = search.sort ? search.dir === "desc" : true;
-  const ordered = [...filtered].sort(
-    (left, right) =>
-      (descending ? -1 : 1) * compareRows(left, right, sortColumn, dimension),
-  );
-  const paged = ordered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   // The filters live on the data tab now, but they still narrow the chart and
   // the analytics on this one. A figure read under a filter nobody can see is a
@@ -715,8 +809,8 @@ function IndicatorDetail() {
                     than as the shape of it. */}
                   {dimension === "none" ? null : (
                     <>
-                      , across {formatCount(series.length)}{" "}
-                      {dimensionNoun(dimension, series.length)}
+                      , across {formatCount(memberCount)}{" "}
+                      {dimensionNoun(dimension, memberCount)}
                     </>
                   )}
                   , from {meta.sources.join(", ") || "an unrecorded source"}. Every
@@ -812,7 +906,7 @@ function IndicatorDetail() {
                     // seventeen of the eighteen survey cities have none — so it
                     // reported two places on a series the description called
                     // eighteen.
-                    value={formatCount(series.length)}
+                    value={formatCount(memberCount)}
                     hint={
                       dimension === "commodity"
                         ? "This series varies by commodity, not by place"
@@ -962,7 +1056,7 @@ function IndicatorDetail() {
                         : undefined
                     }
                     hint={stats.latest?.period}
-                    loading={observations.isLoading}
+                    loading={chart.isLoading}
                   />
                   <Stat
                     label="Change over the series"
@@ -972,7 +1066,7 @@ function IndicatorDetail() {
                         ? `${stats.first.period} → ${stats.latest.period}`
                         : undefined
                     }
-                    loading={observations.isLoading}
+                    loading={chart.isLoading}
                   />
                   <Stat
                     label="Compound annual growth"
@@ -984,7 +1078,7 @@ function IndicatorDetail() {
                         ? "not meaningful for this series"
                         : "per year"
                     }
-                    loading={observations.isLoading}
+                    loading={chart.isLoading}
                   />
                   <Stat
                     label="Recorded"
@@ -999,7 +1093,7 @@ function IndicatorDetail() {
                             .join(", ")
                         : "no gaps"
                     }
-                    loading={observations.isLoading}
+                    loading={chart.isLoading}
                   />
                   <Stat
                     label="Highest"
@@ -1008,7 +1102,7 @@ function IndicatorDetail() {
                       stats.max ? formatDecimal(String(stats.max.value)) : undefined
                     }
                     hint={stats.max?.period}
-                    loading={observations.isLoading}
+                    loading={chart.isLoading}
                   />
                   <Stat
                     label="Lowest"
@@ -1017,7 +1111,7 @@ function IndicatorDetail() {
                       stats.min ? formatDecimal(String(stats.min.value)) : undefined
                     }
                     hint={stats.min?.period}
-                    loading={observations.isLoading}
+                    loading={chart.isLoading}
                   />
                 </div>
               </Section>
@@ -1032,7 +1126,7 @@ function IndicatorDetail() {
                   </>
                 }
               >
-                {observations.isLoading ? (
+                {chart.isLoading ? (
                   <Skeleton className="h-[300px] w-full rounded-lg" />
                 ) : (
                   <TimeSeriesChart
@@ -1056,12 +1150,16 @@ function IndicatorDetail() {
                       [
                         // Said plainly rather than left to be inferred from a
                         // legend that stops at eight.
-                        plotted.length < inView.length
-                          ? `Showing ${formatCount(MAX_SERIES)} of ${formatCount(inView.length)} ${dimensionLabel(dimension).toLowerCase()} series — a ninth line would have to repeat a colour. Narrow with the ${dimensionLabel(dimension).toLowerCase()} filter below.`
+                        lines.length < memberCount
+                          ? `Showing ${formatCount(lines.length)} of ${formatCount(memberCount)} ${dimensionLabel(dimension).toLowerCase()} series — a ninth line would have to repeat a colour. Narrow with the ${dimensionLabel(dimension).toLowerCase()} filter below.`
                           : null,
                         single && gaps.length
                           ? `The line breaks where a figure is absent — joining across a gap would assert a value nobody recorded. ${formatCount(stats.missing)} of ${formatCount(stats.count)} periods have none.`
                           : null,
+                        // A mean is not a published figure, and a chart that
+                        // quietly drew one would be a chart of something the
+                        // warehouse does not hold.
+                        granularityNote(granularity, charted),
                       ]
                         .filter(Boolean)
                         .join(" ") || undefined
@@ -1078,29 +1176,25 @@ function IndicatorDetail() {
             title="The figures"
             description={
               <>
-                The rows behind the chart above, narrowed by the same filters. Each
-                keeps the document it was published in, so any figure here can be
-                checked against its source. The export takes what is showing, not the
-                whole series.
+                The figures as published, narrowed by the same filters as the chart
+                and paged in the warehouse. Each keeps the document it was published
+                in, so any figure here can be checked against its source. The export
+                fetches up to {formatCount(EXPORT_LIMIT)} rows in the order shown —
+                not just the page on screen, and not the whole of a series longer than
+                that.
               </>
             }
             action={
               <Button
                 variant="outline"
                 size="sm"
-                disabled={!filtered.length}
-                onClick={() =>
-                  downloadCsv(
-                    `${indicatorId}.csv`,
-                    toCsv(
-                      filtered as unknown as Record<string, unknown>[],
-                      EXPORT_COLUMNS,
-                    ),
-                  )
-                }
+                disabled={!total || exporting}
+                onClick={() => void exportFigures()}
               >
                 <IconDownload className="size-4" />
-                Export {filtered.length === rows.length ? "series" : "filtered"}
+                {exporting
+                  ? "Exporting…"
+                  : `Export ${total > EXPORT_LIMIT ? formatCount(EXPORT_LIMIT) : "figures"}`}
               </Button>
             }
           >
@@ -1401,19 +1495,21 @@ function IndicatorDetail() {
 
               <TablePagination
                 page={page}
-                total={ordered.length}
+                total={total}
                 pageSize={PAGE_SIZE}
                 onPage={(next) =>
                   navigate({ search: (prev) => ({ ...prev, page: next }) })
                 }
                 summary={
-                  filtered.length ? (
+                  total ? (
                     <>
                       {formatCount(page * PAGE_SIZE + 1)}–
-                      {formatCount(Math.min((page + 1) * PAGE_SIZE, filtered.length))}{" "}
-                      of {formatCount(filtered.length)}
-                      {filtered.length !== rows.length
-                        ? ` filtered from ${formatCount(rows.length)}`
+                      {formatCount(Math.min((page + 1) * PAGE_SIZE, total))} of{" "}
+                      {formatCount(total)}
+                      {/* Counted in the warehouse under the filters that are on,
+                          against what the series holds in full. */}
+                      {meta && total !== meta.observations
+                        ? ` filtered from ${formatCount(meta.observations)}`
                         : null}
                     </>
                   ) : null
@@ -1427,14 +1523,9 @@ function IndicatorDetail() {
           <ApiTab
             indicatorId={indicatorId}
             query={apiQuery}
-            sample={rows[0]}
+            sample={sample}
             dimension={dimension}
             hiddenCount={hidden.length}
-            hasStatusFilter={chosenStatuses.length > 0}
-            // True wherever `series` narrows by place — which is every
-            // indicator that varies by place, whether or not it also varies by
-            // commodity.
-            hasPlaceFilter={axis === "geography" && chosenSeries.length > 0}
           />
         </TabsContent>
 
@@ -1451,12 +1542,12 @@ function IndicatorDetail() {
             source={sourceRecord}
             indicator={meta}
             dimension={dimension}
-            seriesCount={series.length}
+            seriesCount={memberCount}
           />
         </TabsContent>
       </Tabs>
 
-      {rows[0]?.source_url ? (
+      {sample?.source_url ? (
         <Card>
           <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4 text-sm">
             <span className="text-muted-foreground">
@@ -1469,7 +1560,7 @@ function IndicatorDetail() {
               nativeButton={false}
               render={
                 <a
-                  href={rows[0].source_url}
+                  href={sample.source_url}
                   target="_blank"
                   rel="noreferrer noopener"
                 />
@@ -1743,8 +1834,6 @@ function ApiTab({
   sample,
   dimension,
   hiddenCount,
-  hasStatusFilter,
-  hasPlaceFilter,
 }: {
   indicatorId: string;
   query: ApiQuery;
@@ -1753,8 +1842,6 @@ function ApiTab({
   dimension: Dimension;
   /** Series muted from the legend — a browser-side filter with no API twin. */
   hiddenCount: number;
-  hasStatusFilter: boolean;
-  hasPlaceFilter: boolean;
 }) {
   const [language, setLanguage] = useState<Language>("python");
 
@@ -1763,18 +1850,12 @@ function ApiTab({
     .join("&");
   const url = `${apiBaseUrl}/v1/observations?${search}`;
 
-  // Not every filter on this page survives the trip. Said plainly rather than
+  // One filter on this page does not survive the trip. Said plainly rather than
   // letting a reader discover that their copied request returns more rows than
   // the table showed.
   const caveats = [
     hiddenCount > 0
       ? `${hiddenCount === 1 ? "One series is" : `${hiddenCount} series are`} muted from the chart's legend. That is a browser-side filter with no API equivalent, so the response will include ${hiddenCount === 1 ? "it" : "them"}.`
-      : null,
-    hasStatusFilter
-      ? "Status is applied in the browser — the API has no status filter, so the response will include rows this table hid."
-      : null,
-    hasPlaceFilter
-      ? "Place is filtered here by the name it was published under. The API's `geo` parameter takes an identifier, and most survey cities have none yet, so the place selection is not in this request."
       : null,
   ].filter(Boolean) as string[];
 

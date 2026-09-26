@@ -31,6 +31,7 @@ import {
   IconListCheck,
   IconLock,
   IconMapPin,
+  IconNews,
   IconRoute,
   IconSchema,
   IconSearch,
@@ -38,6 +39,7 @@ import {
   IconSettings,
   IconShieldCheck,
   IconSitemap,
+  IconSparkles,
   IconStack2,
   IconTags,
   IconTimeline,
@@ -54,6 +56,15 @@ export type NavItem = {
   to?: string;
   /** Matched exactly rather than by prefix, for a route that is a parent. */
   exact?: boolean;
+  /**
+   * Other path prefixes that belong to this item.
+   *
+   * For a page that is reached from a listing but does not sit under its path.
+   * An article has its own page addressed by the id of the bytes, not by the
+   * newspaper it came from — a reader following a link should still be told
+   * they are under News Outlets rather than nowhere.
+   */
+  also?: string[];
 };
 
 export type NavGroup = {
@@ -78,6 +89,16 @@ export const NAVIGATION: NavSection[] = [
           { label: "Datasets", icon: IconDatabase, to: "/datasets" },
           { label: "Indicators", icon: IconChartBar, to: "/indicators" },
           { label: "Documents", icon: IconFileText, to: "/documents" },
+          // The papers the news monitor reads. Under Discover rather than
+          // Explore: a reader arrives wanting to know which sources exist and
+          // what has come from them, which is the same question they bring to
+          // datasets and documents.
+          {
+            label: "News Outlets",
+            icon: IconNews,
+            to: "/news-outlets",
+            also: ["/news-articles"],
+          },
           { label: "Regulations", icon: IconGavel, to: "/regulations" },
           { label: "Topics", icon: IconTags, to: "/topics" },
         ],
@@ -98,6 +119,7 @@ export const NAVIGATION: NavSection[] = [
         icon: IconSearch,
         items: [
           { label: "Search", icon: IconSearch, to: "/search" },
+          { label: "Assistant", icon: IconSparkles, to: "/assistant" },
           { label: "Collections", icon: IconFolders, to: "/collections" },
           { label: "Saved Queries", icon: IconClipboardList, to: "/saved-queries" },
         ],
@@ -140,7 +162,7 @@ export const NAVIGATION: NavSection[] = [
         label: "Access",
         icon: IconLock,
         items: [
-          { label: "Users", icon: IconUsers },
+          { label: "Users", icon: IconUsers, to: "/users" },
           { label: "Organizations", icon: IconBuildingBank },
           { label: "Roles & Permissions", icon: IconShieldCheck },
           { label: "API Keys", icon: IconKey },
@@ -173,13 +195,18 @@ export function defaultGroup(): NavGroup {
 }
 
 /** The group holding the page at `pathname`, if any. */
+/** Whether a path belongs to a navigation item. */
+export function matchesItem(item: NavItem, pathname: string): boolean {
+  if (item.to && (item.exact ? pathname === item.to : pathname.startsWith(item.to))) {
+    return true;
+  }
+  return (item.also ?? []).some((prefix) => pathname.startsWith(prefix));
+}
+
 export function groupForPath(pathname: string): NavGroup | undefined {
   for (const section of NAVIGATION) {
     for (const group of section.groups) {
-      const hit = group.items.some(
-        (item) =>
-          item.to && (item.exact ? pathname === item.to : pathname.startsWith(item.to)),
-      );
+      const hit = group.items.some((item) => matchesItem(item, pathname));
       if (hit) return group;
     }
   }

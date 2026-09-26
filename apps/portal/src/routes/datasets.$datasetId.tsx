@@ -151,7 +151,7 @@ function DatasetDetail() {
 
   const meta = dataset.data?.data;
   const documentCount = documents.data?.meta?.total ?? 0;
-  const source = sources.data?.data.find(
+  const source = sources.data?.data?.find(
     (entry) => entry.source_id === meta?.source_id,
   );
   const series = (indicators.data?.data ?? []).filter((indicator) =>

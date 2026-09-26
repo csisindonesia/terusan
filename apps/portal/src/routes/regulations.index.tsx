@@ -43,12 +43,15 @@ export const Route = createFileRoute("/regulations/")({
 });
 
 /**
- * What the corpus calls the two halves, and what a reader calls them.
+ * What the corpora call their tracks, and what a reader calls them.
  *
  * `pkd` rather than `perkada`: the data uses the short form, and a filter
- * spelled the long way matches nothing at all.
+ * spelled the long way matches nothing at all. `pusat` and `kementerian` are
+ * the central corpus — the law the regional instruments are made under.
  */
 const TRACKS = [
+  { value: "pusat", label: "Central", hint: "UU, Perpu, PP, Perpres, Keppres" },
+  { value: "kementerian", label: "Ministerial", hint: "Ministries and national agencies" },
   { value: "perda", label: "Perda", hint: "Passed with the regional legislature" },
   { value: "pkd", label: "Perkada", hint: "Issued by the head of the region alone" },
 ];

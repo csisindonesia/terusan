@@ -11,11 +11,25 @@ const BASE_URL =
 /** Where the API lives, for pages that show a reader how to call it. */
 export const apiBaseUrl = BASE_URL;
 
+/** The picture taken of an article when it was collected. */
+export function newsScreenshotUrl(documentId: string): string {
+  return new URL(
+    `/v1/news/articles/${encodeURIComponent(documentId)}/screenshot`,
+    BASE_URL,
+  ).toString();
+}
+
 export type Meta = {
   total?: number;
   limit?: number;
   offset?: number;
   has_more: boolean;
+  /**
+   * Where the next page starts, for a caller walking a long list one page at a
+   * time. Opaque: it is the server's bookmark, to be handed back as `after` and
+   * not composed. Absent on the last page, and for sorts that cannot carry one.
+   */
+  next_cursor?: string;
   layer?: string;
   source?: string;
 };
@@ -329,14 +343,95 @@ export type LakeTable = {
 export type ObservationQuery = {
   indicator?: string[];
   geo?: string;
+  /**
+   * Places by the name they were published under, where `geo` takes the
+   * identifier. Most survey cities have no registry entry and therefore no
+   * identifier, so the name is the only handle a reader has on them.
+   */
+  geo_name?: string[];
   geo_type?: string[];
   commodity?: string[];
+  status?: string[];
+  /** Calendar years as a set — not the range they span. */
+  year?: string[];
   q?: string;
   period_start?: string;
   period_end?: string;
   order?: string;
   limit?: number;
   offset?: number;
+  /**
+   * The previous page's `next_cursor`, in place of an offset.
+   *
+   * `OFFSET 2,596,600` makes the warehouse produce and discard every row before
+   * the one asked for — 2.4s against 0.3s for the first page of the same
+   * series. A cursor names the boundary instead and costs what the first page
+   * costs. It can only step forward from a page already seen, so a jump to page
+   * twelve still goes by offset.
+   */
+  after?: string;
+  /** Series only: how many points a line is worth drawing with. */
+  points?: number;
+  /** Series only: how many lines to return, largest first. */
+  members?: number;
+  /** Series only: which dimension to split the lines along. */
+  dimension?: string;
+};
+
+/**
+ * One plotted point.
+ *
+ * A published figure where the bucket holds exactly one, and the mean of the
+ * bucket where it holds more — `count` and `missing` say which, and how much
+ * the point stands for.
+ */
+export type SeriesPoint = {
+  period: string;
+  value: string | null;
+  count: number;
+  missing: number;
+};
+
+export type SeriesLine = {
+  /** The label the page knows the member by — `Aceh`, `Rice`, `Aceh · Rice`. */
+  member: string;
+  count: number;
+  points: SeriesPoint[];
+};
+
+/**
+ * A series as a chart needs it, aggregated where the data is.
+ *
+ * Bank Indonesia's daily food prices are 2.6 million figures: sending them to a
+ * browser to be plotted is several hundred megabytes for a picture a thousand
+ * pixels wide, and taking the first few thousand instead draws a line through
+ * one week and calls it a decade.
+ */
+export type ObservationSeries = {
+  /** native, month, quarter or year. `native` means nothing was averaged. */
+  granularity: string;
+  dimension: string;
+  /** How many members there are, against however many lines came back. */
+  members: number;
+  series: SeriesLine[];
+};
+
+/**
+ * What the filters on a series can offer, counted in the warehouse.
+ *
+ * Read from the API rather than off the rows on screen, because a series can be
+ * larger than any one request: the first page of Bank Indonesia's daily food
+ * prices holds every province and a single week of 2017, and a Year control
+ * built from it would offer one year out of ten.
+ *
+ * A dimension the series does not vary along comes back empty, which is what
+ * tells the page not to show that control at all.
+ */
+export type ObservationFacets = {
+  places: Facet[];
+  commodities: Facet[];
+  years: Facet[];
+  statuses: Facet[];
 };
 
 /**
@@ -449,7 +544,7 @@ export function documentFileUrl(
 }
 
 /**
- * One regional regulation as BPK catalogues it.
+ * One regulation as BPK catalogues it — regional or central.
  *
  * The grain is the catalogue record, not the parsed text: BPK publishes
  * entries whose PDF never converted, so `parse_status` is absent on some rows
@@ -462,9 +557,12 @@ export type Regulation = {
   key: string;
   bpk_id?: string;
   source_id: string;
-  /** perda or pkd. The corpus never spells the second one "perkada". */
+  /**
+   * perda or pkd for regional instruments, pusat or kementerian for central
+   * ones. The corpus never spells pkd "perkada".
+   */
   track: string;
-  /** Perda, Pergub, Perbup, Perwali — read off the document, so it can be absent. */
+  /** Perda, Perbup, UU, PP, Permen… — read off the document, so it can be absent. */
   instrument?: string;
   scope?: string;
   title: string;
@@ -642,8 +740,17 @@ export type Capabilities = {
   auth: boolean;
   /** Whether a session is needed to read anything, not only to be named. */
   auth_required: boolean;
+  /** Whether the login page can offer "request access". */
+  registration?: boolean;
   /** Whether readers can ask for a source to be collected. */
   suggestions: boolean;
+  /** Whether `POST /v1/assistant/chat` has a model behind it. */
+  assistant?: boolean;
+  /**
+   * Whether the assistant's conversations are kept on the server, so a chat's
+   * URL opens it anywhere. Without it they live in the browser.
+   */
+  assistant_history?: boolean;
 };
 
 /**
@@ -671,18 +778,51 @@ export type Suggestion = {
 };
 
 /**
- * Who is signed in.
+ * An account.
  *
- * `role` is carried and shown; nothing is refused on it yet (program.md §35),
- * and the portal does not pretend otherwise by hiding pages from a "member".
+ * `role` is admin, researcher or guest. An admin manages accounts; a guest is
+ * a researcher whose access ends at `access_expires_at`.
  */
 export type User = {
   id: string;
   email: string;
   name?: string;
   role: string;
+  department?: string;
+  /** active, or pending while a registration waits for an admin. */
+  status: string;
   created_at: string;
   last_login_at?: string;
+  last_active_at?: string;
+  access_expires_at?: string;
+  disabled?: boolean;
+};
+
+/** One row of an account's access log. */
+export type AccessEvent = {
+  id: string;
+  /** login, web (the portal) or api (an API token). */
+  kind: string;
+  at: string;
+  ip?: string;
+  country?: string;
+  region?: string;
+  city?: string;
+  user_agent?: string;
+};
+
+export type UserDetail = { user: User; access: AccessEvent[] };
+
+/** What an admin sends to create or change an account. */
+export type UserInput = {
+  email?: string;
+  name?: string;
+  department?: string;
+  role?: string;
+  password?: string;
+  /** ISO timestamp for a guest; null clears it. */
+  access_expires_at?: string | null;
+  disabled?: boolean;
 };
 
 export type Session = {
@@ -701,6 +841,20 @@ export type LoginRecord = {
   expires_at: string;
   current: boolean;
 };
+
+/** One API token, as the account page lists it. Never the secret. */
+export type ApiToken = {
+  id: string;
+  name: string;
+  /** The first few characters, to match a row to the value in a script. */
+  hint: string;
+  created_at: string;
+  expires_at: string;
+  last_used_at?: string;
+};
+
+/** The one response the secret appears in. */
+export type CreatedApiToken = ApiToken & { token: string };
 
 /**
  * One record filed into a collection, as the API stores it.
@@ -765,6 +919,209 @@ export type Job = {
   output: string[];
 };
 
+/**
+ * One newspaper the news monitor reads.
+ *
+ * The registry half — which paper, which province, which host — comes from the
+ * committed outlet list; the counts come from what has actually been collected.
+ * An outlet with no articles is still listed, with a zero: a province whose
+ * coverage has gone quiet is a thing to see, not a row to hide.
+ */
+export type NewsOutlet = {
+  host: string;
+  outlet: string;
+  province: string;
+  geo_id?: string;
+  base_url: string;
+  /** Which search-page shape the crawl uses. The first thing to check when an
+   * outlet stops yielding. */
+  adapter: string;
+  active: boolean;
+  /** Why a row was corrected or retired — a vanity domain that redirects into
+   * a network, or a title with no working site. */
+  note?: string;
+  /** Kept: articles stored because they are about an issue. A small fraction
+   * of what the paper published. */
+  articles: number;
+  /** Read at all — the denominator. Every article the paper published in the
+   * window is read and counted; only the issue ones are stored, so without
+   * this a rise in incidents cannot be told from a crawl that reached further. */
+  scanned: number;
+  /** Matched the vocabulary (a candidate), and recorded (the classifier
+   * agreed it is the issue). */
+  matched: number;
+  recorded: number;
+  screenshots: number;
+  first_seen?: string;
+  last_seen?: string;
+};
+
+/** What the classifier made of one article. */
+export type NewsCoding = {
+  profile: string;
+  engine: string;
+  /** Null while the classifier was unreachable and the article is a candidate
+   * waiting to be coded. False means it was read and rejected. */
+  accepted: boolean | null;
+  gate_probability?: number;
+  province?: string;
+  district_city?: string;
+  date?: string;
+  violence_form?: string;
+  weapon_type?: string;
+  issue_type?: string;
+  actor1?: string;
+  actor2?: string;
+  intervene?: string;
+  /** Absent where the reporting did not say. Never zero for "unknown" — the
+   * API drops the missing marker rather than serving it as a figure. */
+  deaths?: number;
+  injured?: number;
+  /** How far the incident got: tension, a limited beating, violence that
+   * spread, a riot. Machine-coded only — VEWS has no such column, so it is
+   * never shown as comparable with a human coding. */
+  escalation?: string;
+};
+
+/**
+ * One article in the corpus.
+ *
+ * The body is deliberately not here. The archive holds the whole page so a
+ * coding stays reproducible, but the words belong to the paper that wrote
+ * them: this carries a title, a lead and a link back.
+ */
+export type NewsArticle = {
+  /** The Bronze document id, which addresses this article's own page. */
+  document_id: string;
+  url: string;
+  title: string;
+  lead: string;
+  outlet: string;
+  outlet_host: string;
+  outlet_province: string;
+  published_at?: string;
+  /** Which issues claimed this article. Empty for one the crawl kept and no
+   * profile wanted. */
+  issues: string[];
+  matched_terms: string[];
+  /** Whether the page was photographed when it was collected. */
+  screenshot: boolean;
+  coding?: NewsCoding;
+};
+
+/** One article's own page: everything that answers "can I trust this coding". */
+export type NewsArticleDetail = NewsArticle & {
+  /** A lexicon term, the sitemap, the section page. An article found down a
+   * route that is about to break is a gap in tomorrow's coverage. */
+  discovered_by?: string;
+  /** How much text the coding was made from. A paywalled piece leaves a lead
+   * and little else. */
+  body_chars?: number;
+  content_hash?: string;
+  raw_path?: string;
+  media_type?: string;
+  retrieved_at?: string;
+  source_id?: string;
+  /** The classifier's probability per field, so a reader can see which answer
+   * to doubt first. */
+  confidence?: Record<string, number>;
+  /** Which dictionary categories the article carried — the act, who was
+   * involved, what it left behind, what it was about. The rule is the pairing,
+   * so the categories say why the article was read at all. */
+  matched_categories?: string[];
+  /** Why the coding was put to a second, larger model, and which fields that
+   * model supplied. Absent where the first classifier was sure. A reason with
+   * no fields beside it means the second reader was unreachable. */
+  escalation_reason?: string;
+  deepened?: string[];
+  /** The incident this article was clustered into, and the other papers that
+   * reported it. */
+  event_id?: string;
+  also_reported_by?: string[];
+};
+
+/** One incident, after several papers' reports of it were collapsed. */
+export type NewsEvent = {
+  event_id: string;
+  profile: string;
+  date?: string;
+  province?: string;
+  district_city?: string;
+  violence_form?: string;
+  weapon_type?: string;
+  issue_type?: string;
+  actor1?: string;
+  actor2?: string;
+  intervene?: string;
+  deaths?: number;
+  injured?: number;
+  /** The worst escalation any of the reports described: papers file at
+   * different moments, and the event is the worse of them. */
+  escalation?: string;
+  /** How many separate reports were collapsed into this one event. */
+  report_count: number;
+  outlets: string[];
+  sources: string[];
+};
+
+/**
+ * One day of crawling, from one newspaper's side of it.
+ *
+ * The crawl's own log, and the only place the articles it read and threw away
+ * are counted: an article that is not about a monitored issue is never stored,
+ * so `scanned` minus `recorded` is a number with no rows behind it by design.
+ */
+export type NewsTally = {
+  /** The day the crawl ran, not the day the articles were published. */
+  date: string;
+  /** What discovery turned up, before the window and the gate. Zero against a
+   * reachable site means discovery is broken for this outlet. */
+  discovered: number;
+  /** Read in full: fetched, dated and put to the dictionary. */
+  scanned: number;
+  /** Carried the dictionary's terms — a candidate, not a finding. */
+  matched: number;
+  /** Kept: the classifier agreed it was about the issue. */
+  recorded: number;
+  /** How many times the crawl visited this outlet that day. */
+  runs: number;
+};
+
+export type NewsArticleQuery = {
+  outlet?: string;
+  issue?: string;
+  /** Where the *paper* is. The incident's own province is `incident_province`:
+   * an outlet reports on its neighbours, and the two are different questions. */
+  province?: string;
+  q?: string;
+  from?: string;
+  to?: string;
+  /** Only articles a classifier read and accepted. */
+  coded?: string;
+  /** The coded labels, each a multiple choice. Sent as repeated parameters, so
+   * a label containing a comma stays one value. */
+  form?: string[];
+  issue_type?: string[];
+  weapon?: string[];
+  escalation?: string[];
+  incident_province?: string[];
+  limit?: number;
+  offset?: number;
+};
+
+/**
+ * What the corpus can be narrowed by, counted under the filters already on.
+ *
+ * The place is the incident's, not the paper's.
+ */
+export type NewsFacets = {
+  forms: Facet[];
+  issues: Facet[];
+  weapons: Facet[];
+  escalations: Facet[];
+  provinces: Facet[];
+};
+
 export const api = {
   datasets: () => request<Dataset[]>("/v1/datasets"),
   dataset: (id: string) => request<Dataset>(`/v1/datasets/${encodeURIComponent(id)}`),
@@ -781,8 +1138,51 @@ export const api = {
   commodities: (params?: CommodityQuery) =>
     request<Commodity[]>("/v1/commodities", params),
   sources: () => request<Source[]>("/v1/sources"),
+  /** The newspapers the news monitor reads, with what has come from each. */
+  newsOutlets: (params?: {
+    q?: string;
+    province?: string;
+    active?: string;
+    order?: string;
+    limit?: number;
+    offset?: number;
+  }) => request<NewsOutlet[]>("/v1/news/outlets", params),
+  newsOutlet: (host: string) =>
+    request<NewsOutlet>(`/v1/news/outlets/${encodeURIComponent(host)}`),
+  /** One outlet's articles, newest first. */
+  newsOutletArticles: (host: string, params?: NewsArticleQuery) =>
+    request<NewsArticle[]>(
+      `/v1/news/outlets/${encodeURIComponent(host)}/articles`,
+      params,
+    ),
+  /** One outlet's crawl log, a row per day, newest first. */
+  newsOutletTallies: (host: string, params?: { limit?: number; offset?: number }) =>
+    request<NewsTally[]>(
+      `/v1/news/outlets/${encodeURIComponent(host)}/tallies`,
+      params,
+    ),
+  /** The filter options for the corpus, counted under the filters already on. */
+  newsArticleFacets: (params?: NewsArticleQuery) =>
+    request<NewsFacets>("/v1/news/articles/facets", params),
+  newsArticles: (params?: NewsArticleQuery) =>
+    request<NewsArticle[]>("/v1/news/articles", params),
+  newsArticle: (id: string) =>
+    request<NewsArticleDetail>(`/v1/news/articles/${encodeURIComponent(id)}`),
+  newsEvents: (params?: {
+    province?: string;
+    from?: string;
+    to?: string;
+    limit?: number;
+    offset?: number;
+  }) => request<NewsEvent[]>("/v1/news/events", params),
   observations: (params?: ObservationQuery) =>
     request<Observation[]>("/v1/observations", params),
+  /** The filter options for a series, counted under the filters already on. */
+  observationFacets: (params?: ObservationQuery) =>
+    request<ObservationFacets>("/v1/observations/facets", params),
+  /** The same figures as a chart needs them — a line per member, bucketed. */
+  observationSeries: (params?: ObservationQuery) =>
+    request<ObservationSeries>("/v1/observations/series", params),
   documents: (params?: DocumentQuery) => request<Document[]>("/v1/documents", params),
   /**
    * Whether the pipelines behind one series are still running, and what
@@ -876,6 +1276,37 @@ export const api = {
   endLogin: (id: string) =>
     send<{ ended: string }>("DELETE", `/v1/auth/sessions/${encodeURIComponent(id)}`),
   endOtherLogins: () => send<{ ended: number }>("DELETE", "/v1/auth/sessions/others"),
+  /** Ask for an account; an admin approves it before it can sign in. */
+  register: (body: { email: string; password: string; name: string; department: string }) =>
+    send<{ requested: boolean }>("POST", "/v1/auth/register", body),
+  /** The Users page. Admins only. */
+  users: () => request<User[]>("/v1/admin/users"),
+  user: (id: string) => request<UserDetail>(`/v1/admin/users/${encodeURIComponent(id)}`),
+  createUser: (body: UserInput) =>
+    send<User & { password?: string }>("POST", "/v1/admin/users", body),
+  updateUser: (id: string, body: UserInput) =>
+    send<User>("PATCH", `/v1/admin/users/${encodeURIComponent(id)}`, body),
+  approveUser: (id: string, role: string, accessExpiresAt?: string) =>
+    send<User>("POST", `/v1/admin/users/${encodeURIComponent(id)}/approve`, {
+      role,
+      access_expires_at: accessExpiresAt,
+    }),
+  rejectUser: (id: string) =>
+    send<{ rejected: string }>("DELETE", `/v1/admin/users/${encodeURIComponent(id)}`),
+  resetUserPassword: (id: string) =>
+    send<{ password: string }>(
+      "POST",
+      `/v1/admin/users/${encodeURIComponent(id)}/reset-password`,
+    ),
+  /** API tokens, for reading the warehouse from a script without a browser. */
+  apiTokens: () => request<ApiToken[]>("/v1/auth/tokens"),
+  createApiToken: (name: string, expiresInDays: number) =>
+    send<CreatedApiToken>("POST", "/v1/auth/tokens", {
+      name,
+      expires_in_days: expiresInDays,
+    }),
+  revokeApiToken: (id: string) =>
+    send<{ revoked: string }>("DELETE", `/v1/auth/tokens/${encodeURIComponent(id)}`),
   /**
    * Ask for one source to be ingested now.
    *

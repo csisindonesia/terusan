@@ -54,7 +54,7 @@ export function TopNav() {
             made. */}
         <SuggestData />
 
-        {/* A sketch, and labelled as one inside — see ask-ai.tsx. */}
+        {/* The assistant, where this deployment has one. */}
         <AskAI />
 
         <Tooltip>

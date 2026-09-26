@@ -224,4 +224,25 @@
   .markdown td code {
     @apply whitespace-nowrap;
   }
+  /* An assistant's reply: the same markdown, read as the answer rather than as
+     reference, so the body is foreground and the rhythm tighter. */
+  .markdown.chat-reply > * + * {
+    @apply mt-3;
+  }
+  .markdown.chat-reply p,
+  .markdown.chat-reply li {
+    @apply text-foreground;
+  }
+  /* A record the model named that the catalogue does not hold: its words,
+     without the link that would vouch for it. */
+  .markdown.chat-reply .unverified-link {
+    @apply cursor-help text-muted-foreground;
+  }
+  .markdown.chat-reply strong {
+    @apply font-semibold;
+  }
+  .markdown.chat-reply h2,
+  .markdown.chat-reply h3 {
+    @apply mt-6 border-0 pb-0 text-base;
+  }
 }

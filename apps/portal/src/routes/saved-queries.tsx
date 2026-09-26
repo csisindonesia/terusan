@@ -210,7 +210,7 @@ function SavedQueries() {
     .map((request, index) => ({
       name: request.name,
       total: results[index]?.data?.meta?.total ?? 0,
-      got: results[index]?.data?.data.length ?? 0,
+      got: results[index]?.data?.data?.length ?? 0,
     }))
     .filter((entry) => entry.total > entry.got);
 

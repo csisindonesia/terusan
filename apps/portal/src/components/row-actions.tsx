@@ -31,6 +31,7 @@ export function RowActions({
   actions,
   unavailable,
   editable = false,
+  bare = false,
   label = "Row actions",
 }: {
   /** The things that do work, shown above the standard pair. */
@@ -39,9 +40,11 @@ export function RowActions({
   unavailable?: RowAction[];
   /** Set when the write endpoints exist, which today they do not. */
   editable?: boolean;
+  /** Only `actions`, without the standard edit/delete pair. */
+  bare?: boolean;
   label?: string;
 }) {
-  const standard: RowAction[] = [
+  const standard: RowAction[] = bare ? [] : [
     ...(unavailable ?? []).map((action) => ({
       ...action,
       onSelect: editable ? action.onSelect : undefined,
@@ -79,7 +82,7 @@ export function RowActions({
             {actions.map((action) => (
               <ActionItem key={action.label} action={action} />
             ))}
-            <DropdownMenuSeparator />
+            {standard.length ? <DropdownMenuSeparator /> : null}
           </>
         ) : null}
 

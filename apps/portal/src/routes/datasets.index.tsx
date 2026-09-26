@@ -40,6 +40,7 @@ const columns: ColumnDef<Dataset>[] = [
   {
     accessorKey: "dataset_id",
     header: "Dataset",
+    meta: { width: "w-96" },
     cell: ({ row }) => (
       // The title, and under it the name the collection is known by in the
       // pipeline. The identifier itself is a code and says nothing, which is
@@ -50,7 +51,11 @@ const columns: ColumnDef<Dataset>[] = [
           params={{ datasetId: row.original.dataset_id }}
           className="font-medium underline-offset-4 hover:underline"
         >
-          {datasetLabel(row.original)}
+          {/* Clamped: titles run to a sentence, and one sets the column's
+              width for every row. The whole of it is a hover away. */}
+          <ClampedText className="max-w-[24rem]">
+            {datasetLabel(row.original)}
+          </ClampedText>
         </Link>
         {row.original.slug && row.original.slug !== row.original.dataset_id ? (
           <div className="text-xs text-muted-foreground">{row.original.slug}</div>
@@ -184,7 +189,10 @@ function Datasets() {
         // The series inside it, so searching for an indicator finds the
         // collection it belongs to.
         dataset.indicators.some((id) => id.toLowerCase().includes(needle))),
-  );
+  )
+    // Freshest first: what changed is what a returning reader looks for.
+    // ISO timestamps sort as text; a collection never updated goes last.
+    .sort((a, b) => (b.last_updated ?? "").localeCompare(a.last_updated ?? ""));
 
   // Paged in place, like the filtering above it: the API answers with every
   // collection in one call, so a page is a slice rather than a round trip. A

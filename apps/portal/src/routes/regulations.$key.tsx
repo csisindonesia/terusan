@@ -356,7 +356,7 @@ function SectionList({ sections }: { sections: RegulationSection[] }) {
   let lastPasal: string | undefined;
 
   return (
-    <div className="max-w-prose space-y-4">
+    <div className="space-y-4">
       {sections.map((section) => {
         const babChanged = section.bab && section.bab !== lastBab;
         if (section.bab) lastBab = section.bab;
@@ -390,13 +390,42 @@ function SectionList({ sections }: { sections: RegulationSection[] }) {
             {/* The ayat number is already inside the text as "(1)", so it is
                 not printed again here. */}
             <p className="text-sm leading-relaxed whitespace-pre-wrap">
-              {section.text}
+              {reflow(section.text)}
             </p>
           </div>
         );
       })}
     </div>
   );
+}
+
+/** A line that opens a list item: "1.", "a.", "(1)", "b)", "-", "•". */
+const LIST_ITEM = /^\s*(\(?\d+[.)]|\(?[a-z][.)]|[-•])\s/;
+
+/**
+ * Rejoins the lines a PDF broke at its own column width.
+ *
+ * The conversion keeps every line break of the page, so printed as-is a pasal
+ * wraps at the width of the PDF rather than the width of the screen. A break
+ * is kept only where it means something: before a list item, and around a
+ * blank line between paragraphs.
+ */
+function reflow(text: string): string {
+  const out: string[] = [];
+  for (const line of text.split("\n")) {
+    const previous = out.length ? out[out.length - 1] : undefined;
+    if (
+      previous === undefined ||
+      !line.trim() ||
+      !previous.trim() ||
+      LIST_ITEM.test(line)
+    ) {
+      out.push(line);
+    } else {
+      out[out.length - 1] = `${previous.trimEnd()} ${line.trimStart()}`;
+    }
+  }
+  return out.join("\n");
 }
 
 /**
@@ -432,7 +461,7 @@ function CitationList({
   }
 
   return (
-    <ol className="max-w-prose space-y-2">
+    <ol className="space-y-2">
       {citations.map((citation) => {
         const label =
           citation.cited_title ??
@@ -476,11 +505,11 @@ function CitationList({
 function Recital({ label, text }: { label: string; text?: string }) {
   if (!text) return null;
   return (
-    <section className="max-w-prose space-y-1.5">
+    <section className="space-y-1.5">
       <h3 className="font-heading text-sm font-semibold tracking-wide uppercase">
         {label}
       </h3>
-      <p className="text-sm leading-relaxed whitespace-pre-wrap">{text}</p>
+      <p className="text-sm leading-relaxed whitespace-pre-wrap">{reflow(text)}</p>
     </section>
   );
 }

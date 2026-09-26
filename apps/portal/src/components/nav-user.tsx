@@ -15,7 +15,6 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
@@ -118,7 +117,11 @@ export function NavUser() {
             align="end"
             sideOffset={8}
           >
-            <DropdownMenuLabel className="p-0 font-normal">
+            {/* A header, not a group label: Base UI's GroupLabel labels the
+                items of a <Menu.Group> and throws without one, and there is no
+                group here — the block below says whose account this menu
+                belongs to. */}
+            <div className="p-0 font-normal">
               <div className="flex items-center gap-2 px-1 py-1.5">
                 <div className="flex size-8 items-center justify-center rounded-lg bg-muted text-xs font-medium">
                   {user ? (
@@ -141,7 +144,7 @@ export function NavUser() {
                   </span>
                 </div>
               </div>
-            </DropdownMenuLabel>
+            </div>
 
             <DropdownMenuSeparator />
 

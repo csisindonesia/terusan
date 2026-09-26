@@ -389,7 +389,7 @@ function RunningJobs() {
     enabled: available,
     // Only while something is going: a finished job never changes again.
     refetchInterval: (query) =>
-      query.state.data?.data.some((job) => job.status === "running") ? POLL_MS : false,
+      query.state.data?.data?.some((job) => job.status === "running") ? POLL_MS : false,
   });
 
   const rows = jobs.data?.data ?? [];

@@ -67,8 +67,12 @@ function Overview() {
 
   // Figures, not lake rows: a reader landing here is counting statistics, and
   // Bronze's million parsed cells are not statistics yet.
+  // `?.data?.` rather than `?.data.`: the API answers a lake with nothing
+  // normalized yet with an empty list, but an older build — or an endpoint
+  // that reports its absence as an error — sends `null`, and reducing that
+  // takes the whole page down rather than showing a zero.
   const figures =
-    indicators.data?.data.reduce((total, i) => total + i.observations, 0) ?? 0;
+    indicators.data?.data?.reduce((total, i) => total + i.observations, 0) ?? 0;
 
   // What the lake is made of. Grouped by layer, so "how much of this is Silver"
   // is answered by the blocks rather than by adding rows up.
@@ -226,7 +230,7 @@ function Overview() {
                 <dl className="mt-3 grid grid-cols-3 gap-2 border-t pt-3">
                   <Stat
                     label="Indicators"
-                    value={formatCount(indicators.data?.data.length ?? 0)}
+                    value={formatCount(indicators.data?.data?.length ?? 0)}
                     to="/indicators"
                   />
                   <Stat

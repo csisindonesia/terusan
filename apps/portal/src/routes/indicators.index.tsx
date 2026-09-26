@@ -29,8 +29,49 @@ const searchSchema = z.object({
   unit: listParam,
   source: listParam,
   q: textParam,
+  // How the list is ordered, in the URL so a sorted list is a link. The values
+  // are the table's own column ids, which is what a header click hands back.
+  sort: z
+    .enum(["indicator_id", "temporal_resolution", "unit", "source", "coverage", "last_updated"])
+    .optional(),
+  dir: z.enum(["asc", "desc"]).optional(),
   page: z.number().int().min(0).optional(),
 });
+
+type SortColumn = NonNullable<z.infer<typeof searchSchema>["sort"]>;
+
+// Newest first unless the reader asks otherwise: "what changed" is the
+// question most visits to this page start with.
+const DEFAULT_SORT: SortColumn = "last_updated";
+
+function sortKey(indicator: Indicator, column: SortColumn): string {
+  switch (column) {
+    case "indicator_id":
+      return indicatorLabel(indicator).toLowerCase();
+    case "temporal_resolution":
+      return indicator.temporal_resolution;
+    case "unit":
+      return indicator.unit ?? "";
+    case "source":
+      return indicator.sources[0] ?? "";
+    case "coverage":
+      return indicator.period_end ?? "";
+    case "last_updated":
+      return indicator.last_updated ?? "";
+  }
+}
+
+function sortIndicators(rows: Indicator[], column: SortColumn, descending: boolean) {
+  return [...rows].sort((a, b) => {
+    const left = sortKey(a, column);
+    const right = sortKey(b, column);
+    // A series with no value for the column goes last whichever way the list
+    // runs: an indicator never updated is not the most or the least recent.
+    if (!left !== !right) return left ? -1 : 1;
+    const order = left < right ? -1 : left > right ? 1 : 0;
+    return descending ? -order : order;
+  });
+}
 
 export const Route = createFileRoute("/indicators/")({
   validateSearch: searchSchema,
@@ -211,6 +252,10 @@ function Indicators() {
         indicator.sources.some((id) => id.toLowerCase().includes(needle))),
   );
 
+  const sortColumn = search.sort ?? DEFAULT_SORT;
+  const descending = (search.dir ?? (search.sort ? "asc" : "desc")) === "desc";
+  const sorted = sortIndicators(rows, sortColumn, descending);
+
   const allFrequencies = [...new Set(all.map((i) => i.temporal_resolution))].sort();
   const allUnits = [
     ...new Set(all.map((i) => i.unit).filter(Boolean)),
@@ -224,7 +269,9 @@ function Indicators() {
   // requested page is clamped rather than trusted.
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const page = Math.min(search.page ?? 0, pageCount - 1);
-  const visible = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  // Sorted before slicing: ordering a page would put the newest of fifty rows
+  // first, not the newest of all of them.
+  const visible = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   function exportRows(chosen: Indicator[], suffix: string) {
     downloadCsv(
@@ -250,7 +297,7 @@ function Indicators() {
                 variant="outline"
                 size="sm"
                 disabled={!rows.length}
-                onClick={() => exportRows(rows, "all")}
+                onClick={() => exportRows(sorted, "all")}
               >
                 <IconDownload className="size-4" />
                 Export
@@ -416,6 +463,18 @@ function Indicators() {
         selectable
         getRowId={(row) => row.indicator_id}
         onSelectionChange={setSelected}
+        sorting={[{ id: sortColumn, desc: descending }]}
+        onSortingChange={(next) => {
+          const [first] = next;
+          navigate({
+            search: (prev) => ({
+              ...prev,
+              sort: first?.id as SortColumn | undefined,
+              dir: first ? (first.desc ? "desc" : "asc") : undefined,
+              page: 0,
+            }),
+          });
+        }}
         renderSelectionActions={(chosen) => (
           <Button
             variant="outline"

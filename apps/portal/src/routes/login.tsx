@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   IconAlertTriangle,
@@ -11,6 +11,7 @@ import {
 import { useEffect, useState } from "react";
 import { z } from "zod";
 
+import { AuthShell } from "~/components/auth-shell";
 import { Alert, AlertDescription } from "~/components/ui/alert";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
@@ -22,23 +23,15 @@ import {
   InputGroupInput,
 } from "~/components/ui/input-group";
 import { ApiRequestError, api } from "~/lib/api";
-import { SESSION_KEY, useSessionState } from "~/lib/session";
+import { SESSION_KEY, capabilitiesQuery, useSessionState } from "~/lib/session";
 import { asText, textParam } from "~/lib/search-params";
-import logo from "~/assets/logo.png";
-import preview from "~/assets/portal-preview.png";
-
 /**
  * The way in.
  *
- * Two halves, and the right one is not decoration: somebody arriving at a bare
- * login form on an internal tool often cannot tell which internal tool it is.
- * The name, the one-line claim and a picture of the thing itself answer that
- * before anyone types an address.
- *
- * The form is deliberately plain. One account, one password, no sign-up — the
- * portal serves one organisation's warehouse, and an account is granted rather
- * than taken (`services/api/cmd/authctl`). What is not built is said rather
- * than implied: the single-sign-on button is visibly unavailable instead of
+ * The form is deliberately plain: one account, one password. Somebody without
+ * an account can ask for one (`/register`), which an admin then approves from
+ * the Users page — an account is granted rather than taken. What is not built
+ * is said rather than implied: the single-sign-on button is visibly unavailable instead of
  * being left out, because "can I use my work login" is the first question
  * anyone asks of a page like this.
  */
@@ -58,6 +51,7 @@ function Login() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { session, hasAuth, isLoading, isUnreachable } = useSessionState();
+  const registration = useQuery(capabilitiesQuery).data?.registration ?? false;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -90,16 +84,25 @@ function Login() {
   }, [session, target, navigate]);
 
   return (
-    <div className="flex min-h-svh flex-col bg-muted/30 p-3 lg:flex-row lg:p-4">
-      <div className="flex flex-1 items-center justify-center px-4 py-10 sm:px-8">
-        <div className="flex w-full max-w-[26rem] flex-col gap-10">
-          <div className="flex items-center gap-2.5">
-            <img src={logo} alt="" className="size-8 rounded-full" />
-            <span className="font-heading text-2xl font-semibold tracking-tight">
-              Terusan
-            </span>
-          </div>
-
+    <AuthShell
+      footer={
+        <p className="text-sm text-muted-foreground">
+          No account?{" "}
+          {registration ? (
+            <Link to="/register" className="font-medium text-primary underline-offset-4 hover:underline">
+              Request access
+            </Link>
+          ) : (
+            "Accounts are issued by whoever runs this deployment"
+          )}
+          . Read{" "}
+          <Link to="/about" className="underline underline-offset-4">
+            what this portal is
+          </Link>
+          .
+        </p>
+      }
+    >
           <div className="space-y-1.5">
             <h1 className="font-heading text-3xl font-semibold tracking-tight">
               Log in to your account
@@ -263,56 +266,7 @@ function Login() {
             </form>
           )}
 
-          <p className="mt-auto text-sm text-muted-foreground">
-            Accounts are issued by whoever runs this deployment. Read{" "}
-            <Link to="/about" className="underline underline-offset-4">
-              what this portal is
-            </Link>
-            .
-          </p>
-        </div>
-      </div>
-
-      {/* The brand half. Hidden on a phone, where it would push the form off
-          the first screen for no gain. */}
-      <div className="relative hidden flex-1 overflow-hidden rounded-2xl bg-primary lg:block">
-        {/* Two soft washes rather than a flat fill: the screenshot below is
-            mostly white, and a flat panel makes it look pasted on. */}
-        <div
-          aria-hidden
-          className="absolute inset-0 bg-[radial-gradient(120%_120%_at_10%_0%,color-mix(in_oklab,var(--primary),white_18%)_0%,var(--primary)_45%,color-mix(in_oklab,var(--primary),black_25%)_100%)]"
-        />
-        <div className="relative flex h-full flex-col gap-10 p-10 xl:p-14">
-          <div className="flex items-center gap-2.5">
-            <img src={logo} alt="" className="size-9 rounded-full bg-white/90 p-1" />
-            <span className="font-heading text-2xl font-semibold tracking-tight text-primary-foreground">
-              Terusan
-            </span>
-          </div>
-
-          <div className="max-w-md">
-            <h2 className="font-heading text-4xl leading-tight font-semibold text-primary-foreground xl:text-5xl">
-              Every figure, back to its source
-            </h2>
-            <p className="mt-4 text-base text-primary-foreground/75">
-              Indonesian statistics, the documents they were read out of, and the
-              regulations around them — one warehouse, one provenance trail.
-            </p>
-          </div>
-
-          {/* Tilted and bleeding off the edge, so it reads as a window onto
-              something larger rather than as a framed thumbnail. */}
-          <div className="relative -mr-24 mt-auto -mb-16 xl:-mr-32">
-            <img
-              src={preview}
-              alt="The Terusan portal, showing the data explorer"
-              className="w-full max-w-4xl rotate-[-6deg] rounded-xl shadow-2xl ring-1 ring-white/20"
-              loading="lazy"
-            />
-          </div>
-        </div>
-      </div>
-    </div>
+    </AuthShell>
   );
 }
 

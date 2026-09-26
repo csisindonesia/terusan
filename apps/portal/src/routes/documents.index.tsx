@@ -278,7 +278,7 @@ function DocumentsPage() {
 
   /** A collection's title, falling back to its identifier until the list loads. */
   function datasetTitle(datasetId: string) {
-    const entry = datasets.data?.data.find((row) => row.dataset_id === datasetId);
+    const entry = datasets.data?.data?.find((row) => row.dataset_id === datasetId);
     return entry?.title ?? entry?.slug ?? datasetId;
   }
 

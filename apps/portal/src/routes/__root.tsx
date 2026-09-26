@@ -14,7 +14,7 @@ import { TopNav } from "~/components/top-nav";
 import { Separator } from "~/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "~/components/ui/sidebar";
 import { TooltipProvider } from "~/components/ui/tooltip";
-import { NAVIGATION } from "~/lib/navigation";
+import { NAVIGATION, matchesItem } from "~/lib/navigation";
 import { useSessionState } from "~/lib/session";
 import { THEME_INIT_SCRIPT } from "~/lib/theme";
 import favicon180 from "~/assets/favicon-180.png";
@@ -76,10 +76,7 @@ function useTrail(pathname: string): string[] {
   for (const section of NAVIGATION) {
     for (const group of section.groups) {
       for (const item of group.items) {
-        if (
-          item.to &&
-          (item.exact ? pathname === item.to : pathname.startsWith(item.to))
-        ) {
+        if (matchesItem(item, pathname)) {
           return [section.label, group.label, item.label].filter(Boolean) as string[];
         }
       }
@@ -88,8 +85,11 @@ function useTrail(pathname: string): string[] {
   return [];
 }
 
-/** The one page that is reachable without a session, and draws its own shell. */
+/** Where a signed-out reader is sent. */
 const LOGIN = "/login";
+
+/** The pages reachable without a session, which draw their own shell. */
+const PUBLIC = new Set([LOGIN, "/register"]);
 
 function RootComponent() {
   const location = useRouterState({ select: (state) => state.location });
@@ -106,7 +106,7 @@ function RootComponent() {
   // in an HttpOnly cookie the browser holds: the server rendering this page
   // never sees it, so a loader would decide "signed out" for everyone and
   // redirect a logged-in reader on every hard refresh.
-  const locked = hasAuth && !isLoading && !session && pathname !== LOGIN;
+  const locked = hasAuth && !isLoading && !session && !PUBLIC.has(pathname);
 
   useEffect(() => {
     if (!locked) return;
@@ -117,7 +117,7 @@ function RootComponent() {
     });
   }, [locked, navigate, pathname, location.searchStr]);
 
-  if (pathname === LOGIN) {
+  if (PUBLIC.has(pathname)) {
     // No sidebar, no breadcrumb: there is nowhere to navigate to yet.
     return (
       <RootDocument>

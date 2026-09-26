@@ -55,6 +55,10 @@ function DropdownMenuGroup({ ...props }: MenuPrimitive.Group.Props) {
   return <MenuPrimitive.Group data-slot="dropdown-menu-group" {...props} />;
 }
 
+// Only inside a <DropdownMenuGroup>. Base UI's GroupLabel reads the group's
+// context to point `aria-labelledby` at itself, and throws production error 31
+// — "MenuGroupContext is missing" — when there is no group around it. A header
+// that labels nothing is a plain element, not this.
 function DropdownMenuLabel({
   className,
   inset,
