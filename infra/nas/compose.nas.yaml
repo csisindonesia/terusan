@@ -1,0 +1,136 @@
+# The stack as it runs on the NAS.
+#
+# An overlay, not a replacement: compose.yaml still describes what the services
+# are, and this file says what changes when they run on the UGREEN box behind a
+# Cloudflare Tunnel rather than on a laptop.
+#
+#   docker compose -f compose.yaml -f infra/nas/compose.nas.yaml \
+#     --profile catalog --profile tunnel up -d --build
+#
+# `make nas-deploy` does that over SSH, which is the way it is meant to be run.
+#
+# Three differences from the laptop stack:
+#
+#   * the connector. cloudflared runs beside the services and reaches them by
+#     container name, so nothing has to be published on the LAN for the
+#     hostname to work — the ports the base file maps are for debugging from
+#     the house, not for serving.
+#   * the catalog is not optional. A scheduled ingestion that cannot record its
+#     history is how a pipeline stops for three weeks without anyone noticing,
+#     so PostgreSQL runs and the pipelines container is given its URL.
+#   * logs are bounded. A container left running for a year on an 8 GB box
+#     should not be able to fill the volume with its own output.
+
+# The account the containers run as.
+#
+# UGOS enforces shared-folder permissions in the kernel rather than with mode
+# bits, and it enforces them by uid: the same directory on the lake reports
+# 0777 to `dev` and 0770 to anything else, so a container running as the
+# image's own 10001 is told "permission denied" by a world-writable directory.
+# Running as the share's owner is what makes the bind mount usable, and it
+# also means the files a pipeline writes belong to the account that reads them
+# over SMB.
+#
+#   1000  dev
+#     10  admin
+x-nas-user: &nas-user "1000:10"
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+services:
+  api:
+    <<: *logging
+    user: *nas-user
+    environment:
+      # The origin the browser sees, which after the tunnel is https and not
+      # localhost. The session cookie rides on these requests, so this is an
+      # allow-list of one rather than a wildcard.
+      API_CORS_ORIGINS: ${PUBLIC_ORIGIN:-https://terusan.csis.or.id}
+      # TLS is terminated at Cloudflare's edge; this process only ever sees
+      # plain http and cannot tell on its own that the portal is served over
+      # https. Without this the session cookie goes out without Secure.
+      AUTH_SECURE_COOKIES: "true"
+      # Every request arrives through cloudflared, which sets CF-Connecting-IP
+      # and CF-IPCountry, so the Users page's access log can show the real
+      # address and country rather than the tunnel's. The API port is also
+      # mapped on the LAN for debugging; a request made there directly could
+      # write those headers itself, which misleads the log and nothing else.
+      AUTH_TRUST_PROXY: "true"
+      # A DXP2800 has 8 GB and is also serving files. Leave room.
+      DUCKDB_MEMORY_LIMIT: ${DUCKDB_MEMORY_LIMIT:-3GB}
+      DATABASE_URL: ${DATABASE_URL:-}
+
+  portal:
+    <<: *logging
+
+  pipelines:
+    <<: *logging
+    user: *nas-user
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-}
+      # Source credentials. On a laptop these are read from .env beside the
+      # checkout; the image carries no .env, so they come from stack/.env.
+      # Unset, each source that needs one says so rather than failing late.
+      HDX_API_TOKEN: ${HDX_API_TOKEN:-}
+      BPS_API_KEY: ${BPS_API_KEY:-}
+      CF_ACCOUNT_ID: ${CF_ACCOUNT_ID:-}
+      JEV_CLOUDFLARE: ${JEV_CLOUDFLARE:-}
+      # Every source's cron is read in the machine's local time — IHSG at
+      # 18:00 is the Jakarta close — and so is the news shard. A container
+      # left in UTC would fire each of them seven hours late.
+      TZ: Asia/Jakarta
+      # /home/terusan belongs to 10001 and this runs as 1000, so anything
+      # that reaches for a home directory — uv's cache, a config file — is
+      # pointed at scratch, which is writable by whoever runs.
+      HOME: /scratch
+    # A container that waits, rather than a command that runs. On the laptop
+    # this image is used as `docker compose run --rm pipelines ...`; on the
+    # NAS the login user cannot reach the Docker socket, so `run` is not
+    # available to anyone but root. Left idling, a pipeline is started with
+    # `docker exec` — from the container's terminal in the UGOS UI, or from a
+    # UGOS scheduled task, both of which are root:
+    #
+    #   docker exec terusan-pipelines-1 terusan sources run bnpb-disaster
+    #
+    # It costs a sleeping process and keeps the lake mounted where the thing
+    # that writes to it can be reached.
+    entrypoint: ["sleep", "infinity"]
+    restart: unless-stopped
+
+  postgres:
+    <<: *logging
+    # Published on the LAN so a laptop can point psql at the catalog; the NAS
+    # is not on the internet except through the tunnel, and the tunnel has no
+    # ingress rule for this port.
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+  # The connector. Locally-managed configuration — the ingress rules live in
+  # infra/cloudflare/config.nas.yml and are rendered into CLOUDFLARED_DIR by
+  # scripts/nas-tunnel-install.sh — rather than a dashboard token, so what is
+  # published is reviewable in the repository and moves with it.
+  #
+  # `--no-autoupdate`: a connector that replaces its own binary at 3am changes
+  # what is serving the site without anyone deciding to.
+  cloudflared:
+    image: cloudflare/cloudflared:2026.9.1
+    command: ["tunnel", "--no-autoupdate", "--config", "/etc/cloudflared/config.yml", "run"]
+    # The credentials sit on the share, so the same uid rule applies: the
+    # image's own nonroot user cannot read them.
+    user: *nas-user
+    volumes:
+      - type: bind
+        source: ${CLOUDFLARED_DIR:?set CLOUDFLARED_DIR to the directory holding config.yml and the tunnel credentials}
+        target: /etc/cloudflared
+        read_only: true
+    depends_on:
+      - api
+      - portal
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    <<: *logging

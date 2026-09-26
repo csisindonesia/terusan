@@ -34,8 +34,13 @@ RUN apt-get update \
 # Scratch is DuckDB's spill and staging area. It belongs on the container's own
 # disk: pointed at a network share it degrades badly enough that the storage
 # layer refuses to do it (program.md §45.6).
+#
+# 1777 rather than owned by that user: a deployment may have to run this image
+# under an account the host recognises — a NAS that enforces share permissions
+# by uid will not let 10001 near the lake — and a scratch directory only one
+# uid can write turns that into a crash on the first spill.
 RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin terusan \
-    && mkdir -p /scratch && chown terusan:terusan /scratch
+    && mkdir -p /scratch && chmod 1777 /scratch
 
 COPY --from=build /out/api /usr/local/bin/api
 

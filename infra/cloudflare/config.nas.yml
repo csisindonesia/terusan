@@ -1,0 +1,32 @@
+# Terusan behind a named Cloudflare Tunnel, with the connector in a container.
+#
+# A template. `scripts/nas-tunnel-install.sh` substitutes __TUNNEL_ID__ and
+# __HOSTNAME__ and writes the result next to the credentials file, which the
+# cloudflared container mounts at /etc/cloudflared.
+#
+# The difference from config.yml, which is for a connector running on a laptop
+# beside the processes: the services are containers on the compose network, so
+# they are reached by name and port, not on 127.0.0.1. Nothing has to be
+# published on the host for this to work.
+
+tunnel: __TUNNEL_ID__
+credentials-file: /etc/cloudflared/credentials.json
+
+# The connector's own metrics, on its container only. `docker compose exec
+# cloudflared wget -qO- localhost:2000/metrics` when a hostname is up at
+# Cloudflare and down here.
+metrics: 0.0.0.0:2000
+
+ingress:
+  # The serving layer: the data API, and the probes a monitor calls.
+  - hostname: __HOSTNAME__
+    path: ^/(v1|healthz|readyz)(/|$)
+    service: http://api:8080
+
+  # Everything else is a page: the portal renders it.
+  - hostname: __HOSTNAME__
+    service: http://portal:3000
+
+  # Required: the last rule must match everything. A request that arrives for
+  # some other hostname is not ours to answer.
+  - service: http_status:404

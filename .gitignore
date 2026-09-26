@@ -60,3 +60,7 @@ __pycache__/
 .DS_Store
 .idea/
 *.swp
+
+# A copy of the NAS stack's rendered compose file. It carries the catalog
+# password; the source of truth is compose.yaml + infra/nas/compose.nas.yaml.
+/docker-compose.yaml

@@ -19,7 +19,18 @@ const allowedHosts = (process.env.PORTAL_ALLOWED_HOSTS ?? ".trycloudflare.com")
   .map((host) => host.trim())
   .filter(Boolean);
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // The server build is run from an image that carries no node_modules, so
+  // everything it imports has to be inside the bundle. Vite externalizes
+  // dependencies in an SSR build by default, which leaves `import "react"` in
+  // dist/server/server.js and a container that exits on the first line.
+  //
+  // Build only. In dev the same setting sends CommonJS dependencies through
+  // the module runner, which evaluates them as ESM: react/index.js reaches
+  // `module.exports` and SSR dies with `module is not defined`.
+  ssr: {
+    noExternal: command === "build" ? true : undefined,
+  },
   server: {
     port: 3000,
     allowedHosts,
@@ -51,4 +62,4 @@ export default defineConfig({
     // page renders server-side and then simply sits there.
     viteReact(),
   ],
-});
+}));

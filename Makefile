@@ -204,34 +204,110 @@ docker-ingest: ## Run one pipeline command in a container, e.g. make docker-inge
 docker-shell: ## A shell in the pipelines image, for poking at the lake
 	$(COMPOSE) run --rm --entrypoint /bin/bash pipelines
 
+# ---- nas ------------------------------------------------------------------
+#
+# The deployment: the stack runs on the UGREEN box, behind a Cloudflare
+# Tunnel. See docs/nas-deployment.md.
+#
+# The containers are started and restarted from the UGOS Docker app, because
+# the login user is not in the docker group there — so the targets below
+# either work over SSH without the socket (deploy, status, shell) or say so
+# when they need it. Overridable per invocation:
+#
+#   make nas-deploy NAS_HOST=192.168.1.212 NAS_DIR=/volume2/terusan
+
+NAS_HOST ?= 192.168.1.212
+NAS_USER ?= dev
+NAS_PORT ?= 22
+NAS_DIR  ?= /volume2/terusan
+TUNNEL_HOSTNAME ?= terusan.csis.or.id
+
+NAS_SSH     := ssh -p $(NAS_PORT) $(NAS_USER)@$(NAS_HOST)
+NAS_COMPOSE := cd $(NAS_DIR)/stack && docker compose
+NAS_UI_HINT := echo "  → no Docker socket for $(NAS_USER); use UGOS → Docker → Project → terusan"
+
+.PHONY: nas-tunnel-install
+nas-tunnel-install: ## One-time: create the tunnel and hand its credentials to the NAS
+	@./scripts/nas-tunnel-install.sh
+
+.PHONY: nas-deploy
+nas-deploy: ## Sync the repository to the NAS and render the stack's compose file
+	@./scripts/nas-deploy.sh
+
+.PHONY: nas-ps
+nas-ps: ## What is running on the NAS, and whether the API is healthy
+	@$(NAS_SSH) "$(NAS_COMPOSE) ps" 2>/dev/null || $(NAS_UI_HINT)
+
+.PHONY: nas-logs
+nas-logs: ## Follow the containers' logs on the NAS
+	@$(NAS_SSH) "$(NAS_COMPOSE) logs -f --tail 100" 2>/dev/null || $(NAS_UI_HINT)
+
+.PHONY: nas-ingest
+nas-ingest: ## Run one pipeline command on the NAS, e.g. make nas-ingest CMD="sources list"
+	@test -n "$(CMD)" || (echo 'usage: make nas-ingest CMD="sources list"' >&2; exit 1)
+	@$(NAS_SSH) "docker exec terusan-pipelines-1 terusan $(CMD)" 2>/dev/null \
+	  || echo "  → no Docker socket for $(NAS_USER); run it from the pipelines container's terminal in UGOS: terusan $(CMD)"
+
+.PHONY: nas-shell
+nas-shell: ## A shell on the NAS, in the deployed repository
+	@$(NAS_SSH) -t "cd $(NAS_DIR)/app && exec \$$SHELL -l"
+
+.PHONY: nas-status
+nas-status: ## Is the box up, and is the published hostname answering
+	@echo "== the box"
+	@$(NAS_SSH) "uptime; df -h $(NAS_DIR) | tail -1" 2>/dev/null || echo "   unreachable"
+	@echo "== the lake"
+	@$(NAS_SSH) "du -sh $(NAS_DIR)/lake/* 2>/dev/null | sed 's/^/   /'" 2>/dev/null || true
+	@echo "== https://$(TUNNEL_HOSTNAME)/healthz"
+	@curl -fsS -o /dev/null -w '   %{http_code} in %{time_total}s\n' https://$(TUNNEL_HOSTNAME)/healthz || echo "   no answer"
+
 # ---- scheduling -----------------------------------------------------------
 
-AGENT       := com.terusan.daily
+AGENT       := com.terusan.scheduled
 AGENT_PLIST := $(HOME)/Library/LaunchAgents/$(AGENT).plist
 
+# The agent this replaced, booted out on install so an older checkout's 05:00
+# daily run cannot keep firing invisibly beside the hourly one.
+LEGACY_AGENT       := com.terusan.daily
+LEGACY_AGENT_PLIST := $(HOME)/Library/LaunchAgents/$(LEGACY_AGENT).plist
+
+.PHONY: due
+due: ## Show which sources their schedule says are due this hour (collects nothing)
+	@./scripts/scheduled.sh --list
+
+.PHONY: scheduled
+scheduled: ## Collect whatever is due now, by each source's own cron
+	@./scripts/scheduled.sh
+
 .PHONY: daily
-daily: ## Run one day's ingestion now (fetch the daily sources, extract, normalize)
+daily: ## Run every active daily source now, whatever their cron says
 	@./scripts/daily.sh
 
 .PHONY: schedule-install
-schedule-install: ## Install the launchd agent that runs `make daily` at 05:00
+schedule-install: ## Install the launchd agent that runs `make scheduled` hourly
 	@mkdir -p $(HOME)/Library/LaunchAgents .cache/logs
 	@sed -e 's#__PROJECT_ROOT__#$(CURDIR)#g' -e 's#__PATH__#$(PATH)#g' \
 	  infra/local/$(AGENT).plist > $(AGENT_PLIST)
+	@launchctl bootout gui/$$(id -u)/$(LEGACY_AGENT) 2>/dev/null \
+	  && echo "removed the superseded $(LEGACY_AGENT) agent" || true
+	@rm -f $(LEGACY_AGENT_PLIST)
 	@launchctl bootout gui/$$(id -u)/$(AGENT) 2>/dev/null || true
 	@launchctl bootstrap gui/$$(id -u) $(AGENT_PLIST)
-	@echo "installed $(AGENT_PLIST); next run 05:00 local"
+	@echo "installed $(AGENT_PLIST); runs on the hour"
 
 .PHONY: schedule-uninstall
 schedule-uninstall: ## Remove the launchd agent
 	@launchctl bootout gui/$$(id -u)/$(AGENT) 2>/dev/null || true
-	@rm -f $(AGENT_PLIST)
+	@launchctl bootout gui/$$(id -u)/$(LEGACY_AGENT) 2>/dev/null || true
+	@rm -f $(AGENT_PLIST) $(LEGACY_AGENT_PLIST)
 	@echo "removed $(AGENT)"
 
 .PHONY: schedule-status
 schedule-status: ## Show whether the agent is loaded, and when it last ran
 	@launchctl print gui/$$(id -u)/$(AGENT) 2>/dev/null \
 	  | grep -E 'state|last exit code|runs' || echo "$(AGENT) is not loaded"
+	@launchctl print gui/$$(id -u)/$(LEGACY_AGENT) >/dev/null 2>&1 \
+	  && echo "WARNING: the superseded $(LEGACY_AGENT) agent is still loaded; run make schedule-install" || true
 	@ls -t .cache/logs/daily-*.log 2>/dev/null | head -1 \
 	  | xargs -I{} sh -c 'echo; echo "last log: {}"; tail -5 {}' || true
 
@@ -274,6 +350,17 @@ silver: ## Normalize Bronze into Silver (see `terusan silver normalize --help`)
 	@echo "Silver needs a column mapping per indicator; run:"
 	@echo "  cd pipelines && uv run terusan silver normalize --help"
 
+.PHONY: news
+news: ## Read one shard of the newspapers, count everything, keep the violence
+	cd pipelines && uv run terusan sources run news-monitoring
+	cd pipelines && uv run terusan warehouse extract news news-monitoring
+	cd pipelines && uv run terusan news cluster
+	@./scripts/normalize-news.sh
+
+.PHONY: news-validate
+news-validate: ## Score a month of machine coding against VEWS (MONTH=2025-05)
+	cd pipelines && uv run terusan news validate $(or $(MONTH),2025-05)
+
 .PHONY: pihps-silver
 pihps-silver: ## Normalize PIHPS food prices into one Silver indicator per market
 	@./scripts/normalize-pihps.sh
@@ -281,6 +368,22 @@ pihps-silver: ## Normalize PIHPS food prices into one Silver indicator per marke
 .PHONY: bnpb-silver
 bnpb-silver: ## Normalize BNPB disaster impact into one Silver indicator per measure and hazard
 	@./scripts/normalize-bnpb.sh
+
+.PHONY: vews-ingest
+vews-ingest: ## Land the VEWS yearly exports from tmp/vews (or $$VEWS_DROP_DIR) into RAW
+	cd pipelines && uv run terusan sources run vews-collective-violence
+
+.PHONY: vews-silver
+vews-silver: ## Normalize VEWS collective violence into one Silver indicator per measure
+	@./scripts/normalize-vews.sh
+
+.PHONY: rca-ingest
+rca-ingest: ## Land the HS6 RCA working files from tmp/rca (or $$RCA_DROP_DIR) into RAW
+	cd pipelines && uv run terusan sources run rca-seed
+
+.PHONY: rca-silver
+rca-silver: ## Normalize the RCA base years and WITS sector RCA into Silver
+	@./scripts/normalize-rca.sh
 
 .PHONY: pihps-backfill
 pihps-backfill: ## Fetch every PIHPS price back to March 2017 (long: ~16k requests)

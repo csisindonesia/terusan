@@ -44,12 +44,27 @@ services:
       # The shelf and the accounts. On the share so a collection survives the
       # container, which is the only copy of anything a person wrote here.
       APP_DB: /data/app.duckdb
+      # Sign-in is required unless this says otherwise; the portal's "request
+      # access" form lands pending accounts an admin approves.
+      AUTH_REQUIRED: ${AUTH_REQUIRED:-true}
+      AUTH_REGISTRATION: ${AUTH_REGISTRATION:-true}
+      # Believe Cloudflare's CF-Connecting-IP / CF-IPCountry for the Users
+      # page's access log. Only where the tunnel is the one way in.
+      AUTH_TRUST_PROXY: ${AUTH_TRUST_PROXY:-false}
       DUCKDB_MEMORY_LIMIT: ${DUCKDB_MEMORY_LIMIT:-4GB}
       DATABASE_URL: ${DATABASE_URL:-}
       REDIS_URL: ${REDIS_URL:-}
       # Left off: this endpoint starts scrapers on the host and has nothing in
       # front of it (program.md §34). Run them through the pipelines service.
       PIPELINES_ENABLED: "false"
+      # The assistant (POST /v1/assistant/chat), on Workers AI. Off unless the
+      # account and a token are both set.
+      CF_ACCOUNT_ID: ${CF_ACCOUNT_ID:-}
+      CF_AI_TOKEN: ${CF_AI_TOKEN:-}
+      JEV_CLOUDFLARE: ${JEV_CLOUDFLARE:-}
+      AI_GATEWAY_ID: ${AI_GATEWAY_ID:-}
+      ASSISTANT_MODEL: ${ASSISTANT_MODEL:-}
+      ASSISTANT_ROUTER_MODEL: ${ASSISTANT_ROUTER_MODEL:-}
     volumes:
       # Long syntax, because the short one splits on `:` and a Windows host
       # writes this path as `D:/Shared Folder/terusan`.
