@@ -23,6 +23,7 @@ import {
 } from "react";
 
 import { AssistantChart } from "~/components/assistant-chart";
+import { ChartProposalCard } from "~/components/chart-proposal";
 import { CollectButton } from "~/components/collect-button";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
@@ -34,6 +35,8 @@ import {
   SheetTrigger,
 } from "~/components/ui/sheet";
 import {
+  confirmFor,
+  confirmsProposal,
   deleteConversation,
   describeChatError,
   fetchConversation,
@@ -49,6 +52,7 @@ import {
   streamTurn,
   suggestedItems,
   titleFor,
+  type ChartConfirm,
   type ChatMessage,
   type ChatSummary,
   type Conversation,
@@ -267,6 +271,7 @@ function Assistant() {
             patchLast((last) => ({ ...last, content: last.content + text })),
           onSources: (sources) => patchLast((last) => ({ ...last, sources })),
           onChart: (chart) => patchLast((last) => ({ ...last, chart })),
+          onProposal: (proposal) => patchLast((last) => ({ ...last, proposal })),
           onReplace: (text) =>
             patchLast((last) => ({
               ...last,
@@ -310,9 +315,18 @@ function Assistant() {
     }
   }
 
-  function send(text: string) {
+  function send(text: string, confirm?: ChartConfirm) {
     const question = text.trim();
     if (!question || streaming || missing) return;
+    // "ya" or "lanjut" beneath a proposal is the same as its button, with
+    // every series kept.
+    const last = chat.messages[chat.messages.length - 1];
+    if (!confirm && last?.proposal && confirmsProposal(question)) {
+      confirm = confirmFor(
+        last.proposal,
+        last.proposal.series.map((s) => s.id),
+      );
+    }
     setDraft("");
     const shown = [
       // A failed reply is not sent back as if it were one.
@@ -321,7 +335,10 @@ function Assistant() {
     ];
 
     if (recorded) {
-      void ask({ conversationId: chat.id ?? undefined, message: question }, shown);
+      void ask(
+        { conversationId: chat.id ?? undefined, message: question, confirm },
+        shown,
+      );
       return;
     }
     // Kept in this browser: the id is made here, and the whole conversation
@@ -332,7 +349,7 @@ function Assistant() {
       change(() => ({ id, title: titleFor(question), messages: shown }));
       openUrl(id);
     }
-    void ask({ messages: shown }, shown);
+    void ask({ messages: shown, confirm }, shown);
   }
 
   function regenerate() {
@@ -502,6 +519,15 @@ function Assistant() {
                   isLast={index === messages.length - 1}
                   onRegenerate={regenerate}
                   onSaved={(collectionId) => saved(index, collectionId)}
+                  canConfirm={!streaming && index === messages.length - 1}
+                  confirmed={Boolean(messages[index + 2]?.chart)}
+                  onConfirm={(keep) =>
+                    message.proposal &&
+                    send(
+                      message.proposal.confirm_text,
+                      confirmFor(message.proposal, keep),
+                    )
+                  }
                 />
               ))}
             </div>
@@ -575,6 +601,9 @@ function Message({
   isLast,
   onRegenerate,
   onSaved,
+  canConfirm,
+  confirmed,
+  onConfirm,
 }: {
   message: ChatMessage;
   /** What this reply answers, which names the collection it is saved to. */
@@ -583,6 +612,9 @@ function Message({
   isLast: boolean;
   onRegenerate: () => void;
   onSaved: (collectionId: string) => void;
+  canConfirm: boolean;
+  confirmed: boolean;
+  onConfirm: (keep: string[]) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const suggested = useMemo(
@@ -621,6 +653,15 @@ function Message({
           />
         ) : pending ? (
           <span className="mt-2 inline-block size-3 animate-pulse rounded-full bg-foreground" />
+        ) : null}
+
+        {message.proposal && !pending ? (
+          <ChartProposalCard
+            proposal={message.proposal}
+            active={canConfirm}
+            confirmed={confirmed}
+            onConfirm={onConfirm}
+          />
         ) : null}
 
         {message.error ? (

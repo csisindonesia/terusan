@@ -39,7 +39,7 @@ export type Series = {
   hidden?: boolean;
 };
 
-const WIDTH = 960;
+const DEFAULT_WIDTH = 960;
 const HEIGHT = 300;
 // Gutters in viewBox units, so they scale with the chart. Wide enough that the
 // axis labels and the end of the line keep clear of the card's border: at 20
@@ -74,13 +74,28 @@ export function TimeSeriesChart({
   unit,
   caption,
   onToggle,
+  width = DEFAULT_WIDTH,
+  dashed = false,
+  markers = false,
+  framed = true,
 }: {
   series: Series[];
   unit?: string;
   caption?: string;
+  /** The viewBox width: narrower where the chart sits in a narrow column, so
+   * its 11px labels are not drawn at eight. */
+  width?: number;
+  /** Dashed gridlines, for a chart that is read off the grid less than it is
+   * looked at. */
+  dashed?: boolean;
+  /** A dot on every figure, where there are few enough to tell apart. */
+  markers?: boolean;
+  /** Its own border and surface; off where a card around it has them. */
+  framed?: boolean;
   /** Given when the legend is a control rather than a key. */
   onToggle?: (name: string) => void;
 }) {
+  const WIDTH = width;
   const clipId = useId();
   const [hover, setHover] = useState<number | null>(null);
 
@@ -194,7 +209,11 @@ export function TimeSeriesChart({
         } as React.CSSProperties
       }
     >
-      <div className="relative overflow-hidden rounded-lg border bg-card">
+      <div
+        className={
+          framed ? "relative overflow-hidden rounded-lg border bg-card" : "relative"
+        }
+      >
         <svg
           viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
           className="h-[300px] w-full"
@@ -223,13 +242,15 @@ export function TimeSeriesChart({
                 y2={y(value)}
                 stroke="var(--viz-grid)"
                 strokeWidth={1}
+                strokeDasharray={dashed ? "4 4" : undefined}
               />
               <text
                 x={PADDING.left - 10}
                 y={y(value)}
                 textAnchor="end"
                 dominantBaseline="middle"
-                className="fill-muted-foreground text-[11px]"
+                fill="var(--muted-foreground)"
+                fontSize={11}
               >
                 {formatCompact(String(value))}
               </text>
@@ -263,6 +284,19 @@ export function TimeSeriesChart({
                     strokeLinejoin="round"
                   />
                 ))}
+                {markers && entry.points.length <= 120
+                  ? entry.points.map((point, index) =>
+                      point.value === null ? null : (
+                        <circle
+                          key={`dot-${index}`}
+                          cx={x(index)}
+                          cy={y(point.value)}
+                          r={2.5}
+                          fill={seriesColor(entry.slot)}
+                        />
+                      ),
+                    )
+                  : null}
               </g>
             ))}
           </g>
@@ -278,7 +312,8 @@ export function TimeSeriesChart({
               textAnchor={
                 index === 0 ? "start" : index === axis.length - 1 ? "end" : "middle"
               }
-              className="fill-muted-foreground text-[11px]"
+              fill="var(--muted-foreground)"
+              fontSize={11}
             >
               {axis[index]!.label}
             </text>
@@ -352,7 +387,7 @@ export function TimeSeriesChart({
             className="pointer-events-none absolute top-3 rounded-lg border bg-popover px-2.5 py-1.5 text-xs shadow-sm"
             style={{
               left: `calc(${(x(hover) / WIDTH) * 100}% + 8px)`,
-              transform: hover > axis.length * 0.7 ? "translateX(-110%)" : undefined,
+              transform: hover > axis.length / 2 ? "translateX(-110%)" : undefined,
             }}
           >
             <div className="font-medium">{axis[hover]!.label}</div>

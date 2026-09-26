@@ -39,12 +39,51 @@ export type ChartSpec = {
     unit?: string;
     /** The place or commodity drawn, where the series has several. */
     member?: string;
+    /** Who publishes the figures. Absent on charts kept from before. */
+    source?: string;
     /** One per period; null where the period has no figure. */
     values: (number | null)[];
   }[];
   /** Pearson's r where there are two series, and over how many periods. */
   correlation?: number;
   overlap?: number;
+};
+
+/**
+ * A chart the assistant proposes before drawing: which series, for which part
+ * of the question, and which kind of chart and why. The reader confirms it,
+ * or unticks a series first, and only then is it drawn.
+ */
+export type ChartProposal = {
+  proposed: true;
+  kind: ChartKind;
+  title: string;
+  reason?: string;
+  granularity: ChartSpec["granularity"];
+  from: string;
+  to: string;
+  series: {
+    id: string;
+    label: string;
+    unit?: string;
+    member?: string;
+    source?: string;
+    /** The part of the question it stands for, in the reader's words. */
+    for?: string;
+    from: string;
+    to: string;
+  }[];
+  /** The reader's message when they confirm, in their language. */
+  confirm_text: string;
+};
+
+/** The reader's answer to a proposal: the series to draw. */
+export type ChartConfirm = {
+  series: string[];
+  members: Record<string, string>;
+  kind: ChartKind;
+  title?: string;
+  reason?: string;
 };
 
 export type ChatMessage = {
@@ -62,8 +101,10 @@ export type ChatMessage = {
    * replies kept from before the server sent it.
    */
   sources?: string[];
-  /** The chart drawn beside this reply, where the question asked for one. */
+  /** The chart drawn beside this reply, where the reader confirmed one. */
   chart?: ChartSpec;
+  /** The chart this reply proposes, awaiting the reader's confirmation. */
+  proposal?: ChartProposal;
 };
 
 export type Conversation = {
@@ -80,6 +121,7 @@ type StreamEvent =
   | { type: "conversation"; id: string; title: string }
   | { type: "sources"; sources: { kind: string; id: string }[] }
   | { type: "chart"; chart: ChartSpec }
+  | { type: "proposal"; proposal: ChartProposal }
   | { type: "delta"; text: string }
   /** The server stopped the reply and put this in place of all of it. */
   | { type: "replace"; text: string }
@@ -88,15 +130,16 @@ type StreamEvent =
 
 /** What a turn is asked with: a recorded conversation, or the whole of one. */
 export type TurnRequest =
-  | { conversationId?: string; message: string }
+  | { conversationId?: string; message: string; confirm?: ChartConfirm }
   | { conversationId: string; regenerate: true }
-  | { messages: ChatMessage[] };
+  | { messages: ChatMessage[]; confirm?: ChartConfirm };
 
 export type TurnCallbacks = {
   onText: (text: string) => void;
   onConversation?: (id: string, title: string) => void;
   onSources?: (sources: string[]) => void;
   onChart?: (chart: ChartSpec) => void;
+  onProposal?: (proposal: ChartProposal) => void;
   onReplace?: (text: string) => void;
 };
 
@@ -113,10 +156,17 @@ export async function streamTurn(
 ): Promise<{ error?: string }> {
   const body =
     "messages" in turn
-      ? { messages: turn.messages.map(({ role, content }) => ({ role, content })) }
+      ? {
+          messages: turn.messages.map(({ role, content }) => ({ role, content })),
+          confirm: turn.confirm,
+        }
       : "regenerate" in turn
         ? { conversation_id: turn.conversationId, regenerate: true }
-        : { conversation_id: turn.conversationId, message: turn.message };
+        : {
+            conversation_id: turn.conversationId,
+            message: turn.message,
+            confirm: turn.confirm,
+          };
 
   const response = await fetch(new URL("/v1/assistant/chat", apiBaseUrl), {
     method: "POST",
@@ -149,6 +199,7 @@ export async function streamTurn(
         callbacks.onConversation?.(event.id, event.title);
       else if (event.type === "replace") callbacks.onReplace?.(event.text);
       else if (event.type === "chart") callbacks.onChart?.(event.chart);
+      else if (event.type === "proposal") callbacks.onProposal?.(event.proposal);
       else if (event.type === "sources")
         callbacks.onSources?.(
           event.sources.map((source) => `${source.kind}:${source.id}`),
@@ -178,7 +229,8 @@ type ServerMessage = {
   error?: string;
   sources?: string[];
   collection_id?: string;
-  chart?: ChartSpec;
+  /** A drawn chart, or a proposal for one (`proposed: true`). */
+  chart?: ChartSpec | ChartProposal;
 };
 
 type ServerConversation = {
@@ -231,7 +283,8 @@ export async function fetchConversation(id: string): Promise<Conversation | null
       error: m.error || undefined,
       sources: m.sources ?? [],
       collectionId: m.collection_id || undefined,
-      chart: m.chart ?? undefined,
+      chart: m.chart && !("proposed" in m.chart) ? m.chart : undefined,
+      proposal: m.chart && "proposed" in m.chart ? m.chart : undefined,
     })),
   };
 }
@@ -466,4 +519,27 @@ export function suggestedItems(reply: string, sources?: string[]): NewItem[] {
     items.push(item);
   }
   return items;
+}
+
+/** A message that says yes to a proposal, typed rather than clicked. */
+export function confirmsProposal(text: string): boolean {
+  return /^(ya|iya|yap|oke|ok|okay|lanjut|lanjutkan|boleh|setuju|silakan|yes|yep|sure|go ahead|draw it)\b[\s.!,]*(buat(kan)?( grafik(nya)?| chart(nya)?)?)?[\s.!]*$/i.test(
+    text.trim(),
+  );
+}
+
+/** The confirmation for a proposal, with the series the reader kept. */
+export function confirmFor(proposal: ChartProposal, keep: string[]): ChartConfirm {
+  const kept = proposal.series.filter((s) => keep.includes(s.id));
+  const members: Record<string, string> = {};
+  for (const s of kept) if (s.member) members[s.id] = s.member;
+  return {
+    series: kept.map((s) => s.id),
+    members,
+    kind: proposal.kind,
+    // The title names every proposed series; with one dropped the server
+    // names the chart from what is left.
+    title: kept.length === proposal.series.length ? proposal.title : undefined,
+    reason: proposal.reason,
+  };
 }
