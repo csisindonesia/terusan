@@ -38,6 +38,10 @@ type Server struct {
 	chats     *conversations.Store
 	// Per-address limit on the "request access" form (see users.go).
 	registrations registrationLimiter
+	// The lake's summaries, held and refreshed in the process (summaries.go),
+	// and the routes that serve them, for the warm-up at start.
+	summaries     summaryStore
+	summaryRoutes map[string]http.HandlerFunc
 	log           *slog.Logger
 }
 
@@ -93,6 +97,7 @@ func (s *Server) invalidate() {
 	if err := s.cache.Purge(ctx); err != nil {
 		s.log.Warn("cache.purge_failed", "error", err)
 	}
+	s.staleSummaries()
 }
 
 // Routes returns the HTTP handler for the whole API.
@@ -115,7 +120,9 @@ func (s *Server) Routes() http.Handler {
 	// The same figures as a chart needs them: a line per member, bucketed to a
 	// granularity the span can be drawn at rather than sent row by row.
 	mux.HandleFunc("GET /v1/observations/series", s.withCache(s.handleObservationSeries))
-	mux.HandleFunc("GET /v1/indicators", s.withCache(s.handleIndicators))
+	// The four that read every observation are also held in the process
+	// and refreshed behind the reader: see summaries.go.
+	mux.HandleFunc("GET /v1/indicators", s.summary("/v1/indicators", s.withCache(s.handleIndicators)))
 	mux.HandleFunc("GET /v1/indicators/{id}", s.withCache(s.handleIndicator))
 	// What the series was read out of, which is the question a reader looking
 	// at a figure actually has.
@@ -127,10 +134,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/geography", s.withCache(s.handleGeography))
 	// The other dimension a figure can vary by. Derived from the observations
 	// rather than the registry, which knows almost none of them yet.
-	mux.HandleFunc("GET /v1/commodities", s.withCache(s.handleCommodities))
-	mux.HandleFunc("GET /v1/datasets", s.withCache(s.handleDatasets))
+	mux.HandleFunc("GET /v1/commodities", s.summary("/v1/commodities", s.withCache(s.handleCommodities)))
+	mux.HandleFunc("GET /v1/datasets", s.summary("/v1/datasets", s.withCache(s.handleDatasets)))
 	mux.HandleFunc("GET /v1/datasets/{id}", s.withCache(s.handleDataset))
-	mux.HandleFunc("GET /v1/storage", s.withCache(s.handleStorage))
+	mux.HandleFunc("GET /v1/storage", s.summary("/v1/storage", s.withCache(s.handleStorage)))
 	mux.HandleFunc("GET /v1/sources", s.withCache(s.handleSources))
 	mux.HandleFunc("GET /v1/runs", s.withCache(s.handleRuns))
 	mux.HandleFunc("GET /v1/documents", s.withCache(s.handleDocuments))
@@ -263,7 +270,7 @@ func (s *Server) Routes() http.Handler {
 	// Outermost first: CORS answers the browser's preflight before anything
 	// else looks at the request, the log records what arrived, the session is
 	// resolved once, and the gate decides whether it goes through.
-	return s.withCORS(s.withRequestLogging(s.withSession(s.withAuth(mux))))
+	return s.withCORS(s.withCompression(s.withRequestLogging(s.withSession(s.withAuth(mux)))))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

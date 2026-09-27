@@ -127,11 +127,10 @@ func run(log *slog.Logger) error {
 		log.Info("appdb.disabled", "reason", "APP_DB is not set")
 	}
 
+	api := httpapi.New(cfg, warehouse, responses, shelf, accounts, asked, chats, log)
 	srv := &http.Server{
-		Addr: cfg.Addr(),
-		Handler: httpapi.New(
-			cfg, warehouse, responses, shelf, accounts, asked, chats, log,
-		).Routes(),
+		Addr:         cfg.Addr(),
+		Handler:      api.Routes(),
 		ReadTimeout:  cfg.ReadTimeout,
 		WriteTimeout: cfg.WriteTimeout,
 	}
@@ -151,6 +150,11 @@ func run(log *slog.Logger) error {
 			errs <- err
 		}
 	}()
+
+	// The summaries the home page reads are computed before anyone asks:
+	// each reads every observation, and the first reader would otherwise
+	// wait for all four.
+	go api.WarmSummaries(ctx)
 
 	select {
 	case err := <-errs:

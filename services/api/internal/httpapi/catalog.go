@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/csis/terusan/services/api/internal/storage"
 )
@@ -354,8 +355,11 @@ func (s *Server) handleStorage(w http.ResponseWriter, r *http.Request) {
 		{storage.LayerBronze, "documents", "Bronze documents"},
 	}
 
-	tables := make([]LakeTable, 0, len(known))
-	for _, entry := range known {
+	// Counted side by side: each is a separate scan, and one after another
+	// the answer took as long as all of them together.
+	counted := make([]*LakeTable, len(known))
+	var wg sync.WaitGroup
+	for n, entry := range known {
 		if !s.warehouse.Exists(ctx, entry.layer, entry.dataset) {
 			continue
 		}
@@ -363,19 +367,30 @@ func (s *Server) handleStorage(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			continue
 		}
-		var rows int64
-		if err := s.warehouse.DB().QueryRowContext(
-			ctx, "SELECT count(*) FROM "+expression,
-		).Scan(&rows); err != nil {
-			s.log.Warn("storage.count_failed", "dataset", entry.dataset, "error", err)
-			continue
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var rows int64
+			if err := s.warehouse.DB().QueryRowContext(
+				ctx, "SELECT count(*) FROM "+expression,
+			).Scan(&rows); err != nil {
+				s.log.Warn("storage.count_failed", "dataset", entry.dataset, "error", err)
+				return
+			}
+			counted[n] = &LakeTable{
+				Slug:  fmt.Sprintf("%s-%s", entry.layer, entry.dataset),
+				Layer: entry.layer.String(),
+				Name:  entry.name,
+				Rows:  rows,
+			}
+		}()
+	}
+	wg.Wait()
+	tables := make([]LakeTable, 0, len(known))
+	for _, table := range counted {
+		if table != nil {
+			tables = append(tables, *table)
 		}
-		tables = append(tables, LakeTable{
-			Slug:  fmt.Sprintf("%s-%s", entry.layer, entry.dataset),
-			Layer: entry.layer.String(),
-			Name:  entry.name,
-			Rows:  rows,
-		})
 	}
 
 	writeData(w, tables, &Meta{Total: int64(len(tables))})
