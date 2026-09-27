@@ -41,6 +41,12 @@ browser = [
     "playwright>=1.49.0",
 ]
 
+# The air-quality source computes its figures in Earth Engine rather than
+# downloading a file, so it needs Google's client and an account to run as.
+gee = [
+    "earthengine-api>=1.4",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.3.0",

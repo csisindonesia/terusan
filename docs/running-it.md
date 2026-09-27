@@ -752,6 +752,25 @@ uv --project pipelines run terusan sources run hdx-meta-movement-distribution
 uv --project pipelines run terusan warehouse extract research
 ./scripts/normalize-mobility.sh
 
+# Air quality per province, computed in Google Earth Engine — Sentinel-5P
+# columns and CAMS surface PM, one CSV per month. Needs EE_PROJECT in .env and
+# a one-off `uv --project pipelines run --extra gee earthengine authenticate`
+# (or EE_SERVICE_ACCOUNT_KEY). Takes the last three full months unless told:
+uv --project pipelines run --extra gee terusan sources run gee-air-quality \
+  --param start=2018-07          # a backfill; omit for the last three months
+uv --project pipelines run terusan warehouse extract research gee-air-quality
+./scripts/normalize-air-quality.sh
+
+# Thirty more Earth Engine products — rainfall, temperature, vegetation, fire,
+# night lights, land cover, forest loss, population, terrain, soil — one source
+# each (`gee-<slug>`), declared in sources/gee/catalog.py. Same credentials.
+# Monthly ones take the last three full months unless told; annual and static
+# ones take every year they hold. A backfill from each product's first month:
+uv --project pipelines run --extra gee terusan sources run gee-chirps-rainfall \
+  --param start=1900-01
+uv --project pipelines run terusan warehouse extract research
+./scripts/normalize-gee.sh                  # or: ./scripts/normalize-gee.sh chirps-rainfall
+
 # Yahoo's commodity futures — fourteen instruments, four price series each
 uv --project pipelines run terusan sources run yahoo-gold yahoo-copper
 uv --project pipelines run terusan warehouse extract statistics

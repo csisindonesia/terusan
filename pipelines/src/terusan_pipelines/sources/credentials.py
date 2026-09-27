@@ -56,6 +56,15 @@ class SourceCredentials(BaseSettings):
     #: answers `Unauthorized. Invalid or missing API key.`
     panel_harga_api_key: SecretStr | None = Field(default=None, alias="PANEL_HARGA_API_KEY")
 
+    #: The Cloud project Earth Engine bills and meters a request against. It
+    #: must be registered for Earth Engine; noncommercial use is free. Not a
+    #: secret, but without it `gee-air-quality` cannot make a single call.
+    ee_project: str | None = Field(default=None, alias="EE_PROJECT")
+
+    #: Path to a service account's JSON key, for a run nobody is logged in to.
+    #: Absent, the credentials `earthengine authenticate` stored are used.
+    ee_service_account_key: str | None = Field(default=None, alias="EE_SERVICE_ACCOUNT_KEY")
+
 
 @cache
 def credentials() -> SourceCredentials:

@@ -113,6 +113,10 @@ _TOPICS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (r"education|pendidikan|school", ("education",)),
     (r"health|kesehatan|hospital", ("health",)),
     (r"climate|emission|environment|lingkungan", ("environment",)),
+    (
+        r"pollution|polusi|air quality|kualitas udara|pm2\.5|pm10|\bno2\b|\bso2\b|aerosol",
+        ("environment", "air-quality"),
+    ),
     (r"investment|fdi|capital formation|investasi", ("investment",)),
     (r"business confidence|business tendency", ("business", "surveys")),
     (r"government|pemerintah|public sector", ("government",)),

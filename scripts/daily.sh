@@ -192,6 +192,14 @@ SUBTREES
         echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: $source ==="
         normalize ./scripts/normalize-mobility.sh
         ;;
+      gee-air-quality)
+        echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: $source ==="
+        normalize ./scripts/normalize-air-quality.sh
+        ;;
+      gee-*)
+        echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: $source ==="
+        normalize ./scripts/normalize-gee.sh "${source#gee-}"
+        ;;
       bi-pihps-food-prices)
         echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: $source ==="
         normalize ./scripts/normalize-pihps.sh

@@ -21,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .identifiers import dataset_code
+from .sources.gee.catalog import PRODUCTS as GEE_PRODUCTS
 
 
 @dataclass(frozen=True, slots=True)
@@ -1000,6 +1001,19 @@ DATASETS: tuple[DatasetMeta, ...] = (
         tags=("forests", "deforestation", "versions", "remote-sensing", "environment"),
     ),
     DatasetMeta(
+        slug="air-quality",
+        title="Air quality by province",
+        source="gee-air-quality",
+        description=(
+            "Monthly pollution over each of the 38 provinces: NO2, SO2, CO, ozone, "
+            "formaldehyde and the aerosol index from Sentinel-5P, and surface PM2.5 "
+            "and PM10 from the CAMS model, averaged per province in Google Earth "
+            "Engine. The satellite figures are atmospheric columns, not ground-level "
+            "readings, and are not comparable with ISPU."
+        ),
+        tags=("environment", "air-quality", "pollution", "remote-sensing", "province"),
+    ),
+    DatasetMeta(
         slug="jakarta-catalogue",
         title="Jakarta Open Data catalogue",
         source="jakarta-opendata",
@@ -1342,6 +1356,19 @@ DATASETS: tuple[DatasetMeta, ...] = (
         ),
         tags=("news", "provenance", "evidence", "screenshots"),
     ),
+)
+
+# The Earth Engine products declare their own, beside the computation that
+# produces them: thirty entries that would otherwise be restated here.
+DATASETS += tuple(
+    DatasetMeta(
+        slug=product.slug,
+        title=product.title,
+        source=product.source_slug,
+        description=product.description,
+        tags=(*product.tags, "google-earth-engine"),
+    )
+    for product in GEE_PRODUCTS
 )
 
 _BY_SLUG = {dataset.slug: dataset for dataset in DATASETS}
