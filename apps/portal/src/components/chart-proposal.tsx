@@ -45,7 +45,7 @@ export function ChartProposalCard({
       };
 
   return (
-    <div className="mt-3 rounded-xl border bg-card p-4">
+    <div className="mt-3 rounded-xl bg-card p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-medium">
         <IconChartLine className="size-4 text-muted-foreground" />
         <span className="text-muted-foreground">{words.title}:</span>
