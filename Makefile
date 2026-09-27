@@ -427,6 +427,10 @@ test: test-go test-python ## Run every test suite
 test-go: ## Run Go tests
 	cd services/api && go test ./...
 
+.PHONY: test-lake
+test-lake: ## Check the API's rollup answers exactly what the observations do, against the local lake (~90 s)
+	cd services/api && LAKE_TESTS=1 go test ./internal/httpapi/ -run TestTheRollupAnswersAsTheObservationsDo -count=1 -v
+
 .PHONY: eval-assistant
 eval-assistant: ## Measure the assistant's regulation search against the local lake (needs `make regulations-index`)
 	cd services/api && go test ./internal/httpapi/ -run TestRegulationSearchAgainstTheLake -count=1 -v

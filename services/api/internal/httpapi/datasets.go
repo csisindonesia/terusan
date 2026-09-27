@@ -79,6 +79,7 @@ func (s *Server) datasetSelect(ctx context.Context) (string, error) {
 		catalogue = published + " d ON d.dataset_id = o.dataset_id"
 	}
 
+	agg := s.aggregatesOver(observations)
 	return fmt.Sprintf(`
 		SELECT o.dataset_id,
 		       any_value(d.slug),
@@ -91,15 +92,15 @@ func (s *Server) datasetSelect(ctx context.Context) (string, error) {
 		       any_value(s.license),
 		       any_value(s.schedule),
 		       list_sort(list(DISTINCT o.indicator_id)),
-		       count(*),
-		       min(o.period),
-		       max(o.period),
-		       CAST(max(o.processed_at) AS VARCHAR)
+		       %s,
+		       %s,
+		       %s,
+		       CAST(%s AS VARCHAR)
 		FROM %s o
 		LEFT JOIN %s
 		LEFT JOIN %s
 		WHERE o.dataset_id IS NOT NULL
-		GROUP BY o.dataset_id`, observations, sources, catalogue), nil
+		GROUP BY o.dataset_id`, agg.count, agg.first, agg.last, agg.processed, agg.from, sources, catalogue), nil
 }
 
 func (s *Server) handleDatasets(w http.ResponseWriter, r *http.Request) {

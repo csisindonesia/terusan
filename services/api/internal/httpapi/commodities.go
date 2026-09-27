@@ -116,10 +116,15 @@ func (s *Server) handleCommodities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Over the rollup where it is built: a commodity's summary is sums and
+	// distinct counts, and the rollup answers a search in milliseconds where
+	// the observations took half a minute.
+	agg := s.aggregatesOver(observations)
+
 	// A LEFT JOIN onto a registry that may not be published at all. An
 	// unresolved commodity is still a commodity, and an inner join here would
 	// empty the page in every warehouse that has no commodities.csv.
-	from := observations + " o"
+	from := agg.from + " o"
 	if s.warehouse.Exists(ctx, storage.LayerSilver, "commodities") {
 		registry, err := s.source(storage.LayerSilver, "commodities")
 		if err != nil {
@@ -186,17 +191,17 @@ func (s *Server) handleCommodities(w http.ResponseWriter, r *http.Request) {
 		       CASE WHEN len(list(DISTINCT o.unit)) > 0
 		            THEN list_sort(list(DISTINCT o.unit))
 		            ELSE [any_value(c.unit_default)] END,
-		       count(*) AS observations,
+		       %s AS observations,
 		       count(DISTINCT o.indicator_id),
 		       count(DISTINCT o.geo_id),
-		       min(o.period) AS period_start,
-		       max(o.period) AS period_end,
+		       %s AS period_start,
+		       %s AS period_end,
 		       list_sort(list(DISTINCT o.source_id)),
-		       strftime(max(o.processed_at), '%%Y-%%m-%%dT%%H:%%M:%%SZ')
+		       strftime(%s, '%%Y-%%m-%%dT%%H:%%M:%%SZ')
 		FROM %s%s
 		GROUP BY 1
 		ORDER BY %s
-		LIMIT ? OFFSET ?`, commodityName, from, where, order),
+		LIMIT ? OFFSET ?`, commodityName, agg.count, agg.first, agg.last, agg.processed, from, where, order),
 		append(args, limit, offset)...)
 	if err != nil {
 		internalError(w, s.log, "query commodities", err)

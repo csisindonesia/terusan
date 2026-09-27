@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/csis/terusan/services/api/internal/auth"
@@ -40,8 +41,10 @@ type Server struct {
 	registrations registrationLimiter
 	// The lake's summaries, held and refreshed in the process (summaries.go),
 	// and the routes that serve them, for the warm-up at start.
-	summaries     summaryStore
-	catalogue     catalogueStore
+	summaries summaryStore
+	catalogue catalogueStore
+	// Whether the rollup (rollup.go) is built and the summaries read it.
+	rollupReady   atomic.Bool
 	summaryRoutes map[string]http.HandlerFunc
 	log           *slog.Logger
 }
@@ -125,6 +128,8 @@ func (s *Server) Routes() http.Handler {
 	// The four that read every observation are also held in the process
 	// and refreshed behind the reader: see summaries.go.
 	mux.HandleFunc("GET /v1/indicators", s.summary("/v1/indicators", s.withCache(s.handleIndicators)))
+	// What the list can be filtered by, over every series.
+	mux.HandleFunc("GET /v1/indicators/facets", s.handleIndicatorFacets)
 	mux.HandleFunc("GET /v1/indicators/{id}", s.withCache(s.handleIndicator))
 	// What the series was read out of, which is the question a reader looking
 	// at a figure actually has.

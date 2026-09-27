@@ -34,6 +34,9 @@ type lakeCatalogue struct {
 	series      []Indicator
 	commodities []Commodity
 	at          time.Time
+	// The observations as they were when this was built; a pipeline run
+	// that has written since makes it stale however young it is.
+	signature string
 }
 
 type catalogueStore struct {
@@ -49,7 +52,8 @@ func (s *Server) lakeCatalogue(ctx context.Context) (*lakeCatalogue, error) {
 	store := &s.catalogue
 	store.mu.Lock()
 	if held := store.held; held != nil {
-		stale := time.Since(held.at) > catalogueFresh || held.at.Before(store.staleBefore)
+		stale := time.Since(held.at) > catalogueFresh || held.at.Before(store.staleBefore) ||
+			held.signature != s.observationsSignature()
 		if stale && !store.refreshing {
 			store.refreshing = true
 			go s.rebuildCatalogue()
@@ -114,9 +118,15 @@ func (s *Server) rebuildCatalogue() {
 func (s *Server) buildCatalogue(ctx context.Context) (*lakeCatalogue, error) {
 	built := &lakeCatalogue{
 		datasets: []Dataset{}, series: []Indicator{}, commodities: []Commodity{}, at: time.Now(),
+		signature: s.observationsSignature(),
 	}
 	if !s.warehouse.Exists(ctx, storage.LayerSilver, "observations") {
 		return built, nil
+	}
+	// One scan of the lake, into the rollup the three summaries then read
+	// in milliseconds. If it fails they read the observations, as before.
+	if err := s.buildRollup(ctx); err != nil {
+		s.log.Warn("rollup.build_failed", "error", err)
 	}
 	var wg sync.WaitGroup
 	var datasetsErr, seriesErr, commoditiesErr error

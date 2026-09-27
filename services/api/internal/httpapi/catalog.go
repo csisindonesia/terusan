@@ -80,12 +80,32 @@ func (s *Server) handleIndicator(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIndicators(w http.ResponseWriter, r *http.Request) {
+	query, asked, err := readIndicatorQuery(r)
+	if err != nil {
+		badRequest(w, "invalid parameter", err.Error())
+		return
+	}
+	limit, offset, err := pagination(r)
+	if err != nil {
+		badRequest(w, "invalid parameter", err.Error())
+		return
+	}
 	catalogue, err := s.lakeCatalogue(r.Context())
 	if err != nil {
 		internalError(w, s.log, "build catalogue", err)
 		return
 	}
-	writeData(w, catalogue.series, &Meta{Total: int64(len(catalogue.series)), Layer: "silver"})
+	if !asked {
+		// Every series, for the pages that summarise the whole catalogue.
+		writeData(w, catalogue.series, &Meta{Total: int64(len(catalogue.series)), Layer: "silver"})
+		return
+	}
+	matched := query.apply(catalogue.series)
+	page := matched[min(offset, len(matched)):min(offset+limit, len(matched))]
+	writeData(w, page, &Meta{
+		Total: int64(len(matched)), Limit: limit, Offset: offset,
+		HasMore: offset+len(page) < len(matched), Layer: "silver",
+	})
 }
 
 // indicatorRows summarises the series, narrowed by `where` against the
@@ -150,6 +170,17 @@ func (s *Server) indicatorRows(
 			") n ON n.indicator_id = o.indicator_id"
 	}
 
+	// Every series, unfiltered, is the catalogue's question and comes out
+	// of the rollup; a filtered one reads its own partitions.
+	//
+	// min() rather than any_value() for what a series should hold one of:
+	// 26 APBD series carry rows under two collections, and any_value named
+	// either, differently from one query to the next.
+	agg := aggregates{from: observations, count: "count(*)", first: "min(o.period)",
+		last: "max(o.period)", processed: "max(o.processed_at)"}
+	if where == "" && len(only) == 0 {
+		agg = s.aggregatesOver(observations)
+	}
 	rows, err := s.warehouse.DB().QueryContext(ctx, fmt.Sprintf(`
 		SELECT o.indicator_id,
 		       any_value(n.name),
@@ -158,21 +189,21 @@ func (s *Server) indicatorRows(
 		       any_value(n.description),
 		       any_value(n.publisher),
 		       any_value(n.release),
-		       any_value(o.temporal_resolution),
-		       any_value(o.unit),
-		       count(*),
+		       min(o.temporal_resolution),
+		       min(o.unit),
+		       %s,
 		       count(DISTINCT o.geo_id),
-		       min(o.period),
-		       max(o.period),
+		       %s,
+		       %s,
 		       list_sort(list(DISTINCT o.source_id)),
-		       strftime(max(o.processed_at), '%%Y-%%m-%%dT%%H:%%M:%%SZ'),
-		       any_value(o.dataset_id),
+		       strftime(%s, '%%Y-%%m-%%dT%%H:%%M:%%SZ'),
+		       min(o.dataset_id),
 		       any_value(n.tags)
 		FROM %s o
 		LEFT JOIN %s
 		%s
 		GROUP BY o.indicator_id
-		ORDER BY o.indicator_id`, observations, named, where), args...)
+		ORDER BY o.indicator_id`, agg.count, agg.first, agg.last, agg.processed, agg.from, named, where), args...)
 	if err != nil {
 		internalError(w, s.log, "query indicators", err)
 		return nil, err
@@ -368,13 +399,16 @@ func (s *Server) handleStorage(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			continue
 		}
+		counting := "SELECT count(*) FROM " + expression
+		if entry.dataset == "observations" && s.rolled() {
+			// The one count that opened every file, and the rollup holds it.
+			counting = "SELECT CAST(sum(n) AS BIGINT) FROM " + rollupTable
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			var rows int64
-			if err := s.warehouse.DB().QueryRowContext(
-				ctx, "SELECT count(*) FROM "+expression,
-			).Scan(&rows); err != nil {
+			if err := s.warehouse.DB().QueryRowContext(ctx, counting).Scan(&rows); err != nil {
 				s.log.Warn("storage.count_failed", "dataset", entry.dataset, "error", err)
 				return
 			}
