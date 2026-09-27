@@ -87,6 +87,10 @@ type chartSpec struct {
 	// key figures and the points marked on it (story.go).
 	Story *chartStory `json:"story,omitempty"`
 
+	// For an event chart, the holidays and the price read around them
+	// (assistant_events.go). Its periods are days from the holiday.
+	Event *eventWindow `json:"event,omitempty"`
+
 	// The question it was planned for, which may be an earlier one than the
 	// latest ("buatkan chartnya"): what the proposal explains each series by.
 	asked string
@@ -288,6 +292,20 @@ type analysisPlan struct {
 func (s *Server) analyse(
 	ctx context.Context, catalogue assistantCatalogue, question, language string, earlier analysisContext,
 ) *chartSpec {
+	// Prices around holidays are an event chart, not two series side by
+	// side. "buatkan chartnya" after such a question is one too.
+	keys := eventsAsked(question)
+	if len(keys) == 0 && len(earlier.questions) > 0 {
+		if named, _ := analysisCandidateSeries(catalogue, question); len(named) == 0 {
+			keys = eventsAsked(earlier.questions[0])
+			if len(keys) > 0 {
+				question = earlier.questions[0] + " — " + question
+			}
+		}
+	}
+	if len(keys) > 0 {
+		return s.analyseEvents(ctx, catalogue, question, keys, earlier)
+	}
 	candidates, groups := analysisCandidateSeries(catalogue, question)
 	if len(groups) == 0 {
 		var asked string
@@ -791,6 +809,10 @@ func (s *Server) seriesFigures(
 				strings.Contains(lower(m.commodity), term)) {
 				m.score += 4
 			}
+			// "Rice" over "Rice — low grade II" for the word rice.
+			if strings.EqualFold(lower(m.commodity), term) {
+				m.score++
+			}
 		}
 		if m.geo != nil && *m.geo == "IDN" {
 			m.score += 2
@@ -910,6 +932,9 @@ func correlation(a, b []*float64) (float64, int) {
 // chartPrompt is what the writing model is told about the chart the reader
 // sees above its reply: the only figures it may state.
 func chartPrompt(chart *chartSpec) string {
+	if chart.Kind == "event" && chart.Event != nil {
+		return eventChartPrompt(chart)
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "\n## Chart shown above your reply\nA chart has been drawn and is on the page above your "+
 		"reply: never write that a chart or its data is unavailable, missing or cannot be made. The reader sees a %s chart, %q, of %s figures from %s to %s.\n",
@@ -1092,7 +1117,13 @@ func withChartSources(sources []assistantSource, chart *chartSpec) []assistantSo
 	}
 	for _, series := range chart.Series {
 		if !listed["indicator:"+series.ID] {
-			sources = append(sources, assistantSource{Kind: "indicator", ID: series.ID, Label: series.Label})
+			label := series.Label
+			if chart.Event != nil {
+				// An event chart's lines are years of one series.
+				label = chart.Event.Label
+			}
+			sources = append(sources, assistantSource{Kind: "indicator", ID: series.ID, Label: label})
+			listed["indicator:"+series.ID] = true
 		}
 	}
 	return sources
@@ -1661,6 +1692,8 @@ type chartProposal struct {
 	From        string           `json:"from"`
 	To          string           `json:"to"`
 	Series      []proposedSeries `json:"series"`
+	// For an event chart, the holidays it reads the series around.
+	Events []proposedEvent `json:"events,omitempty"`
 	// What the portal sends as the reader's message when they confirm, in
 	// their language.
 	ConfirmText string `json:"confirm_text"`
@@ -1679,6 +1712,14 @@ type proposedSeries struct {
 	To   string `json:"to"`
 }
 
+// proposedEvent is one holiday an event chart would be read around.
+type proposedEvent struct {
+	Key   string `json:"key"`
+	Name  string `json:"name"`
+	Years string `json:"years"`
+	Count int    `json:"count"`
+}
+
 // chartConfirm is the reader's answer to a proposal: the series they kept.
 type chartConfirm struct {
 	Series  []string          `json:"series"`
@@ -1687,6 +1728,8 @@ type chartConfirm struct {
 	Kind    string            `json:"kind"`
 	Title   string            `json:"title,omitempty"`
 	Reason  string            `json:"reason,omitempty"`
+	// For an event chart, the holidays to read the series around.
+	Events []string `json:"events,omitempty"`
 }
 
 // proposalFrom is the chart, drawn but not shown, as a proposal.
@@ -1704,6 +1747,32 @@ func proposalFrom(chart *chartSpec, catalogue assistantCatalogue, language strin
 	}
 	if language == "id" {
 		p.ConfirmText = "Ya, buat grafiknya."
+	}
+	if w := chart.Event; w != nil {
+		// One series, read around each holiday: proposed as that series and
+		// the holidays, not as the lines it will be drawn as.
+		p.From, p.To = chart.Periods[0], chart.Periods[len(chart.Periods)-1]
+		proposed := proposedSeries{
+			ID: w.Indicator, Label: w.Label, Unit: w.Unit, Member: w.Member, Source: chart.Series[0].Source,
+			For: withoutEventWords(sideWordsShown(side{words: questionWords(chart.asked)})),
+		}
+		first, last := "", ""
+		for _, o := range w.Occurrences {
+			if first == "" || o.Date < first {
+				first = o.Date
+			}
+			if o.Date > last {
+				last = o.Date
+			}
+		}
+		proposed.From, proposed.To = first, last
+		p.Series = []proposedSeries{proposed}
+		for _, key := range w.Keys {
+			if years, count := eventYears(w, key); count > 0 {
+				p.Events = append(p.Events, proposedEvent{Key: key, Name: eventNameOf(w, key), Years: years, Count: count})
+			}
+		}
+		return p
 	}
 	for _, series := range chart.Series {
 		first, last := -1, -1
@@ -1751,16 +1820,18 @@ var kindNames = map[string]map[string]string{
 	"id": {
 		"line": "garis", "dual_axis": "garis dua sumbu", "scatter": "sebar (scatter)", "bar": "batang",
 		"indexed": "garis terindeks (periode awal = 100)",
+		"event":   "jendela hari raya (sebulan sebelum = 100)",
 	},
 	"en": {
 		"line": "line", "dual_axis": "two-axis line", "scatter": "scatter", "bar": "bar",
 		"indexed": "indexed line (first period = 100)",
+		"event":   "holiday window (a month before = 100)",
 	},
 }
 
 var granularityNames = map[string]map[string]string{
-	"id": {"month": "bulanan", "quarter": "kuartalan", "year": "tahunan"},
-	"en": {"month": "monthly", "quarter": "quarterly", "year": "annual"},
+	"id": {"day": "harian", "month": "bulanan", "quarter": "kuartalan", "year": "tahunan"},
+	"en": {"day": "daily", "month": "monthly", "quarter": "quarterly", "year": "annual"},
 }
 
 // proposalText is the proposal as the reply the reader reads.
@@ -1806,6 +1877,15 @@ func proposalText(p chartProposal, language string) string {
 		}
 		b.WriteString("\n")
 	}
+	for _, e := range p.Events {
+		if id {
+			fmt.Fprintf(&b, "- Hari raya: **%s** — %d kali, %s; tanggal dari SKB 3 Menteri (JDIH KemenPANRB)\n",
+				e.Name, e.Count, e.Years)
+		} else {
+			fmt.Fprintf(&b, "- Holiday: **%s** — %d times, %s; dates from the SKB 3 Menteri (JDIH KemenPANRB)\n",
+				e.Name, e.Count, e.Years)
+		}
+	}
 	kind := kindNames[language][p.Kind]
 	if id {
 		fmt.Fprintf(&b, "\nJenis grafik: **%s**", kind)
@@ -1847,6 +1927,9 @@ func (s *Server) confirmedChart(
 	}
 	if len(chosen) == 0 {
 		return nil
+	}
+	if c.Kind == "event" {
+		return s.confirmedEventChart(ctx, catalogue, chosen[0], c, earlier)
 	}
 	members := map[string]string{}
 	for id, member := range c.Members {
@@ -1891,6 +1974,12 @@ func isNumber(word string) bool {
 func kindReason(kind string, series int, language string) string {
 	id := language == "id"
 	switch {
+	case kind == "event" && id:
+		return "harga harian dari sebulan sebelum hingga dua minggu sesudah hari raya, disamakan ke 100 " +
+			"pada pekan pertama dan dirata-rata antar tahun"
+	case kind == "event":
+		return "daily prices from a month before to two weeks after the holiday, set to 100 on the first " +
+			"week and averaged across the years"
 	case kind == "line" && series == 1 && id:
 		return "satu seri dari waktu ke waktu"
 	case kind == "line" && series == 1:

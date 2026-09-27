@@ -778,7 +778,56 @@ uv --project pipelines run terusan warehouse extract statistics tradingeconomics
 uv --project pipelines run terusan sources run yahoo-exchange-rates
 uv --project pipelines run terusan warehouse extract statistics yahoo-exchange-rates
 ./scripts/normalize-fx.sh
+
+# National holidays and cuti bersama — every SKB 3 Menteri since 2019, by OCR.
+# Needs `tesseract` with the `ind` model (brew install tesseract tesseract-lang)
+uv --project pipelines run terusan sources run menpan-hari-libur
+uv --project pipelines run terusan warehouse extract regulations menpan-hari-libur
+uv --project pipelines run terusan silver events   # the calendar the API serves
 ```
+
+**National holidays** are read off the joint decree of the Ministers of
+Religious Affairs, Manpower and State Apparatus that fixes each year's
+national holidays and cuti bersama. JDIH KemenPANRB holds all of them from 2019
+(the 2020 calendar) onwards, amendments included — 2020's was changed four
+times. The PDFs are scans, so
+[`extract/menpan.py`](../pipelines/src/terusan_pipelines/extract/menpan.py)
+finds the annex's ruled tables, reads each cell with Tesseract, and keeps a row
+only when its dates fall on the weekdays printed beside them; a row that fails
+is logged and counted in `rows_refused`, never guessed at. An amendment
+restates the whole annex, so a year's calendar is the rows of the decree with
+the latest `decree_enacted` for that `year`. Election-day holidays (14 February
+2024, the 2020 and 2024 pilkada) are set by presidential decree, not by this
+one, and are not here.
+
+`silver events` turns those rows into the **event calendar** that
+`GET /v1/events` serves (`?key=idul_fitri,ramadan&from=2024-01-01&to=2024-12-31`,
+also `kind`, `religion`, `category`). Each year's latest decree is its
+calendar; consecutive days under one holiday are one event, so Lebaran's two
+days of national holiday are one row and the cuti bersama around them another.
+Names are resolved to keys in
+[`reference/events/holidays.csv`](../reference/events/holidays.csv) —
+`idul_fitri` is one key from 2020 to 2027 however the decree spelled it — and a
+day whose name OCR could not read takes its key from another version of that
+year's calendar, or from the holiday its cuti bersama bridges. Ramadan is
+derived as the thirty days before Idul Fitri and marked `approximate`: the
+decree leaves 1 Ramadan to the Minister of Religious Affairs.
+
+The assistant reads it too. A question naming a holiday and a price — "harga
+beras menjelang lebaran", "analisis harga beras dengan hari besar keagamaan" —
+is answered with an **event chart**
+([`assistant_events.go`](../services/api/internal/httpapi/assistant_events.go)):
+the daily series carrying the commodity asked about, from H-30 to H+14 around
+each holiday, set to 100 on the window's first week and averaged across the
+years. National holidays and cuti bersama are left out of the prices, since few
+markets report on them — PIHPS's national rice price jumped 15% on Lebaran's
+cuti bersama in 2022 and fell back the next working day. A question about the
+dates themselves ("kapan cuti bersama lebaran 2026?") is handed the calendar.
+
+The table is generic on purpose. `category` is `holiday` today; elections,
+policy changes and disasters belong in it too, as other categories written by
+their own builders in
+[`normalize/events.py`](../pipelines/src/terusan_pipelines/normalize/events.py).
 
 **SEKI** publishes formatted sheets, not datasets: row 41 of table 8.1 is the
 composite CPI and nothing in the file says so. Which row holds which series is

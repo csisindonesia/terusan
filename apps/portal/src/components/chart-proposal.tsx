@@ -91,6 +91,16 @@ export function ChartProposalCard({
           );
         })}
       </ul>
+      {proposal.events?.length ? (
+        // The holidays the series would be read around: not a choice here,
+        // but what the chart is of as much as the series is.
+        <p className="mt-3 text-xs text-muted-foreground">
+          {id ? "Hari raya: " : "Holidays: "}
+          {proposal.events
+            .map((e) => `${e.name} (${e.count}×, ${e.years})`)
+            .join(" · ")}
+        </p>
+      ) : null}
       <div className="mt-4 flex items-center justify-between gap-3">
         <span className="text-xs text-muted-foreground">
           {keep.length}/{proposal.series.length} {words.chosen}

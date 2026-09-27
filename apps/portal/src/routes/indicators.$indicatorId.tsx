@@ -12,6 +12,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 
+import { AssistantChart } from "~/components/assistant-chart";
 import { ClampedText } from "~/components/clamped-text";
 import { CollectButton } from "~/components/collect-button";
 import { DataTable, StackedCell } from "~/components/data-table";
@@ -28,14 +29,12 @@ import { TableToolbar } from "~/components/table-toolbar";
 import { BELOW_STICKY_HEADER, StickyHeader } from "~/components/sticky-header";
 import {
   MAX_SERIES,
-  TimeSeriesChart,
   type Point,
   type Series as Line,
 } from "~/components/time-series-chart";
 import { TagList } from "~/components/tag-list";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent } from "~/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { Skeleton } from "~/components/ui/skeleton";
 import { summarise, gapsByStatus, type Figure } from "~/lib/analytics";
@@ -338,7 +337,9 @@ function columnsFor(dimension: Dimension): ColumnDef<Observation>[] {
  * everything after its first gap.
  */
 function periodsOf(series: SeriesLine[]): string[] {
-  return [...new Set(series.flatMap((line) => line.points.map((p) => p.period)))].sort();
+  return [
+    ...new Set(series.flatMap((line) => line.points.map((p) => p.period))),
+  ].sort();
 }
 
 /**
@@ -376,7 +377,11 @@ function linesFrom(
         if (!point || point.value === null) {
           return { label: period, value: null, status: statusLabel("missing") };
         }
-        return { label: period, value: Number(point.value), status: pointStatus(point) };
+        return {
+          label: period,
+          value: Number(point.value),
+          status: pointStatus(point),
+        };
       }),
     };
   });
@@ -384,7 +389,9 @@ function linesFrom(
 
 /** How a chart says what its points are, where they are not figures as published. */
 function granularityNote(granularity: string, rows: number): string | null {
-  const bucket = { month: "Monthly", quarter: "Quarterly", year: "Annual" }[granularity];
+  const bucket = { month: "Monthly", quarter: "Quarterly", year: "Annual" }[
+    granularity
+  ];
   if (!bucket) return null;
   return `${bucket} means of ${formatCount(rows)} figures — the series is longer than a chart can draw point by point. Narrow to a shorter span for the figures as published.`;
 }
@@ -1116,57 +1123,67 @@ function IndicatorDetail() {
                 </div>
               </Section>
 
-              <Section
-                title="Over time"
-                description={
-                  <>
-                    One line per series, over the same periods as the table below. The
-                    line breaks at a missing figure rather than joining across it — a
-                    line drawn through a gap asserts a value nobody recorded.
-                  </>
-                }
-              >
-                {chart.isLoading ? (
-                  <Skeleton className="h-[300px] w-full rounded-lg" />
-                ) : (
-                  <TimeSeriesChart
-                    series={lines}
-                    unit={meta?.unit}
-                    // The legend mutes a line, and the table follows: it is a
-                    // filter that happens to be drawn as a key.
-                    onToggle={
-                      dimension === "none"
-                        ? undefined
-                        : (name) =>
-                            navigate({
-                              search: (prev) => ({
-                                ...prev,
-                                hide: toggle(hidden, name),
-                                page: 0,
-                              }),
-                            })
-                    }
-                    caption={
-                      [
-                        // Said plainly rather than left to be inferred from a
-                        // legend that stops at eight.
-                        lines.length < memberCount
-                          ? `Showing ${formatCount(lines.length)} of ${formatCount(memberCount)} ${dimensionLabel(dimension).toLowerCase()} series — a ninth line would have to repeat a colour. Narrow with the ${dimensionLabel(dimension).toLowerCase()} filter below.`
-                          : null,
-                        single && gaps.length
-                          ? `The line breaks where a figure is absent — joining across a gap would assert a value nobody recorded. ${formatCount(stats.missing)} of ${formatCount(stats.count)} periods have none.`
-                          : null,
-                        // A mean is not a published figure, and a chart that
-                        // quietly drew one would be a chart of something the
-                        // warehouse does not hold.
-                        granularityNote(granularity, charted),
-                      ]
-                        .filter(Boolean)
-                        .join(" ") || undefined
-                    }
-                  />
-                )}
-              </Section>
+              {/* Drawn as the assistant draws a chart — its own card with the
+                  title, span, source and logo — so a figure taken from here
+                  and one taken from a reply look like the same publication. */}
+              {chart.isLoading ? (
+                <Skeleton className="h-[460px] w-full rounded-xl" />
+              ) : (
+                <AssistantChart
+                  chart={{
+                    kind: "line",
+                    title: heading,
+                    reason:
+                      "One line per series, over the same periods as the table. The line breaks at a missing figure rather than joining across it — a line drawn through a gap asserts a value nobody recorded.",
+                    granularity: "month",
+                    periods,
+                    series: lines.map((line) => ({
+                      id: indicatorId,
+                      label: line.name,
+                      unit: meta?.unit,
+                      source: meta?.publisher,
+                      values: line.points.map((point) => point.value),
+                    })),
+                  }}
+                  hidden={lines.filter((line) => line.hidden).map((line) => line.name)}
+                  // The legend mutes a line, and the table follows: it is a
+                  // filter that happens to be drawn as a key.
+                  onToggle={
+                    dimension === "none"
+                      ? undefined
+                      : (name) => {
+                          const member =
+                            drawn?.series.find(
+                              (line) => (line.member || heading) === name,
+                            )?.member ?? name;
+                          void navigate({
+                            search: (prev) => ({
+                              ...prev,
+                              hide: toggle(hidden, member),
+                              page: 0,
+                            }),
+                          });
+                        }
+                  }
+                  linkBack={false}
+                  note={[
+                    // Said plainly rather than left to be inferred from a
+                    // legend that stops at eight.
+                    lines.length < memberCount
+                      ? `Showing ${formatCount(lines.length)} of ${formatCount(memberCount)} ${dimensionLabel(dimension).toLowerCase()} series — a ninth line would have to repeat a colour. Narrow with the ${dimensionLabel(dimension).toLowerCase()} filter on the data tab.`
+                      : null,
+                    single && gaps.length
+                      ? `${formatCount(stats.missing)} of ${formatCount(stats.count)} periods have no figure.`
+                      : null,
+                    // A mean is not a published figure, and a chart that
+                    // quietly drew one would be a chart of something the
+                    // warehouse does not hold.
+                    granularityNote(granularity, charted) ?? "Figures as published.",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                />
+              )}
             </div>
           </div>
         </TabsContent>
@@ -1176,12 +1193,11 @@ function IndicatorDetail() {
             title="The figures"
             description={
               <>
-                The figures as published, narrowed by the same filters as the chart
-                and paged in the warehouse. Each keeps the document it was published
-                in, so any figure here can be checked against its source. The export
-                fetches up to {formatCount(EXPORT_LIMIT)} rows in the order shown —
-                not just the page on screen, and not the whole of a series longer than
-                that.
+                The figures as published, narrowed by the same filters as the chart and
+                paged in the warehouse. Each keeps the document it was published in, so
+                any figure here can be checked against its source. The export fetches up
+                to {formatCount(EXPORT_LIMIT)} rows in the order shown — not just the
+                page on screen, and not the whole of a series longer than that.
               </>
             }
             action={
@@ -1548,29 +1564,23 @@ function IndicatorDetail() {
       </Tabs>
 
       {sample?.source_url ? (
-        <Card>
-          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4 text-sm">
-            <span className="text-muted-foreground">
-              Every figure records where it was published, so a number lifted from here
-              can be checked against the original.
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              nativeButton={false}
-              render={
-                <a
-                  href={sample.source_url}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                />
-              }
-            >
-              <IconExternalLink className="size-4" />
-              Open the source
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/60 px-4 py-3 text-sm">
+          <span className="text-muted-foreground">
+            Every figure records where it was published, so a number lifted from here
+            can be checked against the original.
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            nativeButton={false}
+            render={
+              <a href={sample.source_url} target="_blank" rel="noreferrer noopener" />
+            }
+          >
+            <IconExternalLink className="size-4" />
+            Open the source
+          </Button>
+        </div>
       ) : null}
     </div>
   );
@@ -1671,25 +1681,25 @@ function Stat({
   const shown = overlong ? formatCompact(raw as string) : value;
 
   return (
-    <Card>
-      <CardContent className="space-y-1 py-4">
-        <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        {loading ? (
-          <Skeleton className="h-7 w-24" />
-        ) : (
-          // The exact figure stays available rather than being lost to the
-          // rounding: this is a warehouse, and a reader who wants the digits
-          // wants all of them.
-          <p
-            className="font-heading text-xl font-semibold tabular-nums"
-            title={overlong ? value : undefined}
-          >
-            {shown ?? "—"}
-          </p>
-        )}
-        {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-      </CardContent>
-    </Card>
+    // A wash rather than a ring, as the assistant's chart cards draw theirs:
+    // six bordered boxes in a grid read as a form to fill in.
+    <div className="space-y-1 rounded-lg bg-muted/60 px-4 py-3">
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      {loading ? (
+        <Skeleton className="h-7 w-24" />
+      ) : (
+        // The exact figure stays available rather than being lost to the
+        // rounding: this is a warehouse, and a reader who wants the digits
+        // wants all of them.
+        <p
+          className="font-heading text-xl font-semibold tabular-nums"
+          title={overlong ? value : undefined}
+        >
+          {shown ?? "—"}
+        </p>
+      )}
+      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+    </div>
   );
 }
 

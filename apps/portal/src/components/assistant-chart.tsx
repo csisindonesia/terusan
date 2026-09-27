@@ -53,9 +53,21 @@ import { GRID, SERIES_DARK_SLOTS, SERIES_LIGHT_SLOTS, seriesColor } from "~/lib/
 export function AssistantChart({
   chart,
   className,
+  note,
+  hidden = [],
+  onToggle,
+  linkBack = true,
 }: {
   chart: ChartSpec;
   className?: string;
+  /** In place of the note worked out from the chart, where the caller knows better. */
+  note?: string;
+  /** Lines muted from the legend, by name. Still listed, so they can come back. */
+  hidden?: string[];
+  /** Given when the legend is a control rather than a key. */
+  onToggle?: (name: string) => void;
+  /** Off on the series' own page, where "learn more" would link to itself. */
+  linkBack?: boolean;
 }) {
   const cardRef = useRef<HTMLElement>(null);
   const last = chart.periods.length - 1;
@@ -238,7 +250,12 @@ export function AssistantChart({
 
       {view === "chart" ? (
         <div className="space-y-2">
-          <ChartBody chart={shown} unit={sharedUnit} />
+          <ChartBody
+            chart={shown}
+            unit={sharedUnit}
+            hidden={hidden}
+            onToggle={onToggle}
+          />
           {/* The time series names its own lines. */}
           {shown.series.length > 1 &&
           (shown.kind === "dual_axis" || shown.kind === "bar") ? (
@@ -307,11 +324,12 @@ export function AssistantChart({
         <div className="min-w-0 space-y-1 text-muted-foreground">
           <p>
             <span className="font-semibold text-foreground">Data source:</span>{" "}
-            {sources.length ? sources.join("; ") : "Terusan catalogue"} –{" "}
-            {chart.series.length === 1 ? (
+            {sources.length ? sources.join("; ") : "Terusan catalogue"}
+            {linkBack ? " – " : null}
+            {!linkBack ? null : chart.series.length === 1 || chart.event ? (
               <Link
                 to="/indicators/$indicatorId"
-                params={{ indicatorId: chart.series[0]!.id }}
+                params={{ indicatorId: chart.event?.indicator ?? chart.series[0]!.id }}
                 className="text-foreground underline underline-offset-2"
               >
                 Learn more about this data
@@ -328,7 +346,7 @@ export function AssistantChart({
           </p>
           <p className="text-xs">
             <span className="font-semibold text-foreground">Note:</span>{" "}
-            {noteFor(chart, shown)}
+            {note ?? noteFor(chart, shown)}
           </p>
           <p className="text-xs">
             {page ? `${hostAndPath(page)} | ` : ""}Terusan · CSIS Indonesia
@@ -421,9 +439,24 @@ function pearson(a: (number | null)[], b: (number | null)[]): [number, number] {
 
 /** What the reader should know before reading the figures off. */
 function noteFor(chart: ChartSpec, shown: ChartSpec): string {
-  const frequency = { month: "Monthly", quarter: "Quarterly", year: "Annual" }[
-    chart.granularity
-  ];
+  if (chart.kind === "event" && chart.event) {
+    const e = chart.event;
+    const drawn = e.member ? ` Drawn for ${e.member}.` : "";
+    return (
+      `Daily prices from ${e.before} days before each holiday (H-${e.before}) to ${e.after} after, ` +
+      `each window set to 100 on the average of its first ${e.baseline_days} days, then averaged ` +
+      `across the years. National holidays and cuti bersama are left out — few markets report on ` +
+      `them — and the last market day's price stands for them.${drawn} Holiday dates: SKB 3 Menteri ` +
+      `(JDIH KemenPANRB), 2020 onwards; Ramadan's are derived and may be a day off. It does not ` +
+      `separate the holiday from harvests, policy or imports in the same weeks.`
+    );
+  }
+  const frequency = {
+    day: "Daily",
+    month: "Monthly",
+    quarter: "Quarterly",
+    year: "Annual",
+  }[chart.granularity];
   const parts = [
     `${frequency} figures; where a source publishes more often, the average of each period.`,
   ];
@@ -467,7 +500,7 @@ function Legend({ chart }: { chart: ChartSpec }) {
   return (
     <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
       {chart.series.map((series, slot) => (
-        <li key={series.id} className="flex min-w-0 items-center gap-1.5">
+        <li key={`${series.id}-${slot}`} className="flex min-w-0 items-center gap-1.5">
           <span
             aria-hidden
             className="h-0.5 w-4 shrink-0 rounded-full"
@@ -495,9 +528,12 @@ function FiguresTable({ chart }: { chart: ChartSpec }) {
         <thead className="sticky top-0 bg-muted text-left text-xs text-muted-foreground">
           <tr>
             <th className="px-3 py-2 font-medium">Period</th>
-            {chart.series.map((series) => (
-              <th key={series.id} className="px-3 py-2 text-right font-medium">
-                {seriesName(series)}
+            {chart.series.map((series, slot) => (
+              <th
+                key={`${series.id}-${slot}`}
+                className="px-3 py-2 text-right font-medium"
+              >
+                {lineName(chart, series)}
                 {series.unit ? ` (${series.unit})` : ""}
               </th>
             ))}
@@ -507,10 +543,10 @@ function FiguresTable({ chart }: { chart: ChartSpec }) {
           {chart.periods.map((period, at) => (
             <tr key={period} className="border-t">
               <td className="px-3 py-1.5">{period}</td>
-              {chart.series.map((series) => {
+              {chart.series.map((series, slot) => {
                 const value = series.values[at];
                 return (
-                  <td key={series.id} className="px-3 py-1.5 text-right">
+                  <td key={`${series.id}-${slot}`} className="px-3 py-1.5 text-right">
                     {value == null ? "—" : formatDecimal(String(round(value)))}
                   </td>
                 );
@@ -523,13 +559,32 @@ function FiguresTable({ chart }: { chart: ChartSpec }) {
   );
 }
 
+/**
+ * A line as the chart names it. An event chart's lines are one series read
+ * around each holiday, so they are named for the holiday ("Idul Fitri 2024"),
+ * not for the series and its member six times over.
+ */
+function lineName(chart: ChartSpec, series: ChartSpec["series"][number]): string {
+  return chart.kind === "event" ? series.label : seriesName(series);
+}
+
 function seriesName(series: ChartSpec["series"][number]): string {
   return series.member && series.member !== "Indonesia"
     ? `${series.label} — ${series.member}`
     : series.label;
 }
 
-function ChartBody({ chart, unit }: { chart: ChartSpec; unit?: string }) {
+function ChartBody({
+  chart,
+  unit,
+  hidden,
+  onToggle,
+}: {
+  chart: ChartSpec;
+  unit?: string;
+  hidden?: string[];
+  onToggle?: (name: string) => void;
+}) {
   switch (chart.kind) {
     case "dual_axis":
       if (chart.series.length === 2) return <DualAxisChart chart={chart} />;
@@ -539,6 +594,19 @@ function ChartBody({ chart, unit }: { chart: ChartSpec; unit?: string }) {
       break;
     case "indexed":
       return <IndexedChart chart={chart} />;
+    case "event":
+      return (
+        <TimeSeriesChart
+          series={toSeries(chart)}
+          unit={
+            chart.story?.language === "id"
+              ? "(sebulan sebelum hari raya = 100)"
+              : "(a month before the holiday = 100)"
+          }
+          annotations={chart.story?.annotations}
+          {...LOOK}
+        />
+      );
     case "bar": {
       const series = chart.series[0]!;
       const columns = chart.periods
@@ -564,9 +632,13 @@ function ChartBody({ chart, unit }: { chart: ChartSpec; unit?: string }) {
   }
   return (
     <TimeSeriesChart
-      series={toSeries(chart)}
+      series={toSeries(chart).map((line) => ({
+        ...line,
+        hidden: hidden?.includes(line.name),
+      }))}
       unit={unit}
       annotations={chart.story?.annotations}
+      onToggle={onToggle}
       {...LOOK}
     />
   );
@@ -581,7 +653,7 @@ function toSeries(
   values = chart.series.map((s) => s.values),
 ): Series[] {
   return chart.series.map((series, index) => ({
-    name: seriesName(series),
+    name: lineName(chart, series),
     points: chart.periods.map((label, at) => ({
       label,
       value: values[index]![at] ?? null,
@@ -1108,7 +1180,10 @@ function StoryFigures({ chart, story }: { chart: ChartSpec; story: ChartStory })
         if (!series) return null;
         const flat = Math.abs(figure.change) < 0.05;
         return (
-          <div key={series.id} className="min-w-0 rounded-lg bg-muted/60 px-3 py-2">
+          <div
+            key={`${series.id}-${figure.series}`}
+            className="min-w-0 rounded-lg bg-muted/60 px-3 py-2"
+          >
             <dt className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
               {chart.series.length > 1 ? (
                 <span

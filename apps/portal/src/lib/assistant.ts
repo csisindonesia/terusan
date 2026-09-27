@@ -24,14 +24,18 @@ export type ChatRole = "user" | "assistant";
  * A chart the assistant drew beside a reply: the series it chose, read by the
  * server at one granularity and lined up period by period.
  */
-export type ChartKind = "line" | "dual_axis" | "indexed" | "scatter" | "bar";
+export type ChartKind = "line" | "dual_axis" | "indexed" | "scatter" | "bar" | "event";
 
 export type ChartSpec = {
   kind: ChartKind;
   title: string;
   /** Why this kind of chart, in the reader's language. */
   reason?: string;
-  granularity: "month" | "quarter" | "year";
+  granularity: "day" | "month" | "quarter" | "year";
+  /**
+   * The chart's periods: dates, or for an event chart days from the holiday
+   * ("H-30" … "H" … "H+14").
+   */
   periods: string[];
   series: {
     id: string;
@@ -55,6 +59,33 @@ export type ChartSpec = {
    * marking. Absent on charts kept from before it was sent.
    */
   story?: ChartStory;
+  /** For an event chart, the holidays and the series read around them. */
+  event?: ChartEvent;
+};
+
+/**
+ * What an event chart was computed from: one daily series, read from a month
+ * before each holiday to two weeks after, as an index on the window's first
+ * week.
+ */
+export type ChartEvent = {
+  indicator: string;
+  label: string;
+  unit?: string;
+  member?: string;
+  keys: string[];
+  before: number;
+  after: number;
+  baseline_days: number;
+  occurrences: {
+    key: string;
+    name: string;
+    year: number;
+    date: string;
+    at_day?: number;
+    after?: number;
+    baseline_price: number;
+  }[];
 };
 
 export type ChartStory = {
@@ -79,7 +110,8 @@ export type ChartAnnotation = {
   /** Index into the chart's series, and into its periods. */
   series: number;
   index: number;
-  kind: "peak" | "low" | "jump" | "drop";
+  /** `event` marks the holiday itself on an event chart. */
+  kind: "peak" | "low" | "jump" | "drop" | "event";
   label: string;
 };
 
@@ -108,6 +140,8 @@ export type ChartProposal = {
     from: string;
     to: string;
   }[];
+  /** For an event chart, the holidays it would read the series around. */
+  events?: { key: string; name: string; years: string; count: number }[];
   /** The reader's message when they confirm, in their language. */
   confirm_text: string;
 };
@@ -120,6 +154,8 @@ export type ChartConfirm = {
   kind: ChartKind;
   title?: string;
   reason?: string;
+  /** For an event chart, the holidays to read the series around. */
+  events?: string[];
 };
 
 export type ChatMessage = {
@@ -582,5 +618,6 @@ export function confirmFor(proposal: ChartProposal, keep: string[]): ChartConfir
     // names the chart from what is left.
     title: kept.length === proposal.series.length ? proposal.title : undefined,
     reason: proposal.reason,
+    events: proposal.events?.map((e) => e.key),
   };
 }

@@ -65,6 +65,9 @@ const maxAnnotations = 4
 
 // tellStory works out the chart's headline, key figures and annotations.
 func tellStory(chart *chartSpec, language string) *chartStory {
+	if chart.Kind == "event" {
+		return tellEventStory(chart, language)
+	}
 	id := language == "id"
 	story := &chartStory{Language: pick(id, "id", "en")}
 	type moved struct {
@@ -286,7 +289,10 @@ func changeWords(f storyFigure, id bool) string {
 
 func signed(f storyFigure, id bool) string {
 	sign := "+"
-	if f.Change < 0 {
+	switch {
+	case math.Abs(f.Change) < 0.05:
+		sign = "" // rounds to zero: "−0,0%" reads as a fall
+	case f.Change < 0:
 		sign = "−"
 	}
 	if f.ChangeUnit == "points" {

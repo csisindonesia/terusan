@@ -248,7 +248,8 @@ func (s *Server) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 		route.Language = "id"
 	}
 	prompt, sources := assistantPrompt(catalogue, found, question)
-	analysisTurn := body.Confirm != nil || wantsAnalysis(question.latest)
+	analysisTurn := body.Confirm != nil || wantsAnalysis(question.latest) ||
+		asksAboutPricesAroundEvents(question.latest)
 	switch {
 	case body.Confirm != nil:
 		// Confirmed: drawn now, and described by the model below.
@@ -291,6 +292,13 @@ func (s *Server) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 				// router's pin the reply follows it rather than the reader.
 				prompt += routing{Source: "jev", Language: route.Language}.replyLanguage()
 			}
+		}
+	}
+	if !analysisTurn {
+		// "Kapan cuti bersama lebaran 2026?": the decreed dates, which the
+		// reply may state.
+		if keys := eventsAsked(question.latest); len(keys) > 0 {
+			prompt += s.eventCalendarPrompt(r.Context(), keys)
 		}
 	}
 	prompt += route.replyLanguage()

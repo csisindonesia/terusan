@@ -312,6 +312,8 @@ func monthsBetween(first, last time.Time) int64 {
 // `2026` — so a point reads the way a period does everywhere else.
 func bucketExpr(granularity string) string {
 	switch granularity {
+	case "day":
+		return "strftime(o.period_start, '%Y-%m-%d')"
 	case "month":
 		return "strftime(o.period_start, '%Y-%m')"
 	case "quarter":
