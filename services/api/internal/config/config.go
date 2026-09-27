@@ -22,6 +22,12 @@ type Config struct {
 
 	DuckDBMemoryLimit string
 	DuckDBThreads     int
+	// How many queries run against the lake at once. Past it they queue:
+	// every one shares the same memory limit and threads, and ten full scans
+	// side by side each took four times as long as one alone.
+	DuckDBMaxConnections int
+	// How long a query against the lake may run before it is stopped.
+	QueryTimeout time.Duration
 
 	// Where to cache rendered responses. Empty disables caching entirely and
 	// the API serves every request from Parquet, which is correct and slower
@@ -162,6 +168,17 @@ func Load() (*Config, error) {
 	}
 	// Seconds rather than a duration string: this is set by whoever runs the
 	// deployment, and "60" is harder to get wrong than "60s" or "1m".
+	maxConnections, err := intEnv("DUCKDB_MAX_CONNECTIONS", 8)
+	if err != nil {
+		return nil, err
+	}
+	queryTimeout, err := intEnv("QUERY_TIMEOUT_SECONDS", 90)
+	if err != nil {
+		return nil, err
+	}
+	if maxConnections < 1 || queryTimeout < 1 {
+		return nil, fmt.Errorf("DUCKDB_MAX_CONNECTIONS and QUERY_TIMEOUT_SECONDS must be at least 1")
+	}
 	cacheTTL, err := intEnv("CACHE_TTL_SECONDS", 60)
 	if err != nil {
 		return nil, err
@@ -189,14 +206,16 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		Host:              envOr("API_HOST", "127.0.0.1"),
-		Port:              port,
-		Storage:           storageCfg,
-		Database:          os.Getenv("DATABASE_URL"),
-		DuckDBMemoryLimit: envOr("DUCKDB_MEMORY_LIMIT", "4GB"),
-		DuckDBThreads:     threads,
-		RedisURL:          os.Getenv("REDIS_URL"),
-		CacheTTL:          time.Duration(cacheTTL) * time.Second,
+		Host:                 envOr("API_HOST", "127.0.0.1"),
+		Port:                 port,
+		Storage:              storageCfg,
+		Database:             os.Getenv("DATABASE_URL"),
+		DuckDBMemoryLimit:    envOr("DUCKDB_MEMORY_LIMIT", "4GB"),
+		DuckDBThreads:        threads,
+		DuckDBMaxConnections: maxConnections,
+		QueryTimeout:         time.Duration(queryTimeout) * time.Second,
+		RedisURL:             os.Getenv("REDIS_URL"),
+		CacheTTL:             time.Duration(cacheTTL) * time.Second,
 		CORSOrigins: strings.Split(
 			envOr("API_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"), ",",
 		),

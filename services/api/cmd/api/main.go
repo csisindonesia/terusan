@@ -38,7 +38,7 @@ func run(log *slog.Logger) error {
 	}
 
 	resolver := storage.NewResolver(cfg.Storage)
-	warehouse, err := query.Open(resolver, cfg.DuckDBMemoryLimit, cfg.DuckDBThreads)
+	warehouse, err := query.Open(resolver, cfg.DuckDBMemoryLimit, cfg.DuckDBThreads, cfg.DuckDBMaxConnections)
 	if err != nil {
 		return err
 	}

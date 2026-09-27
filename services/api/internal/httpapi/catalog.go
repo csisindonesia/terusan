@@ -80,11 +80,12 @@ func (s *Server) handleIndicator(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIndicators(w http.ResponseWriter, r *http.Request) {
-	indicators, err := s.indicatorRows(r.Context(), w, "", nil)
+	catalogue, err := s.lakeCatalogue(r.Context())
 	if err != nil {
-		return // already reported
+		internalError(w, s.log, "build catalogue", err)
+		return
 	}
-	writeData(w, indicators, &Meta{Total: int64(len(indicators)), Layer: "silver"})
+	writeData(w, catalogue.series, &Meta{Total: int64(len(catalogue.series)), Layer: "silver"})
 }
 
 // indicatorRows summarises the series, narrowed by `where` against the

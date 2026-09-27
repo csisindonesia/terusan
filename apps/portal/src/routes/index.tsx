@@ -55,10 +55,9 @@ const COLLECTION_METHODS: Record<string, string> = {
  */
 function Overview() {
   const datasets = useQuery({ queryKey: ["datasets"], queryFn: () => api.datasets() });
-  const indicators = useQuery({
-    queryKey: ["indicators"],
-    queryFn: () => api.indicators(),
-  });
+  // The headline counts from the server: adding them up here meant
+  // downloading every series, eighteen megabytes, for two numbers.
+  const stats = useQuery({ queryKey: ["stats"], queryFn: () => api.stats() });
   const storage = useQuery({ queryKey: ["storage"], queryFn: () => api.storage() });
   const sources = useQuery({ queryKey: ["sources"], queryFn: () => api.sources() });
 
@@ -71,8 +70,7 @@ function Overview() {
   // normalized yet with an empty list, but an older build — or an endpoint
   // that reports its absence as an error — sends `null`, and reducing that
   // takes the whole page down rather than showing a zero.
-  const figures =
-    indicators.data?.data?.reduce((total, i) => total + i.observations, 0) ?? 0;
+  const figures = stats.data?.data?.observations ?? 0;
 
   // What the lake is made of. Grouped by layer, so "how much of this is Silver"
   // is answered by the blocks rather than by adding rows up.
@@ -220,7 +218,7 @@ function Overview() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {indicators.isLoading ? (
+            {stats.isLoading ? (
               <Skeleton className="h-9 w-28" />
             ) : (
               <>
@@ -230,7 +228,7 @@ function Overview() {
                 <dl className="mt-3 grid grid-cols-3 gap-2 border-t pt-3">
                   <Stat
                     label="Indicators"
-                    value={formatCount(indicators.data?.data?.length ?? 0)}
+                    value={formatCount(stats.data?.data?.series ?? 0)}
                     to="/indicators"
                   />
                   <Stat

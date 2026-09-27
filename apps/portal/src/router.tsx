@@ -10,9 +10,13 @@ export function getRouter() {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
-        // The lake changes when a pipeline runs, not between clicks. A minute
-        // of staleness costs nothing and saves a request per navigation.
-        staleTime: 60_000,
+        // The lake changes when a pipeline runs, not between clicks, and some
+        // of what is asked for is large (every series is megabytes). Five
+        // minutes of staleness, no refetch on returning to the tab, and an
+        // answer kept for half an hour after the page that used it closes.
+        staleTime: 5 * 60_000,
+        gcTime: 30 * 60_000,
+        refetchOnWindowFocus: false,
         retry: 1,
       },
     },

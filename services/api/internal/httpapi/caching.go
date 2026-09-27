@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
@@ -99,6 +100,14 @@ func (s *Server) withCache(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
+		// A deadline on the work, so a scan nobody is waiting for any more —
+		// or one that would never finish in time — stops rather than holding
+		// its share of the engine's memory and threads.
+		if s.cfg != nil && s.cfg.QueryTimeout > 0 {
+			ctx, cancel := context.WithTimeout(r.Context(), s.cfg.QueryTimeout)
+			defer cancel()
+			r = r.WithContext(ctx)
+		}
 		recorded := &recorder{header: w.Header().Clone()}
 		next(recorded, r)
 

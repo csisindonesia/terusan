@@ -114,13 +114,12 @@ func (s *Server) handleDatasets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	datasets, err := s.datasetRows(ctx)
+	catalogue, err := s.lakeCatalogue(ctx)
 	if err != nil {
-		internalError(w, s.log, "query datasets", err)
+		internalError(w, s.log, "build catalogue", err)
 		return
 	}
-
-	writeData(w, datasets, &Meta{Total: int64(len(datasets)), Layer: "silver"})
+	writeData(w, catalogue.datasets, &Meta{Total: int64(len(catalogue.datasets)), Layer: "silver"})
 }
 
 // datasetRows returns every collection, by id.
@@ -168,31 +167,20 @@ func (s *Server) handleDataset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query, err := s.datasetSelect(ctx)
+	// From the shared catalogue: this route used to group every
+	// observation in the lake to keep one group, which took half a minute.
+	catalogue, err := s.lakeCatalogue(ctx)
 	if err != nil {
-		internalError(w, s.log, "resolve datasets", err)
+		internalError(w, s.log, "build catalogue", err)
 		return
 	}
-
-	rows, err := s.warehouse.DB().QueryContext(ctx, query+" HAVING o.dataset_id = ?", id)
-	if err != nil {
-		internalError(w, s.log, "query dataset", err)
-		return
+	for _, d := range catalogue.datasets {
+		if d.DatasetID == id {
+			writeData(w, d, &Meta{Total: 1, Layer: "silver"})
+			return
+		}
 	}
-	defer rows.Close()
-
-	if !rows.Next() {
-		notFound(w, "dataset not found", id)
-		return
-	}
-
-	d, err := scanDataset(rows)
-	if err != nil {
-		internalError(w, s.log, "scan dataset", err)
-		return
-	}
-
-	writeData(w, d, &Meta{Total: 1, Layer: "silver"})
+	notFound(w, "dataset not found", id)
 }
 
 // scanDataset reads one row of `datasetSelect`.

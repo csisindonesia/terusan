@@ -62,9 +62,6 @@ const (
 	// How much of a reply is read before any of it is shown, for the leak
 	// guard. Longer than any leak marker, short enough not to be noticed.
 	assistantHoldBack = 120
-	// How long the catalogue is kept between turns. It changes when a
-	// pipeline runs, which is at most a few times a day.
-	assistantCatalogueTTL = 5 * time.Minute
 	// Turns per reader per minute, and turns in flight across everyone: each
 	// one is a paid call.
 	assistantPerMinute  = 10
@@ -104,15 +101,11 @@ type assistantSource struct {
 // assistantState is the chat's memory between requests: the catalogue, and
 // who has asked how often.
 type assistantState struct {
-	mu          sync.Mutex
-	loadedAt    time.Time
-	datasets    []Dataset
-	series      []Indicator
-	commodities []Commodity
-	asked       map[string][]time.Time
-	inFlight    chan struct{}
-	client      *http.Client
-	initOnce    sync.Once
+	mu       sync.Mutex
+	asked    map[string][]time.Time
+	inFlight chan struct{}
+	client   *http.Client
+	initOnce sync.Once
 }
 
 func (s *Server) assistantState() *assistantState {
@@ -533,39 +526,14 @@ func (a *assistantState) allow(key string) time.Duration {
 	return 0
 }
 
-// assistantCatalogue is every collection and every series, kept for a few
-// minutes.
+// assistantCatalogue is the shared catalogue (catalogue.go), in the shape the
+// prompt reads. Built in the background rather than inside a reader's turn.
 func (s *Server) assistantCatalogue(ctx context.Context) (assistantCatalogue, error) {
-	state := s.assistantState()
-	state.mu.Lock()
-	if time.Since(state.loadedAt) < assistantCatalogueTTL {
-		held := assistantCatalogue{state.datasets, state.series, state.commodities}
-		state.mu.Unlock()
-		return held, nil
-	}
-	state.mu.Unlock()
-
-	if !s.warehouse.Exists(ctx, storage.LayerSilver, "observations") {
-		return assistantCatalogue{}, nil
-	}
-	datasets, err := s.datasetRows(ctx)
+	catalogue, err := s.lakeCatalogue(ctx)
 	if err != nil {
 		return assistantCatalogue{}, err
 	}
-	series, err := s.indicatorRows(ctx, discardWriter{}, "", nil)
-	if err != nil {
-		return assistantCatalogue{}, err
-	}
-	commodities, err := s.commodityRows(ctx)
-	if err != nil {
-		return assistantCatalogue{}, err
-	}
-
-	state.mu.Lock()
-	state.datasets, state.series, state.commodities = datasets, series, commodities
-	state.loadedAt = time.Now()
-	state.mu.Unlock()
-	return assistantCatalogue{datasets, series, commodities}, nil
+	return assistantCatalogue{catalogue.datasets, catalogue.series, catalogue.commodities}, nil
 }
 
 // assistantCatalogue is what the model is allowed to suggest from.

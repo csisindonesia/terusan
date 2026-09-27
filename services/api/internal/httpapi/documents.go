@@ -455,7 +455,8 @@ func (s *Server) handleIndicatorDocuments(w http.ResponseWriter, r *http.Request
 		writeData(w, []Document{}, &Meta{Total: 0, Layer: "silver"})
 		return
 	}
-	observations, err := s.source(storage.LayerSilver, "observations")
+	// The one series' partition, not the lake: the id is known.
+	observations, err := s.warehouse.SourceIn(storage.LayerSilver, "observations", "indicator_id", []string{id})
 	if err != nil {
 		internalError(w, s.log, "resolve observations", err)
 		return

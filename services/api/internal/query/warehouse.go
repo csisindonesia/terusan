@@ -80,7 +80,7 @@ func (w *Warehouse) ForgetMetadata() {
 }
 
 // Open configures a DuckDB connection for the given storage backend.
-func Open(resolver *storage.Resolver, memoryLimit string, threads int) (*Warehouse, error) {
+func Open(resolver *storage.Resolver, memoryLimit string, threads int, maxConnections ...int) (*Warehouse, error) {
 	db, err := sql.Open("duckdb", "")
 	if err != nil {
 		return nil, fmt.Errorf("open duckdb: %w", err)
@@ -106,6 +106,15 @@ func Open(resolver *storage.Resolver, memoryLimit string, threads int) (*Warehou
 			db.Close()
 			return nil, err
 		}
+	}
+
+	// A cap on queries running at once. database/sql opens a connection per
+	// concurrent query without one, and every DuckDB connection shares the
+	// same memory limit and threads: past a handful, scans do not run
+	// faster, they only split the machine more ways and spill.
+	if len(maxConnections) > 0 && maxConnections[0] > 0 {
+		db.SetMaxOpenConns(maxConnections[0])
+		db.SetMaxIdleConns(maxConnections[0])
 	}
 
 	return &Warehouse{db: db, resolver: resolver, meta: map[string]metaAnswer{}}, nil

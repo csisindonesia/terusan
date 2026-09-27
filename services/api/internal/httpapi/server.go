@@ -41,6 +41,7 @@ type Server struct {
 	// The lake's summaries, held and refreshed in the process (summaries.go),
 	// and the routes that serve them, for the warm-up at start.
 	summaries     summaryStore
+	catalogue     catalogueStore
 	summaryRoutes map[string]http.HandlerFunc
 	log           *slog.Logger
 }
@@ -98,6 +99,7 @@ func (s *Server) invalidate() {
 		s.log.Warn("cache.purge_failed", "error", err)
 	}
 	s.staleSummaries()
+	s.staleCatalogue()
 }
 
 // Routes returns the HTTP handler for the whole API.
@@ -137,6 +139,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/commodities", s.summary("/v1/commodities", s.withCache(s.handleCommodities)))
 	mux.HandleFunc("GET /v1/datasets", s.summary("/v1/datasets", s.withCache(s.handleDatasets)))
 	mux.HandleFunc("GET /v1/datasets/{id}", s.withCache(s.handleDataset))
+	// The home page's headline figures, from the shared catalogue.
+	mux.HandleFunc("GET /v1/stats", s.handleStats)
 	mux.HandleFunc("GET /v1/storage", s.summary("/v1/storage", s.withCache(s.handleStorage)))
 	mux.HandleFunc("GET /v1/sources", s.withCache(s.handleSources))
 	mux.HandleFunc("GET /v1/runs", s.withCache(s.handleRuns))

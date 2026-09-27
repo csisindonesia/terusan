@@ -215,6 +215,14 @@ func (s *Server) staleSummaries() {
 // makes, and the sign-in gate — which a warm-up has no session for — is not
 // in the way.
 func (s *Server) WarmSummaries(ctx context.Context) {
+	// The catalogue first: the series and collection lists, the home page's
+	// figures and the assistant all read it.
+	started := time.Now()
+	if _, err := s.lakeCatalogue(ctx); err != nil {
+		s.log.Warn("catalogue.warm_failed", "error", err)
+	} else {
+		s.log.Info("catalogue.warmed", "ms", time.Since(started).Milliseconds())
+	}
 	for _, path := range summaryPaths {
 		if ctx.Err() != nil {
 			return

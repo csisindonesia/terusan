@@ -1122,7 +1122,18 @@ export type NewsFacets = {
   provinces: Facet[];
 };
 
+/** The home page's headline counts, without downloading every series. */
+export type LakeStats = {
+  series: number;
+  observations: number;
+  datasets: number;
+  commodities: number;
+  sources: number;
+  as_of: string;
+};
+
 export const api = {
+  stats: () => request<LakeStats>("/v1/stats"),
   datasets: () => request<Dataset[]>("/v1/datasets"),
   dataset: (id: string) => request<Dataset>(`/v1/datasets/${encodeURIComponent(id)}`),
   storage: () => request<LakeTable[]>("/v1/storage"),
@@ -1277,11 +1288,16 @@ export const api = {
     send<{ ended: string }>("DELETE", `/v1/auth/sessions/${encodeURIComponent(id)}`),
   endOtherLogins: () => send<{ ended: number }>("DELETE", "/v1/auth/sessions/others"),
   /** Ask for an account; an admin approves it before it can sign in. */
-  register: (body: { email: string; password: string; name: string; department: string }) =>
-    send<{ requested: boolean }>("POST", "/v1/auth/register", body),
+  register: (body: {
+    email: string;
+    password: string;
+    name: string;
+    department: string;
+  }) => send<{ requested: boolean }>("POST", "/v1/auth/register", body),
   /** The Users page. Admins only. */
   users: () => request<User[]>("/v1/admin/users"),
-  user: (id: string) => request<UserDetail>(`/v1/admin/users/${encodeURIComponent(id)}`),
+  user: (id: string) =>
+    request<UserDetail>(`/v1/admin/users/${encodeURIComponent(id)}`),
   createUser: (body: UserInput) =>
     send<User & { password?: string }>("POST", "/v1/admin/users", body),
   updateUser: (id: string, body: UserInput) =>
