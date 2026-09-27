@@ -133,6 +133,18 @@ class Fetcher:
                 return response
         raise AssertionError("unreachable: retrying re-raises once attempts are spent")
 
+    def post(self, url: str, **kwargs: Any) -> httpx.Response:
+        """`get`, for a portal that pages by POST — a Livewire component
+        answers its next page only to a call on `/livewire/update`."""
+        for attempt in retrying(self._attempts, self._backoff, self._max_backoff):
+            with attempt:
+                if self._limiter is not None:
+                    self._limiter.acquire(url)
+                response = self._client.post(url, **kwargs)
+                response.raise_for_status()
+                return response
+        raise AssertionError("unreachable: retrying re-raises once attempts are spent")
+
     def try_get(self, url: str, **kwargs: Any) -> httpx.Response | None:
         """`get`, returning None instead of raising.
 

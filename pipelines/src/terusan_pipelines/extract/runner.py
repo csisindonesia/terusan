@@ -33,6 +33,7 @@ from .documents import HtmlExtractor, PdfExtractor, TextExtractor
 from .fred import FredExtractor, FredSeriesPageExtractor
 from .gdelt import GdeltExtractor
 from .hdx_mobility import MovementDistributionExtractor
+from .menpan import MenpanHolidaysExtractor
 from .news import NewsArticleExtractor, NewsScreenshotExtractor, NewsTallyExtractor
 from .pihps import PihpsPricesExtractor
 from .seki import SekiExtractor
@@ -80,6 +81,9 @@ DEFAULT_EXTRACTORS: tuple[Extractor, ...] = (
     # Before the generic HTML reader, which would land a year of LME prices
     # as one blob of prose.
     WestmetallLmeExtractor(),
+    # Before the generic PDF reader, which finds no text in these scans and
+    # would land each decree as an empty document.
+    MenpanHolidaysExtractor(),
     # Before the generic JSON reader, which would land Sina's one-letter keys
     # as column names and lose the symbol, which is not in the body.
     SinaFuturesExtractor(),

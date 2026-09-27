@@ -131,7 +131,10 @@ from typing import Any
 #:     the fiscal month the landing record carries — instead of as SpreadsheetML
 #:     cells that say neither. GDELT's archives are read at all: the archive
 #:     reader claimed them and found no workbook.
-PARSER_VERSION = "22"
+#: 23: The SKB 3 Menteri on national holidays and cuti bersama are read by
+#:     OCR into one record per holiday date. The generic PDF reader found no
+#:     text in the scans at all.
+PARSER_VERSION = "23"
 
 
 class ExtractionError(Exception):

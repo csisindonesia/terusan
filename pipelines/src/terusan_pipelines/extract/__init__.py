@@ -14,6 +14,7 @@ from .documents import HtmlExtractor, PdfExtractor, TextExtractor, collapse
 from .fred import FredExtractor, FredSeriesPageExtractor
 from .gdelt import GdeltExtractor
 from .hdx_mobility import MovementDistributionExtractor
+from .menpan import MenpanHolidaysExtractor
 from .pihps import PihpsPricesExtractor
 from .runner import (
     DEFAULT_EXTRACTORS,
@@ -80,6 +81,7 @@ __all__ = [
     "TradingEconomicsMarketExtractor",
     "UcdpOrganizedViolenceExtractor",
     "VewsCollectiveViolenceExtractor",
+    "MenpanHolidaysExtractor",
     "WestmetallLmeExtractor",
     "WitsTradeStatsExtractor",
     "SpreadsheetMLExtractor",

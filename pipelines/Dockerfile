@@ -15,9 +15,11 @@ FROM python:3.12-slim-bookworm AS runtime
 COPY --from=ghcr.io/astral-sh/uv:0.9.29 /uv /usr/local/bin/uv
 
 # `curl` for the odd source that needs a redirect followed by hand, and the
-# certificates every HTTPS fetch needs.
+# certificates every HTTPS fetch needs. Tesseract with its Indonesian model for
+# the holiday decrees, which KemenPANRB publishes as scans with no text layer.
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends ca-certificates curl \
+        tesseract-ocr tesseract-ocr-ind \
     && rm -rf /var/lib/apt/lists/*
 
 ENV UV_LINK_MODE=copy \
