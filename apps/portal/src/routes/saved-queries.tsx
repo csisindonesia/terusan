@@ -1,4 +1,4 @@
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQueries } from "@tanstack/react-query";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   IconAlertTriangle,
@@ -32,6 +32,7 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import { useIndicatorsById } from "~/hooks/use-indicators-by-id";
 import { api, type ObservationQuery } from "~/lib/api";
 import {
   AGGREGATES,
@@ -155,17 +156,9 @@ function SavedQueries() {
   const combinable = workspace.queries.filter((query) => query.kind === "observations");
 
   // Named from the catalogue rather than from the identifier: a chart legend
-  // reading `nicmjq31` names nothing. The list is the one every other page
-  // uses, so it is usually already in the cache.
-  const indicators = useQuery({
-    queryKey: ["indicators"],
-    queryFn: () => api.indicators(),
-    enabled: adHoc.length > 0,
-  });
-  const indicatorsById = useMemo(
-    () => new Map((indicators.data?.data ?? []).map((row) => [row.indicator_id, row])),
-    [indicators.data],
-  );
+  // reading `nicmjq31` names nothing. Only the series sent here are asked for,
+  // not the whole list, which runs to tens of thousands of rows.
+  const { byId: indicatorsById } = useIndicatorsById(adHoc);
 
   /** What the combiner will run: chosen saved queries, then any series sent straight here. */
   const requests = useMemo(() => {

@@ -282,6 +282,41 @@ export type CommodityQuery = {
   offset?: number;
 };
 
+/**
+ * What `/v1/indicators` narrows the series list by.
+ *
+ * Any one of these turns the request from "every series" into a filtered,
+ * sorted page, which is what a page wanting a handful of rows should ask for:
+ * the unfiltered list runs to tens of thousands of series and many megabytes.
+ */
+export type IndicatorQuery = {
+  q?: string;
+  frequency?: string[];
+  unit?: string[];
+  source?: string[];
+  tag?: string[];
+  id?: string[];
+  dataset?: string;
+  sort?:
+    | "indicator_id"
+    | "temporal_resolution"
+    | "unit"
+    | "source"
+    | "coverage"
+    | "last_updated";
+  dir?: "asc" | "desc";
+  limit?: number;
+  offset?: number;
+};
+
+/** The values the series list can be filtered by, taken over every series. */
+export type IndicatorFacets = {
+  frequencies: string[];
+  units: string[];
+  sources: string[];
+  tags: string[];
+};
+
 /** The registry record for a provider: how its figures are collected. */
 export type Source = {
   source_id: string;
@@ -1137,7 +1172,13 @@ export const api = {
   datasets: () => request<Dataset[]>("/v1/datasets"),
   dataset: (id: string) => request<Dataset>(`/v1/datasets/${encodeURIComponent(id)}`),
   storage: () => request<LakeTable[]>("/v1/storage"),
-  indicators: () => request<Indicator[]>("/v1/indicators"),
+  /**
+   * Every series when called bare, which only the whole-catalogue summaries
+   * should do; with parameters, a filtered page of them.
+   */
+  indicators: (params?: IndicatorQuery) =>
+    request<Indicator[]>("/v1/indicators", params),
+  indicatorFacets: () => request<IndicatorFacets>("/v1/indicators/facets"),
   indicator: (id: string) =>
     request<Indicator>(`/v1/indicators/${encodeURIComponent(id)}`),
   geography: (params?: {

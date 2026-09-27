@@ -129,18 +129,29 @@ func (q indicatorQuery) matches(i Indicator) bool {
 	if q.dataset != "" && (i.DatasetID == nil || *i.DatasetID != q.dataset) {
 		return false
 	}
-	if q.q == "" {
-		return true
+	// Every word, each anywhere: "bi rate" finds "BI 7-Day Reverse Repo
+	// Rate", as the search page and the palette did in the browser, which
+	// also looked in the description and the publisher.
+	for _, word := range strings.Fields(q.q) {
+		if !seriesMentions(i, word) {
+			return false
+		}
 	}
+	return true
+}
+
+func seriesMentions(i Indicator, word string) bool {
 	contains := func(value *string) bool {
-		return value != nil && strings.Contains(strings.ToLower(*value), q.q)
+		return value != nil && strings.Contains(strings.ToLower(*value), word)
 	}
-	return strings.Contains(strings.ToLower(i.IndicatorID), q.q) ||
+	return strings.Contains(strings.ToLower(i.IndicatorID), word) ||
 		contains(i.Slug) ||
-		slices.ContainsFunc(i.Tags, func(tag string) bool { return strings.Contains(tag, q.q) }) ||
-		strings.Contains(strings.ToLower(indicatorTitle(i)), q.q) ||
+		slices.ContainsFunc(i.Tags, func(tag string) bool { return strings.Contains(tag, word) }) ||
+		strings.Contains(strings.ToLower(indicatorTitle(i)), word) ||
 		contains(i.Code) ||
-		slices.ContainsFunc(i.Sources, func(s string) bool { return strings.Contains(strings.ToLower(s), q.q) })
+		contains(i.Description) ||
+		contains(i.Publisher) ||
+		slices.ContainsFunc(i.Sources, func(s string) bool { return strings.Contains(strings.ToLower(s), word) })
 }
 
 // sortKey is the portal's, column for column.

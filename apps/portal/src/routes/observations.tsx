@@ -20,6 +20,7 @@ import {
 } from "~/components/observation-filters";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { useIndicatorsById } from "~/hooks/use-indicators-by-id";
 import { api, type Indicator, type Observation } from "~/lib/api";
 import { downloadCsv, toCsv } from "~/lib/csv";
 import { asText, asTextList, listParam, textParam } from "~/lib/search-params";
@@ -250,15 +251,17 @@ function Observations() {
       }),
   });
 
-  // Same query key as the filter bar's, so the two share one fetch.
-  const indicators = useQuery({
-    queryKey: ["indicators"],
-    queryFn: () => api.indicators(),
-  });
-  const indicatorsById = useMemo(
-    () => new Map((indicators.data?.data ?? []).map((i) => [i.indicator_id, i])),
-    [indicators.data],
+  const [selected, setSelected] = useState<Observation[]>([]);
+
+  // Only the series on this page and in the selection are named, by asking for
+  // those identifiers: the whole series list is tens of thousands of rows, and
+  // a page shows a few of them. The selection is included because it can hold
+  // rows from pages already left, and its export carries their names too.
+  const idsInView = useMemo(
+    () => [...(query.data?.data ?? []), ...selected].map((row) => row.indicator_id),
+    [query.data, selected],
   );
+  const { byId: indicatorsById } = useIndicatorsById(idsInView);
   const columns = useMemo(() => columnsFor(indicatorsById), [indicatorsById]);
 
   const meta = query.data?.meta;
@@ -270,8 +273,6 @@ function Observations() {
   function setSearch(next: ObservationFilters) {
     navigate({ search: (prev) => ({ ...prev, ...next, page: 0 }) });
   }
-
-  const [selected, setSelected] = useState<Observation[]>([]);
 
   function exportRows(rows: Observation[], suffix: string) {
     // The identifier alone leaves a downloaded file unreadable, so the series

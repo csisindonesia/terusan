@@ -134,11 +134,13 @@ function DatasetDetail() {
     queryKey: ["dataset", datasetId],
     queryFn: () => api.dataset(datasetId),
   });
-  // Every series in the warehouse, so this page can show each of its own with
-  // the coverage and frequency the list already computes.
+  // This collection's series, with the coverage and frequency the list
+  // already computes. Asked for by dataset rather than picked out of every
+  // series in the warehouse, which runs to tens of thousands of rows; the
+  // largest collections hold a few thousand, well inside one page.
   const indicators = useQuery({
-    queryKey: ["indicators"],
-    queryFn: () => api.indicators(),
+    queryKey: ["indicators", { dataset: datasetId, limit: 10000 }],
+    queryFn: () => api.indicators({ dataset: datasetId, limit: 10000 }),
   });
   const sources = useQuery({ queryKey: ["sources"], queryFn: () => api.sources() });
   // How much material this collection was built from. Asked for one row
@@ -154,9 +156,7 @@ function DatasetDetail() {
   const source = sources.data?.data?.find(
     (entry) => entry.source_id === meta?.source_id,
   );
-  const series = (indicators.data?.data ?? []).filter((indicator) =>
-    meta?.indicators.includes(indicator.indicator_id),
-  );
+  const series = indicators.data?.data ?? [];
 
   // Narrowed in place: the dataset's series are already in hand, and six
   // hundred of them is a list nobody scrolls. The publisher's code is matched

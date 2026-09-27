@@ -83,11 +83,11 @@ function Search() {
 
   const tokens = useMemo(() => q.toLowerCase().split(/\s+/).filter(Boolean), [q]);
 
-  // Keyed as the catalogue pages key them, so a visit from /indicators has
-  // already paid for these.
+  // Asked of the server rather than filtered here: the full series list runs
+  // to tens of thousands of rows, and a search wants only the first few.
   const indicators = useQuery({
-    queryKey: ["indicators"],
-    queryFn: () => api.indicators(),
+    queryKey: ["search-indicators", q],
+    queryFn: () => api.indicators({ q, limit: PER_SECTION }),
     enabled: searching && wants("indicator"),
   });
   const datasets = useQuery({
@@ -111,21 +111,7 @@ function Search() {
     enabled: searching && wants("commodity"),
   });
 
-  const indicatorHits = useMemo(() => {
-    if (!searching) return [];
-    return (indicators.data?.data ?? []).filter((indicator) =>
-      matches(
-        tokens,
-        indicatorLabel(indicator),
-        indicator.indicator_id,
-        indicator.slug,
-        indicator.code,
-        indicator.description,
-        indicator.publisher,
-        indicator.tags.join(" "),
-      ),
-    );
-  }, [indicators.data, searching, tokens]);
+  const indicatorHits = indicators.data?.data ?? [];
 
   const datasetHits = useMemo(() => {
     if (!searching) return [];
@@ -146,11 +132,11 @@ function Search() {
   const regulationHits = regulations.data?.data ?? [];
   const commodityHits = commodities.data?.data ?? [];
 
-  // Counts are what the catalogue holds, not what is on screen: the two
-  // client-side sections know their own total, and the three server-side ones
-  // are told it in `meta`.
+  // Counts are what the catalogue holds, not what is on screen: the one
+  // client-side section knows its own total, and the server-side ones are told
+  // it in `meta`.
   const counts = {
-    indicator: indicatorHits.length,
+    indicator: indicators.data?.meta?.total ?? indicatorHits.length,
     dataset: datasetHits.length,
     document: documents.data?.meta?.total ?? documentHits.length,
     regulation: regulations.data?.meta?.total ?? regulationHits.length,

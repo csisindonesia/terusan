@@ -5,7 +5,7 @@ import {
   IconSearch,
   IconX,
 } from "@tabler/icons-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "~/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
@@ -111,11 +111,20 @@ export type ChoiceOption = { value: string; label: string; hint?: string };
  */
 const SEARCHABLE_FROM = 6;
 
+/**
+ * The most rows one list will draw. A safety net rather than a design: a list
+ * this long is already one to search rather than scroll, and drawing tens of
+ * thousands of buttons would stall the page to show rows nobody reads.
+ */
+const MAX_SHOWN = 200;
+
 export function ChoiceList({
   options,
   selected,
   onToggle,
   onClear,
+  onSearch,
+  isSearching = false,
   empty = "Nothing to choose from.",
   searchPlaceholder = "Search",
 }: {
@@ -123,21 +132,40 @@ export function ChoiceList({
   selected: string[];
   onToggle: (value: string) => void;
   onClear?: () => void;
+  /**
+   * Hands the typed text to the caller instead of filtering here, for lists
+   * too long to hold whole: the caller asks the server and passes the matches
+   * back as `options`, which are then shown as given.
+   */
+  onSearch?: (needle: string) => void;
+  /** Whether the caller is still fetching matches for the typed text. */
+  isSearching?: boolean;
   empty?: string;
   searchPlaceholder?: string;
 }) {
   const [needle, setNeedle] = useState("");
+  const remote = onSearch !== undefined;
 
-  if (!options.length) {
+  // The box forgets its text when the chip closes, so the caller's search is
+  // cleared with it — otherwise a reopened list would show matches for words
+  // no longer in the box.
+  const onSearchRef = useRef(onSearch);
+  onSearchRef.current = onSearch;
+  useEffect(() => () => onSearchRef.current?.(""), []);
+
+  // A remote list keeps its search box even when nothing matches, or a reader
+  // whose search found nothing would have no way to change it.
+  if (!options.length && !(remote && (needle || isSearching))) {
     return <p className="px-2 py-3 text-sm text-muted-foreground">{empty}</p>;
   }
 
-  const searchable = options.length >= SEARCHABLE_FROM;
+  const searchable = remote || options.length >= SEARCHABLE_FROM;
   const query = needle.trim().toLowerCase();
-  const shown =
-    searchable && query
+  const matched =
+    searchable && query && !remote
       ? options.filter((option) => option.label.toLowerCase().includes(query))
       : options;
+  const shown = matched.slice(0, MAX_SHOWN);
 
   return (
     <div className="grid gap-0.5">
@@ -147,7 +175,10 @@ export function ChoiceList({
           <input
             type="search"
             value={needle}
-            onChange={(event) => setNeedle(event.target.value)}
+            onChange={(event) => {
+              setNeedle(event.target.value);
+              onSearch?.(event.target.value);
+            }}
             placeholder={searchPlaceholder}
             aria-label={searchPlaceholder}
             // Filters as you type rather than on submit: the list it narrows is
@@ -162,7 +193,7 @@ export function ChoiceList({
           matches nothing should say so, not look broken. */}
       {shown.length === 0 ? (
         <p className="px-2 py-3 text-sm text-muted-foreground">
-          Nothing matches “{needle.trim()}”.
+          {isSearching ? "Searching…" : `Nothing matches “${needle.trim()}”.`}
         </p>
       ) : null}
 
@@ -200,6 +231,12 @@ export function ChoiceList({
           );
         })}
       </div>
+
+      {matched.length > shown.length ? (
+        <p className="px-2 py-1.5 text-xs text-muted-foreground">
+          Showing {shown.length} of {matched.length}. Type to narrow the list.
+        </p>
+      ) : null}
 
       {selected.length && onClear ? (
         <>

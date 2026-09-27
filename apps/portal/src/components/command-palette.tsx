@@ -18,6 +18,7 @@ import {
   CommandItem,
   CommandList,
 } from "~/components/ui/command";
+import { useDebounced } from "~/hooks/use-debounced";
 import { api } from "~/lib/api";
 import { datasetLabel, indicatorLabel } from "~/lib/labels";
 import { NAVIGATION } from "~/lib/navigation";
@@ -33,17 +34,6 @@ const MIN_QUERY = 2;
 
 /** Long enough that a typed word is one request, short enough to feel live. */
 const DEBOUNCE_MS = 200;
-
-function useDebounced<T>(value: T, delay: number): T {
-  const [settled, setSettled] = useState(value);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setSettled(value), delay);
-    return () => clearTimeout(timer);
-  }, [value, delay]);
-
-  return settled;
-}
 
 /**
  * Every token has to appear somewhere in the row's text.
@@ -67,10 +57,10 @@ function matches(tokens: string[], ...fields: (string | undefined)[]): boolean {
  *
  * What it searches is the catalogue, not only the navigation: a reader looking
  * for "inflation" wants the series, and a reader who types "perda" wants the
- * regulations. Indicators, datasets and sources are small enough to hold whole
- * and filter here — and the lists are the same ones the pages already load, so
- * the palette is usually free. Documents and regulations are too many for
- * that, so those two are asked of the API under the typed query.
+ * regulations. Datasets are few enough to hold whole and filter here — and the
+ * list is the same one the pages already load, so that group is usually free.
+ * Indicators, documents and regulations are too many for that, so those are
+ * asked of the API under the typed query.
  */
 export function CommandPalette({ className }: { className?: string }) {
   const navigate = useNavigate();
@@ -101,12 +91,12 @@ export function CommandPalette({ className }: { className?: string }) {
   const debounced = useDebounced(trimmed, DEBOUNCE_MS);
   const remote = debounced.length >= MIN_QUERY ? debounced : "";
 
-  // Keyed as the pages key them, so a visit to /indicators has already paid
-  // for this and the palette opens with its results in hand.
+  // Asked of the server: the full series list is tens of thousands of rows,
+  // far too much to fetch for the six a palette shows.
   const indicators = useQuery({
-    queryKey: ["indicators"],
-    queryFn: () => api.indicators(),
-    enabled: open,
+    queryKey: ["command-indicators", remote],
+    queryFn: () => api.indicators({ q: remote, limit: PER_GROUP }),
+    enabled: open && remote !== "",
   });
   const datasets = useQuery({
     queryKey: ["datasets"],
@@ -143,23 +133,6 @@ export function CommandPalette({ className }: { className?: string }) {
     return rows.filter((row) => matches(tokens, row.group, row.item.label));
   }, [tokens]);
 
-  const indicatorRows = useMemo(() => {
-    if (!searching) return [];
-    return (indicators.data?.data ?? [])
-      .filter((indicator) =>
-        matches(
-          tokens,
-          indicatorLabel(indicator),
-          indicator.indicator_id,
-          indicator.slug,
-          indicator.code,
-          indicator.publisher,
-          indicator.tags.join(" "),
-        ),
-      )
-      .slice(0, PER_GROUP);
-  }, [indicators.data, searching, tokens]);
-
   const datasetRows = useMemo(() => {
     if (!searching) return [];
     return (datasets.data?.data ?? [])
@@ -176,6 +149,7 @@ export function CommandPalette({ className }: { className?: string }) {
       .slice(0, PER_GROUP);
   }, [datasets.data, searching, tokens]);
 
+  const indicatorRows = searching ? (indicators.data?.data ?? []) : [];
   const documentRows = searching ? (documents.data?.data ?? []) : [];
   const regulationRows = searching ? (regulations.data?.data ?? []) : [];
 
@@ -184,9 +158,9 @@ export function CommandPalette({ className }: { className?: string }) {
   const pending =
     searching &&
     (remote !== trimmed ||
+      indicators.isFetching ||
       documents.isFetching ||
       regulations.isFetching ||
-      indicators.isLoading ||
       datasets.isLoading);
 
   const empty =

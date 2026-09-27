@@ -10,7 +10,9 @@ import {
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { PERIOD_PATTERN, PeriodFilter } from "~/components/period-filter";
-import { api } from "~/lib/api";
+import { useDebounced } from "~/hooks/use-debounced";
+import { useIndicatorsById } from "~/hooks/use-indicators-by-id";
+import { api, type Indicator } from "~/lib/api";
 import { indicatorLabel } from "~/lib/labels";
 import { toggle } from "~/lib/multi";
 
@@ -37,6 +39,16 @@ const PLACE_TYPES = [
   { value: "province", label: "Provinces" },
 ];
 
+/**
+ * How many series the indicator list offers at once. The catalogue holds tens
+ * of thousands, so the list is a search: these are the best matches for what
+ * was typed, and typing more narrows them.
+ */
+const INDICATOR_OPTIONS = 50;
+
+/** Long enough that a typed word is one request, short enough to feel live. */
+const DEBOUNCE_MS = 200;
+
 type Props = {
   value: ObservationFilters;
   onChange: (next: ObservationFilters) => void;
@@ -44,9 +56,13 @@ type Props = {
 };
 
 export function ObservationFilterBar({ value, onChange, onClear }: Props) {
+  // The typed text goes to the server rather than filtering a list held here:
+  // holding the list would mean downloading every series in the catalogue.
+  const [needle, setNeedle] = useState("");
+  const q = useDebounced(needle.trim(), DEBOUNCE_MS);
   const indicators = useQuery({
-    queryKey: ["indicators"],
-    queryFn: () => api.indicators(),
+    queryKey: ["indicators", { q, limit: INDICATOR_OPTIONS }],
+    queryFn: () => api.indicators({ q: q || undefined, limit: INDICATOR_OPTIONS }),
   });
 
   // Every commodity, not a page of them: the list is a choice list, and one
@@ -56,12 +72,32 @@ export function ObservationFilterBar({ value, onChange, onClear }: Props) {
     queryFn: () => api.commodities({ limit: 1000 }),
   });
 
-  const byId = useMemo(
-    () => new Map((indicators.data?.data ?? []).map((i) => [i.indicator_id, i])),
-    [indicators.data],
-  );
-
   const chosenIndicators = value.indicator ?? [];
+
+  // The chosen series are named from their own lookup, not from the search
+  // results: a chosen series stays chosen after the search moves on, and its
+  // chip should still read as a name.
+  const { byId } = useIndicatorsById(chosenIndicators);
+
+  // Chosen series first, so they can be unticked whatever the search shows;
+  // then the matches, without repeating a chosen one.
+  const indicatorOptions = useMemo(() => {
+    const option = (indicator: Indicator) => ({
+      value: indicator.indicator_id,
+      label: indicatorLabel(indicator),
+      hint: `${indicator.period_start}–${indicator.period_end}`,
+    });
+    const chosen = chosenIndicators.map((id) => {
+      const indicator = byId.get(id);
+      return indicator ? option(indicator) : { value: id, label: id };
+    });
+    const held = new Set(chosenIndicators);
+    const matches = (indicators.data?.data ?? [])
+      .filter((indicator) => !held.has(indicator.indicator_id))
+      .map(option);
+    return [...chosen, ...matches];
+  }, [byId, chosenIndicators, indicators.data]);
+
   const chosenTypes = value.geo_type ?? [];
   const chosenCommodities = value.commodity ?? [];
   const active =
@@ -89,11 +125,10 @@ export function ObservationFilterBar({ value, onChange, onClear }: Props) {
         <ChoiceList
           // Listed by name: the identifier is a derived code, and a list of
           // forty of them is a list nobody can choose from.
-          options={(indicators.data?.data ?? []).map((indicator) => ({
-            value: indicator.indicator_id,
-            label: indicatorLabel(indicator),
-            hint: `${indicator.period_start}–${indicator.period_end}`,
-          }))}
+          options={indicatorOptions}
+          onSearch={setNeedle}
+          isSearching={indicators.isFetching || q !== needle.trim()}
+          searchPlaceholder="Search series"
           selected={chosenIndicators}
           onToggle={(id) => onChange({ indicator: toggle(chosenIndicators, id) })}
           onClear={() => onChange({ indicator: undefined })}

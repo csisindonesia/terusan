@@ -39,7 +39,9 @@ func ids(series []Indicator) []string {
 
 func TestTheSeriesFiltersAreThePortals(t *testing.T) {
 	for raw, want := range map[string][]string{
-		"q=inflation":              {"a1"},       // the name
+		"q=inflation":              {"a1"}, // the name
+		"q=cpi+inflation":          {"a1"}, // every word, in any order
+		"q=cpi+exports":            {},
 		"q=xtexva":                 {"b2"},       // the publisher's code
 		"q=trade":                  {"b2"},       // a tag
 		"q=worldbank":              {"c3"},       // a source

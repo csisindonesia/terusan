@@ -1,8 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { IconCopy, IconDownload } from "@tabler/icons-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 
 import { DataTable, StackedCell } from "~/components/data-table";
@@ -16,7 +16,7 @@ import { TablePagination } from "~/components/table-pagination";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { ClampedText } from "~/components/clamped-text";
-import { api, type Indicator } from "~/lib/api";
+import { api, type Indicator, type IndicatorQuery } from "~/lib/api";
 import { downloadCsv, toCsv } from "~/lib/csv";
 import { indicatorLabel } from "~/lib/labels";
 import { formatCount, formatDate, formatRelative } from "~/lib/format";
@@ -32,7 +32,14 @@ const searchSchema = z.object({
   // How the list is ordered, in the URL so a sorted list is a link. The values
   // are the table's own column ids, which is what a header click hands back.
   sort: z
-    .enum(["indicator_id", "temporal_resolution", "unit", "source", "coverage", "last_updated"])
+    .enum([
+      "indicator_id",
+      "temporal_resolution",
+      "unit",
+      "source",
+      "coverage",
+      "last_updated",
+    ])
     .optional(),
   dir: z.enum(["asc", "desc"]).optional(),
   page: z.number().int().min(0).optional(),
@@ -43,35 +50,6 @@ type SortColumn = NonNullable<z.infer<typeof searchSchema>["sort"]>;
 // Newest first unless the reader asks otherwise: "what changed" is the
 // question most visits to this page start with.
 const DEFAULT_SORT: SortColumn = "last_updated";
-
-function sortKey(indicator: Indicator, column: SortColumn): string {
-  switch (column) {
-    case "indicator_id":
-      return indicatorLabel(indicator).toLowerCase();
-    case "temporal_resolution":
-      return indicator.temporal_resolution;
-    case "unit":
-      return indicator.unit ?? "";
-    case "source":
-      return indicator.sources[0] ?? "";
-    case "coverage":
-      return indicator.period_end ?? "";
-    case "last_updated":
-      return indicator.last_updated ?? "";
-  }
-}
-
-function sortIndicators(rows: Indicator[], column: SortColumn, descending: boolean) {
-  return [...rows].sort((a, b) => {
-    const left = sortKey(a, column);
-    const right = sortKey(b, column);
-    // A series with no value for the column goes last whichever way the list
-    // runs: an indicator never updated is not the most or the least recent.
-    if (!left !== !right) return left ? -1 : 1;
-    const order = left < right ? -1 : left > right ? 1 : 0;
-    return descending ? -order : order;
-  });
-}
 
 export const Route = createFileRoute("/indicators/")({
   validateSearch: searchSchema,
@@ -213,71 +191,114 @@ const EXPORT_COLUMNS = [
   { key: "last_updated" as const, header: "last_updated" },
 ];
 
+/**
+ * The most rows the API hands back in one call. "Export all" walks the list in
+ * pages this size, so a filter matching more than this still exports whole.
+ */
+const EXPORT_PAGE = 10000;
+
 function Indicators() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
-  const query = useQuery({ queryKey: ["indicators"], queryFn: () => api.indicators() });
   const [selected, setSelected] = useState<Indicator[]>([]);
+  const [exporting, setExporting] = useState(false);
 
-  const all = query.data?.data ?? [];
-
-  // Filtered here rather than by the API, which returns the whole list: there
-  // are a handful of indicators, and a round trip to narrow five rows is worse
-  // than narrowing them in place. It moves server-side when the list does.
+  // Filtered, sorted and paged by the API: the catalogue holds tens of
+  // thousands of series, and downloading all of them to show fifty was most of
+  // what this page used to cost. The URL is unchanged, so links still work.
   const frequencies = asTextList(search.frequency);
   const units = asTextList(search.unit);
   const sources = asTextList(search.source);
   const tags = asTextList(search.tag);
-  const needle = asText(search.q)?.toLowerCase() ?? "";
-
-  const rows = all.filter(
-    (indicator) =>
-      (!frequencies.length || frequencies.includes(indicator.temporal_resolution)) &&
-      (!units.length || (indicator.unit ? units.includes(indicator.unit) : false)) &&
-      (!sources.length || indicator.sources.some((id) => sources.includes(id))) &&
-      // Every tag, not any: a second tag narrows, which is what choosing one
-      // after another asks for.
-      (!tags.length || tags.every((tag) => (indicator.tags ?? []).includes(tag))) &&
-      (!needle ||
-        indicator.indicator_id.toLowerCase().includes(needle) ||
-        // The key the series was declared under, which is what a maintainer
-        // has in hand, and the tags, which is what everyone else does.
-        (indicator.slug?.toLowerCase().includes(needle) ?? false) ||
-        (indicator.tags ?? []).some((tag) => tag.includes(needle)) ||
-        // The table shows the name, so the name is what a reader types. The
-        // publisher's code too: someone arriving from FRED has NASDAQNQID55LMN
-        // in hand, not a title.
-        indicatorLabel(indicator).toLowerCase().includes(needle) ||
-        (indicator.code?.toLowerCase().includes(needle) ?? false) ||
-        indicator.sources.some((id) => id.toLowerCase().includes(needle))),
-  );
+  const needle = asText(search.q)?.trim() ?? "";
 
   const sortColumn = search.sort ?? DEFAULT_SORT;
-  const descending = (search.dir ?? (search.sort ? "asc" : "desc")) === "desc";
-  const sorted = sortIndicators(rows, sortColumn, descending);
+  // Sent explicitly whichever way it was arrived at, so the page and the API
+  // cannot disagree about which way an unsorted list runs.
+  const dir = search.dir ?? (search.sort ? "asc" : "desc");
+  const descending = dir === "desc";
+  const requestedPage = search.page ?? 0;
 
-  const allFrequencies = [...new Set(all.map((i) => i.temporal_resolution))].sort();
-  const allUnits = [
-    ...new Set(all.map((i) => i.unit).filter(Boolean)),
-  ].sort() as string[];
-  const allSources = [...new Set(all.flatMap((i) => i.sources))].sort();
-  const allTags = [...new Set(all.flatMap((i) => i.tags ?? []))].sort();
+  const filters: IndicatorQuery = {
+    q: needle || undefined,
+    frequency: frequencies,
+    unit: units,
+    source: sources,
+    tag: tags,
+    sort: sortColumn,
+    dir,
+  };
 
-  // Paged in place, like the filtering above it: the API answers with every
-  // series in one call, so a page is a slice rather than a round trip. A page
-  // past the end of a freshly narrowed list would render empty, so the
-  // requested page is clamped rather than trusted.
-  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-  const page = Math.min(search.page ?? 0, pageCount - 1);
-  // Sorted before slicing: ordering a page would put the newest of fifty rows
-  // first, not the newest of all of them.
-  const visible = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const query = useQuery({
+    queryKey: ["indicators", { ...filters, page: requestedPage }],
+    queryFn: () =>
+      api.indicators({
+        ...filters,
+        limit: PAGE_SIZE,
+        offset: requestedPage * PAGE_SIZE,
+      }),
+    // The old page stays on screen while the next one loads, rather than the
+    // table collapsing to a skeleton on every click through the pages.
+    placeholderData: keepPreviousData,
+  });
+
+  // The choices each chip offers, over every series rather than the ones on
+  // this page — and the same whatever is filtered, so choosing one value never
+  // hides the others from the list.
+  const facets = useQuery({
+    queryKey: ["indicator-facets"],
+    queryFn: () => api.indicatorFacets(),
+  });
+
+  // How many series there are unfiltered, for the "(N total)" beside a
+  // narrowed count. The home page asks for the same numbers, so this is
+  // usually already in hand.
+  const stats = useQuery({ queryKey: ["stats"], queryFn: () => api.stats() });
+
+  const visible = query.data?.data ?? [];
+  const matching = query.data?.meta?.total ?? visible.length;
+  const catalogueSize = stats.data?.data.series;
+
+  const allFrequencies = facets.data?.data.frequencies ?? [];
+  const allUnits = facets.data?.data.units ?? [];
+  const allSources = facets.data?.data.sources ?? [];
+  const allTags = facets.data?.data.tags ?? [];
+
+  const pageCount = Math.max(1, Math.ceil(matching / PAGE_SIZE));
+  const page = Math.min(requestedPage, pageCount - 1);
+
+  // A page past the end of a freshly narrowed list comes back empty, so once
+  // the count says so the URL is moved to the last page that has rows rather
+  // than leaving the reader on a blank one.
+  useEffect(() => {
+    if (query.isPlaceholderData || !query.data) return;
+    if (requestedPage > page) {
+      navigate({ search: (prev) => ({ ...prev, page }), replace: true });
+    }
+  }, [navigate, page, query.data, query.isPlaceholderData, requestedPage]);
 
   function exportRows(chosen: Indicator[], suffix: string) {
     downloadCsv(
       `indicators-${suffix}.csv`,
       toCsv(chosen as unknown as Record<string, unknown>[], EXPORT_COLUMNS),
     );
+  }
+
+  // Every matching series, not the page on screen: asked for in the same order
+  // the table shows, in pages as large as the API allows.
+  async function exportAll() {
+    setExporting(true);
+    try {
+      const rows: Indicator[] = [];
+      for (let offset = 0; ; offset += EXPORT_PAGE) {
+        const next = await api.indicators({ ...filters, limit: EXPORT_PAGE, offset });
+        rows.push(...next.data);
+        if (!next.meta?.has_more || !next.data.length) break;
+      }
+      exportRows(rows, "all");
+    } finally {
+      setExporting(false);
+    }
   }
 
   return (
@@ -289,15 +310,15 @@ function Indicators() {
         heading={
           <PageHeader
             title="Indicators"
-            count={rows.length}
+            count={matching}
             isLoading={query.isLoading}
             description="What is measured, and how much of it there is. Coverage is derived from the figures themselves rather than declared, so a series cannot claim a range it does not have."
             actions={
               <Button
                 variant="outline"
                 size="sm"
-                disabled={!rows.length}
-                onClick={() => exportRows(sorted, "all")}
+                disabled={!matching || exporting}
+                onClick={() => void exportAll()}
               >
                 <IconDownload className="size-4" />
                 Export
@@ -489,17 +510,17 @@ function Indicators() {
 
       <TablePagination
         page={page}
-        total={rows.length}
+        total={matching}
         pageSize={PAGE_SIZE}
         onPage={(next) => navigate({ search: (prev) => ({ ...prev, page: next }) })}
         summary={
-          rows.length ? (
+          matching ? (
             <>
               {formatCount(page * PAGE_SIZE + 1)}–
-              {formatCount(Math.min((page + 1) * PAGE_SIZE, rows.length))} of{" "}
-              {formatCount(rows.length)} indicator{rows.length === 1 ? "" : "s"}
-              {rows.length !== all.length
-                ? ` (${formatCount(all.length)} total)`
+              {formatCount(Math.min((page + 1) * PAGE_SIZE, matching))} of{" "}
+              {formatCount(matching)} indicator{matching === 1 ? "" : "s"}
+              {catalogueSize !== undefined && matching !== catalogueSize
+                ? ` (${formatCount(catalogueSize)} total)`
                 : null}
               {selected.length ? ` · ${formatCount(selected.length)} selected` : null}
             </>
