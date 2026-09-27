@@ -118,6 +118,25 @@ make nas-ingest CMD="sources list"
 make nas-shell                       # a shell in /volume2/terusan/app
 ```
 
+### Once, after the deploy that brings hash buckets
+
+Silver observations moved from one directory per series (31,700 small files
+after the BPS catalogue) to 256 hash buckets; see
+`pipelines/src/terusan_pipelines/warehouse/observations.py`. Until a lake is
+migrated its pipelines keep writing the old layout, and the API reads both, so
+nothing breaks in the meantime. To move it, from the pipelines container's
+terminal in UGOS:
+
+```bash
+cp -R /data/silver/observations /data/temporary/observations-before-buckets
+terusan warehouse migrate-observations
+```
+
+About a minute and a half on the laptop's lake; resumable if interrupted. On
+the laptop it took the catalogue build at start from 67 s to 1 s, a whole-table
+read from 8.4 s to 0.08 s, and changed no series (checked row by row against
+the copy). Delete the copy once the portal looks right.
+
 Every target takes `NAS_HOST`, `NAS_USER`, `NAS_PORT` and `NAS_DIR`, so a
 second box needs no edit:
 
