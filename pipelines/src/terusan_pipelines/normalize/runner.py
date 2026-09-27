@@ -30,12 +30,14 @@ from ..tagging import SourceFacts, dataset_tags, indicator_tags, source_tags
 from ..warehouse import ParquetWriter, Warehouse, table_from_rows
 from ..warehouse.observations import ObservationStore
 from . import documents as document_catalogue
+from . import events as event_calendar
 from .dimensions import CommodityRegistry, Geography, GeographyRegistry
 from .observations import ColumnMapping, NormalizationResult, ObservationNormalizer
 from .schema import (
     SILVER_COMMODITIES,
     SILVER_DATASETS,
     SILVER_DOCUMENTS,
+    SILVER_EVENTS,
     SILVER_GEOGRAPHY,
     SILVER_INDICATORS,
     SILVER_NEWS_OUTLETS,
@@ -501,6 +503,20 @@ class SilverRunner:
             for meta in metas
         ]
         return self._write_dimension("sources", rows, SILVER_SOURCES)
+
+    def write_events(self) -> int:
+        """Publish the event calendar: national holidays, cuti bersama and
+        Ramadan, as the latest decree for each year fixes them.
+
+        Rebuilt whole from Bronze each time: an amendment changes a year that
+        was already published, and a table patched year by year would keep
+        the dates it replaced.
+        """
+        records = self.read_bronze(source_id=event_calendar.SOURCE_ID)
+        rows = event_calendar.build_events(
+            records, event_calendar.load_holidays(), datetime.now(UTC)
+        )
+        return self._write_dimension("events", rows, SILVER_EVENTS)
 
     def write_datasets(
         self,

@@ -148,6 +148,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/stats", s.handleStats)
 	mux.HandleFunc("GET /v1/storage", s.summary("/v1/storage", s.withCache(s.handleStorage)))
 	mux.HandleFunc("GET /v1/sources", s.withCache(s.handleSources))
+	mux.HandleFunc("GET /v1/events", s.withCache(s.handleEvents))
 	mux.HandleFunc("GET /v1/runs", s.withCache(s.handleRuns))
 	mux.HandleFunc("GET /v1/documents", s.withCache(s.handleDocuments))
 	// Before the {id} route, which would otherwise swallow it.

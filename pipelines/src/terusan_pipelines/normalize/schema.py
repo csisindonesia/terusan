@@ -290,6 +290,47 @@ SILVER_DATASETS = pa.schema(
     ]
 )
 
+#: Events: things that happened, or will, on dates a series can be read
+#: against — a holiday, a cuti bersama, the month of Ramadan.
+#:
+#: Not observations: an event has no figure, only a span of days, and what a
+#: reader asks of it is "what did prices do around it". Kept generic so that
+#: elections, policy changes and disasters can join the holidays under their
+#: own `category` without a table each.
+SILVER_EVENTS = pa.schema(
+    [
+        pa.field("event_id", pa.string(), nullable=False),
+        # The family: `holiday` today; `election`, `policy`, `disaster` later.
+        pa.field("category", pa.string(), nullable=False),
+        # Within it: `libur_nasional`, `cuti_bersama`, `ramadan`.
+        pa.field("kind", pa.string(), nullable=False),
+        # What recurs: `idul_fitri` is one key across every year, so Lebaran
+        # 2020 and Lebaran 2026 are one series of events.
+        pa.field("key", pa.string(), nullable=False),
+        pa.field("name", pa.string(), nullable=False),
+        pa.field("name_en", pa.string()),
+        # As the decree printed it, OCR and all.
+        pa.field("name_printed", pa.string()),
+        pa.field("religion", pa.string()),
+        # How its date moves: gregorian, hijri, lunisolar.
+        pa.field("calendar", pa.string()),
+        pa.field("year", pa.int32(), nullable=False),
+        pa.field("start_date", pa.date32(), nullable=False),
+        pa.field("end_date", pa.date32(), nullable=False),
+        # Every day it covers. Cuti bersama around Lebaran skip the weekend
+        # between them, so start to end is not always every day.
+        pa.field("dates", pa.list_(pa.date32()), nullable=False),
+        pa.field("geo_id", pa.string(), nullable=False),
+        # True where the dates are derived rather than decreed.
+        pa.field("approximate", pa.bool_(), nullable=False),
+        # What fixed the dates: the decree, or how they were derived.
+        pa.field("basis", pa.string()),
+        pa.field("decree_id", pa.string()),
+        pa.field("decree_enacted", pa.date32()),
+        *SILVER_PROVENANCE_FIELDS,
+    ]
+)
+
 SILVER_SCHEMAS: dict[str, pa.Schema] = {
     "indicators": SILVER_INDICATORS,
     "observations": SILVER_OBSERVATIONS,
@@ -299,4 +340,5 @@ SILVER_SCHEMAS: dict[str, pa.Schema] = {
     "news_outlets": SILVER_NEWS_OUTLETS,
     "sources": SILVER_SOURCES,
     "datasets": SILVER_DATASETS,
+    "events": SILVER_EVENTS,
 }

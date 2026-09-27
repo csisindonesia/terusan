@@ -1,0 +1,41 @@
+# Indonesia's national holidays, keyed by a readable slug.
+#
+# The SKB 3 Menteri names each holiday in words that drift from year to year —
+# "Wafat Isa Al Masih" until 2023, "Wafat Yesus Kristus" after; "Hari Raya
+# Idul Fitri 1441 Hijriyah" beside "Idul Fitri 1446 Hijriah" — and the scans
+# add OCR slips on top ("Hijrivah", "Konegzili"). A holiday is known by its key
+# so that Lebaran 2020 and Lebaran 2026 are one series of events rather than
+# two names.
+#
+# `match` is a `|`-separated list of words, tried in file order against the
+# decree's name lowercased: the first row with a word in the name wins. Order
+# matters where names overlap — "Pengganti Cuti Bersama Hari Raya Idul Fitri"
+# is Idul Fitri, and "Tahun Baru Islam" is not the Masehi new year.
+#
+# `religion` is the community the holiday belongs to, blank for civic ones.
+# `calendar` says how its date moves: `gregorian` holidays keep theirs, `hijri`
+# ones come about eleven days earlier each year, and `lunisolar` ones (Imlek,
+# Nyepi, Waisak, Easter) move within a month or so. A price effect that shifts
+# with a hijri holiday is the holiday's; one that stays put is the season's.
+#
+# `ramadan` is not decreed — the SKB leaves 1 Ramadan to the Minister of
+# Religious Affairs — and is derived in Silver from Idul Fitri. It is listed so
+# the key has a name.
+key,name,name_en,religion,calendar,match
+tahun_baru_imlek,Tahun Baru Imlek,Chinese New Year,Konghucu,lunisolar,imlek|kongzili|konegzili
+tahun_baru_islam,Tahun Baru Islam,Islamic New Year,Islam,hijri,tahun baru islam|muharam
+tahun_baru_masehi,Tahun Baru Masehi,New Year's Day,,gregorian,masehi
+isra_mikraj,Isra Mikraj Nabi Muhammad,Isra and Mi'raj,Islam,hijri,isra
+nyepi,Hari Suci Nyepi,Nyepi (Saka New Year),Hindu,lunisolar,nyepi|saka
+idul_fitri,Idul Fitri,Eid al-Fitr,Islam,hijri,fitri
+idul_adha,Idul Adha,Eid al-Adha,Islam,hijri,adha
+wafat_yesus_kristus,Wafat Yesus Kristus,Good Friday,Kristen,lunisolar,wafat
+paskah,Kebangkitan Yesus Kristus (Paskah),Easter Sunday,Kristen,lunisolar,paskah|kebangkitan
+kenaikan_yesus_kristus,Kenaikan Yesus Kristus,Ascension Day,Kristen,lunisolar,kenaikan
+natal,Hari Raya Natal,Christmas Day,Kristen,gregorian,natal|kelahiran yesus
+waisak,Hari Raya Waisak,Vesak,Buddha,lunisolar,waisak
+maulid_nabi,Maulid Nabi Muhammad,Prophet's Birthday,Islam,hijri,maulid
+hari_buruh,Hari Buruh Internasional,International Labour Day,,gregorian,buruh
+hari_lahir_pancasila,Hari Lahir Pancasila,Pancasila Day,,gregorian,pancasila
+kemerdekaan,Hari Kemerdekaan Republik Indonesia,Independence Day,,gregorian,kemerdekaan|proklamasi
+ramadan,Ramadan,Ramadan,Islam,hijri,

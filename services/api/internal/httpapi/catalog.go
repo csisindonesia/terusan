@@ -378,6 +378,7 @@ func (s *Server) handleStorage(w http.ResponseWriter, r *http.Request) {
 		{storage.LayerSilver, "geography", "Geography dimension"},
 		{storage.LayerSilver, "commodities", "Commodity dimension"},
 		{storage.LayerSilver, "sources", "Source registry"},
+		{storage.LayerSilver, "events", "Event calendar"},
 		{storage.LayerSilver, "documents", "Document catalogue"},
 		{storage.LayerSilver, "regulations", "Regulations"},
 		{storage.LayerSilver, "regulation_sections", "Regulation sections"},

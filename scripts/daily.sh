@@ -267,6 +267,12 @@ SUBTREES
         echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: $source ==="
         normalize ./scripts/normalize-sp2kp.sh
         ;;
+      menpan-hari-libur)
+        # Not a series: the holiday decrees become the event calendar, rebuilt
+        # whole because an amendment rewrites a year already published.
+        echo "=== $(date '+%Y-%m-%d %H:%M:%S') events: $source ==="
+        normalize uv --project pipelines run terusan silver events
+        ;;
       kemendag-sp2kp-national)
         echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: $source ==="
         normalize ./scripts/normalize-sp2kp-national.sh

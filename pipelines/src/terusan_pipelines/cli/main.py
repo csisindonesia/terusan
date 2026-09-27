@@ -1315,6 +1315,21 @@ def silver_documents() -> None:
     typer.echo(json.dumps({"documents": written}, indent=2))
 
 
+@silver_app.command("events")
+def silver_events() -> None:
+    """Publish the event calendar into Silver.
+
+    National holidays and cuti bersama from the SKB 3 Menteri — the latest
+    decree for each year, amendments applied — and Ramadan derived from Idul
+    Fitri. What a series is read against when a reader asks what prices did
+    around Lebaran.
+
+    Run it after `warehouse extract regulations menpan-hari-libur`.
+    """
+    runner = SilverRunner(_resolver())
+    typer.echo(json.dumps({"events": runner.write_events()}, indent=2))
+
+
 @silver_app.command("recode")
 def silver_recode(
     dry_run: Annotated[
