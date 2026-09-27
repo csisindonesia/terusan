@@ -37,6 +37,8 @@ export type ChartSpec = {
     id: string;
     label: string;
     unit?: string;
+    /** A short name for the headline and the key figures. */
+    short?: string;
     /** The place or commodity drawn, where the series has several. */
     member?: string;
     /** Who publishes the figures. Absent on charts kept from before. */
@@ -47,6 +49,38 @@ export type ChartSpec = {
   /** Pearson's r where there are two series, and over how many periods. */
   correlation?: number;
   overlap?: number;
+  /**
+   * What the chart shows, worked out by the server from the same figures:
+   * the headline finding, each series' key figure, and the few points worth
+   * marking. Absent on charts kept from before it was sent.
+   */
+  story?: ChartStory;
+};
+
+export type ChartStory = {
+  language: "id" | "en";
+  headline: string;
+  figures: {
+    /** Index into the chart's series. */
+    series: number;
+    last: number;
+    last_period: string;
+    change: number;
+    change_unit: "percent" | "points";
+    from: string;
+    /** As the headline writes them, so the two never round differently. */
+    last_text: string;
+    change_text: string;
+  }[];
+  annotations?: ChartAnnotation[];
+};
+
+export type ChartAnnotation = {
+  /** Index into the chart's series, and into its periods. */
+  series: number;
+  index: number;
+  kind: "peak" | "low" | "jump" | "drop";
+  label: string;
 };
 
 /**
@@ -65,6 +99,7 @@ export type ChartProposal = {
   series: {
     id: string;
     label: string;
+    short?: string;
     unit?: string;
     member?: string;
     source?: string;
@@ -81,6 +116,7 @@ export type ChartProposal = {
 export type ChartConfirm = {
   series: string[];
   members: Record<string, string>;
+  names: Record<string, string>;
   kind: ChartKind;
   title?: string;
   reason?: string;
@@ -532,10 +568,15 @@ export function confirmsProposal(text: string): boolean {
 export function confirmFor(proposal: ChartProposal, keep: string[]): ChartConfirm {
   const kept = proposal.series.filter((s) => keep.includes(s.id));
   const members: Record<string, string> = {};
-  for (const s of kept) if (s.member) members[s.id] = s.member;
+  const names: Record<string, string> = {};
+  for (const s of kept) {
+    if (s.member) members[s.id] = s.member;
+    if (s.short) names[s.id] = s.short;
+  }
   return {
     series: kept.map((s) => s.id),
     members,
+    names,
     kind: proposal.kind,
     // The title names every proposed series; with one dropped the server
     // names the chart from what is left.

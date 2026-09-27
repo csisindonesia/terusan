@@ -78,6 +78,7 @@ export function TimeSeriesChart({
   dashed = false,
   markers = false,
   framed = true,
+  annotations = [],
 }: {
   series: Series[];
   unit?: string;
@@ -92,6 +93,11 @@ export function TimeSeriesChart({
   markers?: boolean;
   /** Its own border and surface; off where a card around it has them. */
   framed?: boolean;
+  /**
+   * Points to mark and label, by series and period index: a peak, a low, a
+   * sharp move. Where a caller passes these, they replace the default marks.
+   */
+  annotations?: { series: number; index: number; label: string }[];
   /** Given when the legend is a control rather than a key. */
   onToggle?: (name: string) => void;
 }) {
@@ -319,8 +325,29 @@ export function TimeSeriesChart({
             </text>
           ))}
 
+          {annotations.length ? (
+            <Annotations
+              marks={annotations.flatMap((mark) => {
+                const entry = listed[mark.series];
+                const point = entry?.points[mark.index];
+                if (!entry || entry.hidden || !point || point.value === null) return [];
+                return [
+                  {
+                    key: `${mark.series}-${mark.index}`,
+                    x: x(mark.index),
+                    y: y(point.value),
+                    color: seriesColor(mark.series),
+                    label: mark.label,
+                  },
+                ];
+              })}
+              width={WIDTH}
+              top={PADDING.top}
+            />
+          ) : null}
+
           {/* Labelled selectively: the peak and the latest, not every point. */}
-          {only
+          {only && !annotations.length
             ? // Deduplicated: when the peak *is* the latest figure both are the
               // same index, and two marks keyed alike is a React key collision.
               [...new Set([peakIndex, lastIndex])].map((index) => {
@@ -489,5 +516,80 @@ function Legend({
         );
       })}
     </ul>
+  );
+}
+
+/**
+ * Marked points with their labels: a dot on the line and a few words above
+ * it, on a halo in the card's colour so a label crossing a line stays
+ * legible. Labels near an edge are anchored to stay inside it, and one near
+ * the top goes below its point instead.
+ */
+export function Annotations({
+  marks,
+  width,
+  top,
+}: {
+  marks: { key: string; x: number; y: number; color: string; label: string }[];
+  width: number;
+  top: number;
+}) {
+  // Placed one by one, each label moved clear of those already placed: two
+  // series peaking in the same period otherwise print one label over the
+  // other. Widths are estimated from the text, which at 11px is close enough.
+  const placed: { left: number; right: number; y: number }[] = [];
+  const layout = marks.map((mark) => {
+    const anchor: "start" | "end" | "middle" =
+      mark.x < 90 ? "start" : mark.x > width - 90 ? "end" : "middle";
+    const textWidth = mark.label.length * 6.2;
+    const left =
+      anchor === "start"
+        ? mark.x
+        : anchor === "end"
+          ? mark.x - textWidth
+          : mark.x - textWidth / 2;
+    let y = mark.y - 12 < top + 8 ? mark.y + 18 : mark.y - 10;
+    for (let tries = 0; tries < 6; tries++) {
+      const clash = placed.some(
+        (box) =>
+          left < box.right && left + textWidth > box.left && Math.abs(box.y - y) < 14,
+      );
+      if (!clash) break;
+      y += y < mark.y ? -14 : 14;
+    }
+    placed.push({ left, right: left + textWidth, y });
+    return { ...mark, anchor, labelY: Math.max(top + 4, y) };
+  });
+  return (
+    <g>
+      {layout.map((mark) => {
+        const anchor = mark.anchor;
+        return (
+          <g key={mark.key}>
+            <circle
+              cx={mark.x}
+              cy={mark.y}
+              r={4.5}
+              fill={mark.color}
+              stroke="var(--card, #fff)"
+              strokeWidth={2}
+            />
+            <text
+              x={mark.x}
+              y={mark.labelY}
+              textAnchor={anchor}
+              fontSize={11}
+              fontWeight={600}
+              fill="var(--foreground)"
+              stroke="var(--card, #fff)"
+              strokeWidth={3}
+              paintOrder="stroke"
+            >
+              {mark.label}
+            </text>
+          </g>
+        );
+      })}
+    </g>
   );
 }

@@ -83,6 +83,10 @@ type chartSpec struct {
 	Correlation *float64 `json:"correlation,omitempty"`
 	Overlap     int      `json:"overlap,omitempty"`
 
+	// What the chart shows, worked out from its figures: the headline, the
+	// key figures and the points marked on it (story.go).
+	Story *chartStory `json:"story,omitempty"`
+
 	// The question it was planned for, which may be an earlier one than the
 	// latest ("buatkan chartnya"): what the proposal explains each series by.
 	asked string
@@ -91,6 +95,8 @@ type chartSpec struct {
 type chartSeries struct {
 	ID    string `json:"id"`
 	Label string `json:"label"`
+	// A short name for the headline and the key figures.
+	Short string `json:"short,omitempty"`
 	Unit  string `json:"unit,omitempty"`
 	// The place, or the commodity, the figures are for where the series has
 	// several: "Indonesia", "DKI Jakarta", "Beras".
@@ -179,54 +185,66 @@ func analysisCandidateSeries(catalogue assistantCatalogue, question string) ([]I
 	for _, d := range catalogue.datasets {
 		titles[d.DatasetID] = datasetTitle(d)
 	}
-	var out []Indicator
-	var groups [][]Indicator
-	seen := map[string]bool{}
-	add := func(series []Indicator, terms []string) []Indicator {
-		var added []Indicator
-		for _, i := range series {
-			if len(out) >= analysisCandidates {
-				break
-			}
-			// Only what can be drawn over time, and only what is named for
-			// the question: a unit of "IDR/kg" is not a reason to chart rice
-			// for a question about the rupiah.
-			if i.Observations < 2 || !namedFor(i, titles, terms) || quoteVariant(i) {
-				continue
-			}
-			added = append(added, i)
-			if !seen[i.IndicatorID] {
-				seen[i.IndicatorID] = true
-				out = append(out, i)
-			}
-		}
-		return added
+	usable := func(i Indicator, terms []string) bool {
+		// Only what can be drawn over time, and only what is named for the
+		// question: a unit of "IDR/kg" is not a reason to chart rice for a
+		// question about the rupiah. The closes, not the open, high and low
+		// beside them, which would take the places of other currencies.
+		return i.Observations >= 2 && namedFor(i, titles, terms) && !quoteVariant(i)
 	}
+
+	// The best few for each thing the question names, skipping the words
+	// that name nothing ("tau" matches inside "status"; "jumlah" is in half
+	// of BPS's titles) — the same words the side check leaves out.
+	var groups [][]Indicator
 	for _, word := range questionWords(question) {
-		if isAnalysisWord(word) {
+		if isAnalysisWord(word) || coverageNoise[word] || stopWords[word] {
+			continue
+		}
+		if len([]rune(word)) < 4 && translations[word] == "" && acronyms[word] == "" {
 			continue
 		}
 		terms := searchTerms(word)
 		if len(terms) == 0 {
 			continue
 		}
-		// The closes before the cap: a currency is four quotes, and three of
-		// them would take the places of other currencies.
-		var ranked []Indicator
+		var group []Indicator
 		for _, i := range rankSeries(catalogue.series, titles, terms) {
-			if !quoteVariant(i) {
-				ranked = append(ranked, i)
+			if usable(i, terms) {
+				group = append(group, i)
+				if len(group) == analysisPerTerm {
+					break
+				}
 			}
 		}
-		if len(ranked) > analysisPerTerm {
-			ranked = ranked[:analysisPerTerm]
-		}
-		if group := add(ranked, terms); len(group) > 0 {
+		if len(group) > 0 {
 			groups = append(groups, group)
 		}
 	}
+
+	// Taken in turns, one from each group, so every thing asked about has a
+	// place before any has a sixth: taken word by word, "mata uang idr ke
+	// usd" filled the list and "inflasi", last, got none.
+	var out []Indicator
+	seen := map[string]bool{}
+	for depth := 0; depth < analysisPerTerm && len(out) < analysisCandidates; depth++ {
+		for _, group := range groups {
+			if depth < len(group) && !seen[group[depth].IndicatorID] && len(out) < analysisCandidates {
+				seen[group[depth].IndicatorID] = true
+				out = append(out, group[depth])
+			}
+		}
+	}
 	all := searchTerms(question)
-	add(rankSeries(catalogue.series, titles, all), all)
+	for _, i := range rankSeries(catalogue.series, titles, all) {
+		if len(out) >= analysisCandidates {
+			break
+		}
+		if usable(i, all) && !seen[i.IndicatorID] {
+			seen[i.IndicatorID] = true
+			out = append(out, i)
+		}
+	}
 	return out, groups
 }
 
@@ -252,6 +270,11 @@ type analysisPlan struct {
 	Chart  string   `json:"chart"`
 	Title  string   `json:"title"`
 	Reason string   `json:"reason"`
+	// A short name per series, for the headline and the key figures: the
+	// catalogue's names run to "Currency Conversions: US Dollar Exchange
+	// Rate: Average of Daily Rates: National Currency: USD for Indonesia".
+	// Names only — every number beside them is the server's.
+	Names map[string]string `json:"names"`
 	// The place or commodity each series was proposed for, so a confirmed
 	// chart draws the one the reader agreed to.
 	Members map[string]string `json:"-"`
@@ -392,7 +415,8 @@ func (s *Server) planChart(
 	var b strings.Builder
 	b.WriteString("You choose the chart that best answers a reader's question about Indonesian data, " +
 		"from the series listed below. Reply with one JSON object and nothing else:\n" +
-		`{"series":["<id>", …],"chart":"<kind>","title":"<chart title>","reason":"<why this chart>"}` +
+		`{"series":["<id>", …],"chart":"<kind>","title":"<chart title>","reason":"<why this chart>",` +
+		`"names":{"<id>":"<short name>", …}}` +
 		"\n\nChart kinds:\n")
 	kinds := make([]string, 0, len(chartKinds))
 	for kind := range chartKinds {
@@ -417,7 +441,9 @@ func (s *Server) planChart(
 	} else {
 		b.WriteString("Write the title and the reason in English. ")
 	}
-	b.WriteString("The title names what is compared in under ten words, without years or dates (the span is shown on the chart); the reason is one sentence " +
+	b.WriteString("Give each chosen series a short name of two to four words in the reader's language, as a person " +
+		"would say it (\"Kurs dolar AS\", \"Inflasi\", \"Harga cabai rawit\"); names only, no numbers. " +
+		"The title names what is compared in under ten words, without years or dates (the span is shown on the chart); the reason is one sentence " +
 		"under twenty words on why this kind of chart suits the question.\n\nSeries (id | name | frequency | unit | coverage | places):\n")
 	for _, i := range candidates {
 		unit := "—"
@@ -597,6 +623,7 @@ func (s *Server) chartFigures(
 			return nil, err
 		}
 		if len(figures) < 2 {
+			s.log.Info("assistant.series_dropped", "series", i.IndicatorID, "figures", len(figures))
 			continue // too little to draw
 		}
 		unit := ""
@@ -604,7 +631,8 @@ func (s *Server) chartFigures(
 			unit = *i.Unit
 		}
 		reads = append(reads, read{
-			chartSeries{ID: i.IndicatorID, Label: indicatorTitle(i), Unit: unit, Member: member},
+			chartSeries{ID: i.IndicatorID, Label: indicatorTitle(i), Unit: unit, Member: member,
+				Short: shortName(indicatorTitle(i), plan.Names[i.IndicatorID])},
 			figures,
 		})
 	}
@@ -614,6 +642,11 @@ func (s *Server) chartFigures(
 			drawn[n] = r.series
 		}
 		if extra := repair(drawn); len(extra) > 0 {
+			added := make([]string, len(extra))
+			for n, i := range extra {
+				added[n] = i.IndicatorID + " " + clip(indicatorTitle(i), 60)
+			}
+			s.log.Info("assistant.plan_repaired", "added", strings.Join(added, " | "))
 			// Read again with them: one may be coarser, and every series is
 			// drawn at the coarsest.
 			more := append(append([]Indicator{}, chosen...), extra...)
@@ -937,15 +970,32 @@ func chartPrompt(chart *chartSpec) string {
 		fmt.Fprintf(&b, "Correlation (Pearson r) over the %d periods both have a figure: %.2f\n",
 			chart.Overlap, *chart.Correlation)
 	}
-	b.WriteString("For this turn: in 3 to 5 short sentences or bullets, say what the chart shows — how each " +
-		"series moved, and whether and when they moved together — using only the figures in this section, " +
-		"rounded, and link each series as given. Where a correlation is given, say how strong it is and its " +
-		"sign, and that it does not show that one causes the other. Do not describe the chart's colours or " +
-		"repeat its title. The chart shows these series and no others: name each only by its link text above, " +
-		"whatever earlier replies named other series. Write each place and commodity exactly as given in its " +
-		"brackets, untranslated (\"Bird's eye chili — green\", not a guess at its local name). " +
-		"Begin with what the chart shows. Then, if other listed items would deepen the " +
-		"comparison, suggest at most three.\n")
+	if story := chart.Story; story != nil {
+		fmt.Fprintf(&b, "The chart's headline, worked out from its figures: %q\n", story.Headline)
+		if len(story.Annotations) > 0 {
+			b.WriteString("Points marked on the chart:\n")
+			for _, mark := range story.Annotations {
+				fmt.Fprintf(&b, "- %s: %s, %s\n", storyName(chart.Series[mark.Series]), mark.Label,
+					chart.Periods[mark.Index])
+			}
+		}
+	}
+	b.WriteString("For this turn, tell what the chart shows as a short story, in this order, using only the " +
+		"figures in this section, rounded:\n" +
+		"1. The finding, first, in one sentence: the headline above, in your own words.\n" +
+		"2. The baseline: where each series began and over what span, linking each series as given.\n" +
+		"3. At most three points that explain the finding, each tied to a point marked above (a peak, a low, " +
+		"a sharp move) and its period, or to when the series moved together or apart.\n" +
+		"4. The limits, in one or two sentences: where a correlation is given, how strong it is and that it " +
+		"does not show that one causes the other; the span the series share; whether the figures are national " +
+		"or for one place.\n" +
+		"5. Where to look next: one follow-up question the reader could ask, or at most three listed items " +
+		"that would deepen it.\n" +
+		"No advice or recommendations on policy or business: this is what the figures show, not what anyone " +
+		"should do. Do not describe the chart's colours or repeat its title. The chart shows these series and " +
+		"no others: name each only by its link text above, whatever earlier replies named other series. Write " +
+		"each place and commodity exactly as given in its brackets, untranslated (\"Bird's eye chili — " +
+		"green\", not a guess at its local name). Keep it under 180 words.\n")
 	return b.String()
 }
 
@@ -1619,6 +1669,7 @@ type chartProposal struct {
 type proposedSeries struct {
 	ID     string `json:"id"`
 	Label  string `json:"label"`
+	Short  string `json:"short,omitempty"`
 	Unit   string `json:"unit,omitempty"`
 	Member string `json:"member,omitempty"`
 	Source string `json:"source,omitempty"`
@@ -1632,6 +1683,7 @@ type proposedSeries struct {
 type chartConfirm struct {
 	Series  []string          `json:"series"`
 	Members map[string]string `json:"members,omitempty"`
+	Names   map[string]string `json:"names,omitempty"`
 	Kind    string            `json:"kind"`
 	Title   string            `json:"title,omitempty"`
 	Reason  string            `json:"reason,omitempty"`
@@ -1664,7 +1716,8 @@ func proposalFrom(chart *chartSpec, catalogue assistantCatalogue, language strin
 			}
 		}
 		proposed := proposedSeries{
-			ID: series.ID, Label: series.Label, Unit: series.Unit, Member: series.Member, Source: series.Source,
+			ID: series.ID, Label: series.Label, Short: series.Short, Unit: series.Unit, Member: series.Member,
+			Source: series.Source,
 		}
 		if first >= 0 {
 			proposed.From, proposed.To = chart.Periods[first], chart.Periods[last]
@@ -1799,9 +1852,13 @@ func (s *Server) confirmedChart(
 	for id, member := range c.Members {
 		members[id] = clip(member, 200)
 	}
+	names := map[string]string{}
+	for id, name := range c.Names {
+		names[id] = name // clipped where it is used, in shortName
+	}
 	plan := analysisPlan{
 		Series: ids, Chart: chartFor(c.Kind, chosen), Title: clip(c.Title, 90), Reason: clip(c.Reason, 200),
-		Members: members,
+		Members: members, Names: names,
 	}
 	// The words the proposal was made for pick the same place and commodity
 	// where a member was not named.

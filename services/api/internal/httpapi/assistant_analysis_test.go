@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -523,5 +524,27 @@ func TestAProposalSaysWhatEachSeriesIsFor(t *testing.T) {
 	// Figures are not in a proposal: nothing is described before it is drawn.
 	if strings.Contains(text, "10600") || strings.Contains(text, "77") {
 		t.Errorf("proposal states a figure:\n%s", text)
+	}
+}
+
+func TestEveryThingAskedAboutGetsCandidates(t *testing.T) {
+	var series []Indicator
+	// Plenty of exchange rates and noise, and one inflation series last.
+	for n := 0; n < 40; n++ {
+		series = append(series, indicator(fmt.Sprintf("fx%d", n), fmt.Sprintf("Exchange rate to US dollar %d", n), "IDR", "monthly", 100))
+		series = append(series, indicator(fmt.Sprintf("st%d", n), fmt.Sprintf("Status pekerjaan mata pencaharian %d", n), "", "annual", 20))
+	}
+	series = append(series, indicator("cpi", "Inflation CPI", "%", "monthly", 200))
+	candidates, _ := analysisCandidateSeries(assistantCatalogue{series: series},
+		"saya ingin tau perbandingan antara mata uang idr ke usd terhadap inflasi")
+	found := false
+	for _, i := range candidates {
+		found = found || i.IndicatorID == "cpi"
+		if strings.HasPrefix(i.IndicatorID, "st") {
+			t.Errorf("%s offered for the words tau and mata", i.IndicatorID)
+		}
+	}
+	if !found {
+		t.Error("inflation was crowded out of the candidates")
 	}
 }

@@ -25,8 +25,12 @@ import {
 } from "~/components/ui/dropdown-menu";
 
 import { ColumnChart } from "~/components/column-chart";
-import { TimeSeriesChart, type Series } from "~/components/time-series-chart";
-import type { ChartSpec } from "~/lib/assistant";
+import {
+  Annotations,
+  TimeSeriesChart,
+  type Series,
+} from "~/components/time-series-chart";
+import type { ChartSpec, ChartStory } from "~/lib/assistant";
 import { formatCompact, formatDecimal } from "~/lib/format";
 import { cn } from "~/lib/utils";
 import { GRID, SERIES_DARK_SLOTS, SERIES_LIGHT_SLOTS, seriesColor } from "~/lib/viz";
@@ -164,8 +168,8 @@ export function AssistantChart({
     <figure
       ref={cardRef}
       className={cn(
-        "space-y-4 rounded-xl border bg-card p-5 text-card-foreground sm:p-6",
-        fullscreen && "overflow-auto rounded-none border-0",
+        "space-y-4 rounded-xl bg-card p-5 text-card-foreground sm:p-6",
+        fullscreen && "overflow-auto rounded-none",
         SERIES_DARK_SLOTS,
         className,
       )}
@@ -173,20 +177,33 @@ export function AssistantChart({
     >
       <header className="flex items-start justify-between gap-4">
         <div className="min-w-0 space-y-1">
+          {/* The finding as the title, and what is drawn beneath it: a reader
+              takes away the sentence at the top, so it says what the chart
+              shows rather than what it is of. */}
           <h3 className="font-serif text-xl leading-snug font-semibold tracking-tight sm:text-2xl">
-            {chart.title}{" "}
-            {from ? (
-              <span className="font-sans text-base font-normal whitespace-nowrap text-muted-foreground">
+            {chart.story?.headline ?? chart.title}
+            {!chart.story && from ? (
+              <span className="ml-2 font-sans text-base font-normal whitespace-nowrap text-muted-foreground">
                 {from === to ? from : `${from} to ${to}`}
               </span>
             ) : null}
           </h3>
+          {chart.story ? (
+            <p className="text-sm font-medium text-muted-foreground">
+              {chart.title}
+              {from ? ` · ${from === to ? from : `${from} to ${to}`}` : ""}
+            </p>
+          ) : null}
           {chart.reason ? (
             <p className="text-sm text-muted-foreground">{chart.reason}</p>
           ) : null}
         </div>
         <img src={logoUrl} alt="Terusan" className="h-9 w-auto shrink-0" />
       </header>
+
+      {chart.story?.figures.length ? (
+        <StoryFigures chart={chart} story={chart.story} />
+      ) : null}
 
       <div data-export-skip="true" className="inline-flex rounded-lg border p-0.5">
         {(
@@ -366,6 +383,15 @@ function sliceChart(chart: ChartSpec, [from, to]: [number, number]): ChartSpec {
     periods: chart.periods.slice(from, to + 1),
     series,
   };
+  // The marks move with the span, and those outside it go.
+  if (chart.story?.annotations) {
+    sliced.story = {
+      ...chart.story,
+      annotations: chart.story.annotations
+        .filter((mark) => mark.index >= from && mark.index <= to)
+        .map((mark) => ({ ...mark, index: mark.index - from })),
+    };
+  }
   if (series.length === 2) {
     const [r, n] = pearson(series[0]!.values, series[1]!.values);
     sliced.correlation = n >= 3 ? r : undefined;
@@ -536,7 +562,14 @@ function ChartBody({ chart, unit }: { chart: ChartSpec; unit?: string }) {
       break;
     }
   }
-  return <TimeSeriesChart series={toSeries(chart)} unit={unit} {...LOOK} />;
+  return (
+    <TimeSeriesChart
+      series={toSeries(chart)}
+      unit={unit}
+      annotations={chart.story?.annotations}
+      {...LOOK}
+    />
+  );
 }
 
 // How the time series is drawn inside the card: at the card's width, with the
@@ -576,6 +609,7 @@ function IndexedChart({ chart }: { chart: ChartSpec }) {
     <TimeSeriesChart
       series={toSeries(chart, rebased)}
       unit={`(${baseLabel} = 100)`}
+      annotations={chart.story?.annotations}
       {...LOOK}
     />
   );
@@ -788,6 +822,26 @@ function DualAxisChart({ chart }: { chart: ChartSpec }) {
               )
             : null}
         </g>
+
+        {chart.story?.annotations?.length ? (
+          <Annotations
+            marks={chart.story.annotations.flatMap((mark) => {
+              const value = [left, right][mark.series]?.values[mark.index];
+              if (mark.series > 1 || value == null) return [];
+              return [
+                {
+                  key: `${mark.series}-${mark.index}`,
+                  x: x(mark.index),
+                  y: y(mark.series, value),
+                  color: seriesColor(mark.series),
+                  label: mark.label,
+                },
+              ];
+            })}
+            width={WIDTH}
+            top={padding.top}
+          />
+        ) : null}
 
         {tickIndices(count).map((index) => (
           <text
@@ -1037,5 +1091,46 @@ function ScatterChart({ chart }: { chart: ChartSpec }) {
         </Tooltip>
       ) : null}
     </Frame>
+  );
+}
+
+/**
+ * The key figures at a glance: each series' latest value and how far it
+ * moved over the span, written by the server as the headline writes them —
+ * 17.844 in Indonesian, 17,844 in English, rounded the same way.
+ */
+function StoryFigures({ chart, story }: { chart: ChartSpec; story: ChartStory }) {
+  const since = story.language === "id" ? "sejak" : "since";
+  return (
+    <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {story.figures.slice(0, 4).map((figure) => {
+        const series = chart.series[figure.series];
+        if (!series) return null;
+        const flat = Math.abs(figure.change) < 0.05;
+        return (
+          <div key={series.id} className="min-w-0 rounded-lg bg-muted/60 px-3 py-2">
+            <dt className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+              {chart.series.length > 1 ? (
+                <span
+                  aria-hidden
+                  className="size-2 shrink-0 rounded-full"
+                  style={{ background: seriesColor(figure.series) }}
+                />
+              ) : null}
+              <span className="truncate" title={seriesName(series)}>
+                {series.short ?? seriesName(series)}
+              </span>
+            </dt>
+            <dd className="mt-0.5 font-heading text-lg font-semibold tabular-nums">
+              {figure.last_text}
+            </dd>
+            <dd className="text-xs text-muted-foreground tabular-nums">
+              {flat ? "=" : figure.change > 0 ? "▲" : "▼"} {figure.change_text} {since}{" "}
+              {figure.from}
+            </dd>
+          </div>
+        );
+      })}
+    </dl>
   );
 }

@@ -255,6 +255,7 @@ func (s *Server) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 		chart = s.confirmedChart(r.Context(), catalogue, *body.Confirm, earlierContext(messages))
 		if chart != nil {
 			chart.Reason = kindReason(chart.Kind, len(chart.Series), route.Language)
+			chart.Story = tellStory(chart, route.Language)
 		}
 	case analysisTurn:
 		// Asked for: planned and checked, then proposed rather than drawn.
