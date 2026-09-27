@@ -374,6 +374,17 @@ def test_bronze_to_silver_produces_queryable_observations(resolver, geography):
     assert row[4] == "bps"
 
 
+def test_an_include_filter_narrows_the_scan(resolver, geography):
+    """A slice of a source too large for memory is read as a slice."""
+    _land_and_extract(resolver, b"bulan;provinsi;nilai\n2026-01;Aceh;5\n2026-01;Jawa Barat;6\n")
+    runner = SilverRunner(resolver, geography=geography)
+
+    rows = runner.read_bronze(dataset="inflation", include={"provinsi": ("Aceh", "Bali")})
+
+    assert [dict(r["columns"])["provinsi"] for r in rows] == ["Aceh"]
+    assert len(runner.read_bronze(dataset="inflation")) == 2
+
+
 def test_silver_is_partitioned_for_pruning(resolver, geography):
     _land_and_extract(resolver, b"bulan;nilai\n2026-01;5\n2026-02;6\n")
     mapping = ColumnMapping(

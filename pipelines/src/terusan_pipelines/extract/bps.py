@@ -40,6 +40,7 @@ import html
 import json
 import re
 from collections.abc import Iterator
+from functools import cache
 from typing import Any
 
 from ..identifiers import short_id
@@ -143,27 +144,61 @@ def region_code(vervar: str) -> str:
     return ""
 
 
-#: Provinces whose regencies BPS and Kemendagri number differently since the
-#: 2022 split of Papua. BPS gives Papua Selatan 95, Kemendagri 93; BPS's 95.01 is
-#: Merauke and Kemendagri's is Jayawijaya — and the regency registry answers to
-#: Kemendagri's, because SP2KP keys its figures by them.
-_RENUMBERED_PROVINCES = frozenset({"91", "92", "94", "95", "96", "97"})
+_PREFIX = re.compile(r"^(kabupaten|kab\.?)\s+")
+
+
+def _same_place(a: str, b: str) -> bool:
+    """Whether two spellings name one regency: case, spacing and a leading
+    `Kab`/`Kabupaten` aside. `Kota` is kept — Kota Bandung is not Bandung."""
+
+    def norm(text: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", _PREFIX.sub("", text.strip().lower()))
+
+    return norm(a) == norm(b)
+
+
+@cache
+def _registry_names() -> dict[str, tuple[str, ...]]:
+    """Every name the regency registry gives each code it answers to.
+
+    Imported here rather than at the top: the registry lives in `normalize`,
+    which imports extraction, and a module-level import would be circular.
+    """
+    from ..normalize.reference import load_regencies
+
+    names: dict[str, list[str]] = {}
+    for regency in load_regencies():
+        spellings = [regency.name, *regency.aliases]
+        for code in (regency.bps_code, *regency.aliases):
+            if code and re.fullmatch(r"\d{2}\.?\d{2}", code):
+                dotted = code if "." in code else f"{code[:2]}.{code[2:]}"
+                names.setdefault(dotted, []).extend(spellings)
+    return {code: tuple(found) for code, found in names.items()}
 
 
 def geo_key(vervar: str, label: str) -> str:
     """What to resolve a row's place on.
 
-    The code, except for a regency in the renumbered Papua provinces — where a
-    BPS code resolves, silently and plausibly, to a different regency under
-    Kemendagri's scheme — and for a table that does not code its regions at
-    all. Those resolve on BPS's name for the place.
+    A province's code, always: the province registry is keyed by BPS's own
+    codes, checked against this API. A regency's code only when the registry
+    calls that code by the name BPS gives the row. The regency registry keys
+    several provinces by Kemendagri's numbering rather than BPS's — BPS's 64.03
+    is Kutai Kartanegara, the registry's is Berau; BPS's 95.01 is Merauke, the
+    registry's Jayawijaya — and a code taken on trust files one regency's
+    figures under another, silently and plausibly. Where the names disagree,
+    or the code is not in the registry, the row resolves on BPS's name.
+
+    A table that does not code its rows at all resolves on the name too.
     """
     code = region_code(vervar)
     if not code:
         return label
-    if "." in code and code.split(".")[0] in _RENUMBERED_PROVINCES:
-        return label
-    return code
+    if "." not in code:
+        return code
+    known = _registry_names().get(code, ())
+    if any(_same_place(label, name) for name in known):
+        return code
+    return label
 
 
 def period_of(year: str, label: str) -> str:

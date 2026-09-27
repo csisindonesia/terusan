@@ -13,7 +13,7 @@ is often. Appending would leave the old, wrong rows in place beside the new.
 from __future__ import annotations
 
 import shutil
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -725,12 +725,22 @@ class SilverRunner:
         return written.rows
 
     def read_bronze(
-        self, *, dataset: str | None = None, source_id: str | None = None
+        self,
+        *,
+        dataset: str | None = None,
+        source_id: str | None = None,
+        include: Mapping[str, tuple[str, ...]] | None = None,
     ) -> list[dict]:
         """Read Bronze records, filtering in the scan.
 
         Public because a caller normalizing many indicators out of one
         dataset should read it once and hand the rows to `normalize`.
+
+        `include` keeps only rows whose column holds one of the values, and is
+        applied in the scan rather than after it. The same filter applied in
+        Python gives the same rows, but only after every row has been turned
+        into a dict — and BPS's catalogue is six million of them, which is
+        more memory than the machine this runs on has.
         """
         root = Path(self._resolver.resolve(Layer.BRONZE, "records"))
         if not any(root.rglob("*.parquet")):
@@ -750,6 +760,9 @@ class SilverRunner:
         if source_id:
             conditions.append("source_id = ?")
             params.append(source_id)
+        for column, values in (include or {}).items():
+            conditions.append(f"columns[?] IN ({', '.join('?' for _ in values)})")
+            params.extend([column, *values])
         if conditions:
             sql += " WHERE " + " AND ".join(conditions)
 

@@ -234,12 +234,18 @@ def test_region_codes_as_the_registry_keys_them() -> None:
     assert region_code("1") == ""
 
 
-def test_renumbered_papua_regencies_resolve_on_the_name() -> None:
-    """BPS 95.01 is Merauke; Kemendagri's 95.01, which the registry answers
-    to, is Jayawijaya."""
+def test_a_regency_code_is_trusted_only_where_the_names_agree() -> None:
+    """The regency registry keys several provinces by Kemendagri's numbering.
+    BPS's 64.03 is Kutai Kartanegara and the registry's is Berau; BPS's 95.01
+    is Merauke and the registry's Jayawijaya. A code whose name disagrees
+    resolves on BPS's name instead."""
+    assert geo_key("6403", "KUTAI KARTANEGARA") == "KUTAI KARTANEGARA"
     assert geo_key("9501", "MERAUKE") == "MERAUKE"
+    assert geo_key("6405", "BERAU") == "64.05"
+    assert geo_key("3273", "KOTA BANDUNG") == "32.73"
+    # Provinces are keyed by BPS's own codes, checked against the API.
     assert geo_key("9500", "PAPUA SELATAN") == "95"
-    assert geo_key("1106", "KAB ACEH TENGAH") == "11.06"
+    # A table that numbers its rows rather than coding them.
     assert geo_key("1", "KAB ACEH TENGAH") == "KAB ACEH TENGAH"
 
 

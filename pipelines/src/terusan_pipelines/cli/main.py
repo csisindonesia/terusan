@@ -1003,7 +1003,11 @@ def silver_normalize_each(
         commodities=commodity_registry(),
     )
     started = _now()
-    records = runner.read_bronze(dataset=dataset, source_id=source)
+    exclusions = _where_clauses("--exclude", exclude)
+    inclusions = _where_clauses("--include", include)
+    # Inclusions narrow the scan itself, so a source too large to hold in
+    # memory can be normalized a slice at a time (scripts/normalize-bps.sh).
+    records = runner.read_bronze(dataset=dataset, source_id=source, include=inclusions)
     if not records:
         # Recorded rather than only printed: a normalization that finds no
         # Bronze is how an extraction that quietly stopped becomes visible.
@@ -1038,9 +1042,6 @@ def silver_normalize_each(
             err=True,
         )
         raise typer.Exit(code=1)
-
-    exclusions = _where_clauses("--exclude", exclude)
-    inclusions = _where_clauses("--include", include)
 
     groups: dict[str, list[dict]] = {}
     for record in records:
@@ -1138,7 +1139,13 @@ def silver_normalize_each(
             )
             raise typer.Exit(code=1)
         indicators_written = runner.write_indicators(
-            described, source_id=source_id, dataset=dataset
+            described,
+            source_id=source_id,
+            dataset=dataset,
+            # A run narrowed by --include covers part of the source, so it
+            # adds its names to the source's rather than replacing them — a
+            # slice replacing the table would delete every other slice's.
+            merge=bool(inclusions),
         )
 
     # One journal row for the command rather than one per series: FRED's crawl
