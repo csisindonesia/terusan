@@ -28,6 +28,7 @@ from ..identifiers import dataset_code, indicator_code, is_code
 from ..storage import Layer, StorageResolver, slugify
 from ..tagging import SourceFacts, dataset_tags, indicator_tags, source_tags
 from ..warehouse import ParquetWriter, Warehouse, table_from_rows
+from ..warehouse.observations import ObservationStore
 from . import documents as document_catalogue
 from .dimensions import CommodityRegistry, Geography, GeographyRegistry
 from .observations import ColumnMapping, NormalizationResult, ObservationNormalizer
@@ -167,16 +168,9 @@ class SilverRunner:
 
         table = table_from_rows(rows, SILVER_OBSERVATIONS)
         # Replaced, not appended: a corrected mapping must not leave the rows
-        # it previously produced sitting alongside the new ones.
-        self._replace(Layer.SILVER, "observations", slugify(mapping.indicator_id))
-
-        written = self._writer.write(
-            Layer.SILVER,
-            "observations",
-            table,
-            partition_by=["indicator_id", "temporal_resolution"],
-            run_id=slugify(mapping.indicator_id),
-        )
+        # it previously produced sitting alongside the new ones. Into the
+        # series' bucket, atomically (warehouse/observations.py).
+        written = ObservationStore(self._resolver).replace(mapping.indicator_id, table)
         result.files_written = written.files
         result.bytes_written = written.bytes_written
         result.paths = written.paths
@@ -383,7 +377,7 @@ class SilverRunner:
         with Warehouse(self._resolver) as warehouse:
             rows = warehouse.query(
                 "SELECT DISTINCT geo_id FROM "
-                "read_parquet(?, union_by_name=true, hive_partitioning=true) "
+                "read_parquet(?, union_by_name=true, hive_partitioning=false) "
                 "WHERE geo_id IS NOT NULL",
                 [pattern],
             ).fetchall()
@@ -658,7 +652,7 @@ class SilverRunner:
         with Warehouse(self._resolver) as warehouse:
             rows = warehouse.query(
                 "SELECT document_id, count(DISTINCT indicator_id), count(*) FROM "
-                "read_parquet(?, union_by_name=true, hive_partitioning=true) "
+                "read_parquet(?, union_by_name=true, hive_partitioning=false) "
                 "WHERE document_id IS NOT NULL GROUP BY document_id",
                 [pattern],
             ).fetchall()
@@ -713,7 +707,7 @@ class SilverRunner:
         with Warehouse(self._resolver) as warehouse:
             rows = warehouse.query(
                 "SELECT dataset_id, any_value(source_id) FROM "
-                "read_parquet(?, union_by_name=true, hive_partitioning=true) "
+                "read_parquet(?, union_by_name=true, hive_partitioning=false) "
                 "WHERE dataset_id IS NOT NULL GROUP BY dataset_id ORDER BY dataset_id",
                 [pattern],
             ).fetchall()

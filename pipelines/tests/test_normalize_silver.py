@@ -38,6 +38,7 @@ from terusan_pipelines.sources import (
 )
 from terusan_pipelines.storage import Layer, StorageConfig, StorageResolver
 from terusan_pipelines.warehouse import Warehouse
+from terusan_pipelines.warehouse.observations import bucket_name, bucket_of
 
 
 @pytest.fixture
@@ -382,11 +383,14 @@ def test_silver_is_partitioned_for_pruning(resolver, geography):
         mapping, dataset="inflation", source_id="bps"
     )
 
-    # Partitioned by the identifier the series is published under, which is a
-    # derived code and not the key the mapping declared (program.md §10).
-    partitions = list(Path(resolver.resolve(Layer.SILVER, "observations")).glob("indicator_id=*"))
+    # Bucketed by the identifier the series is published under, which is a
+    # derived code and not the key the mapping declared (program.md §10): the
+    # series lands in the one bucket its code hashes to, and nowhere else.
+    root = Path(resolver.resolve(Layer.SILVER, "observations"))
     expected = indicator_code("bps", "CPI_INFLATION_YOY")
-    assert [p.name for p in partitions] == [f"indicator_id={expected}"]
+    assert [p.name for p in root.glob("bucket=*")] == [bucket_name(bucket_of(expected))]
+    assert not list(root.glob("indicator_id=*"))
+    assert (root / "_layout.json").exists()
     assert result.slug == "CPI_INFLATION_YOY"
 
 

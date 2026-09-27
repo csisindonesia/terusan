@@ -14,6 +14,7 @@ from terusan_pipelines.normalize.runner import SilverRunner
 from terusan_pipelines.normalize.schema import SILVER_OBSERVATIONS
 from terusan_pipelines.storage import Layer, StorageConfig, StorageResolver
 from terusan_pipelines.warehouse import ParquetWriter, Warehouse, table_from_rows
+from terusan_pipelines.warehouse.observations import bucket_name, bucket_of
 
 
 @pytest.fixture
@@ -98,10 +99,11 @@ def test_a_slug_lake_moves_onto_codes(resolver: StorageResolver) -> None:
     # later run revising these figures instead of duplicating them.
     assert obs_id == observation_id(code, period, "ID", None)
 
-    partitions = [
-        p.name for p in Path(resolver.resolve(Layer.SILVER, "observations")).glob("indicator_id=*")
+    root = Path(resolver.resolve(Layer.SILVER, "observations"))
+    assert [p.parent.name for p in root.glob("bucket=*/part.parquet")] == [
+        bucket_name(bucket_of(code))
     ]
-    assert partitions == [f"indicator_id={code}"]
+    assert not list(root.glob("indicator_id=*"))
 
 
 def test_running_it_twice_changes_nothing(resolver: StorageResolver) -> None:

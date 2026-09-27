@@ -31,6 +31,7 @@ from .. import datasets as dataset_registry
 from ..identifiers import dataset_code, indicator_code, is_code
 from ..storage import Layer
 from ..warehouse import Warehouse, table_from_rows
+from ..warehouse.observations import ObservationStore
 from .observations import observation_id
 from .runner import SilverRunner
 from .schema import SILVER_OBSERVATIONS
@@ -118,7 +119,7 @@ def _survey(runner: SilverRunner) -> list[_Series]:
                    mode(unit),
                    mode(temporal_resolution),
                    count(*)
-            FROM read_parquet(?, union_by_name=true, hive_partitioning=true)
+            FROM read_parquet(?, union_by_name=true, hive_partitioning=false)
             GROUP BY indicator_id ORDER BY indicator_id
             """,
             [pattern],
@@ -228,7 +229,7 @@ def _rewrite_observations(runner: SilverRunner, series: list[_Series], slug_like
     with Warehouse(resolver) as warehouse:
         table = (
             warehouse.query(
-                "SELECT * FROM read_parquet(?, union_by_name=true, hive_partitioning=true)",
+                "SELECT * FROM read_parquet(?, union_by_name=true, hive_partitioning=false)",
                 [pattern],
             )
             .arrow()
@@ -255,15 +256,9 @@ def _rewrite_observations(runner: SilverRunner, series: list[_Series], slug_like
         )
 
     rewritten = table_from_rows(rows, SILVER_OBSERVATIONS)
-    target = Path(resolver.resolve(Layer.SILVER, "observations"))
-    _clear(target)
-    written = runner._writer.write(  # noqa: SLF001
-        Layer.SILVER,
-        "observations",
-        rewritten,
-        partition_by=["indicator_id", "temporal_resolution"],
-        run_id="recode",
-    )
+    # Every series moves, so every bucket is rewritten, each renamed into
+    # place rather than the table cleared first and written again.
+    written = ObservationStore(resolver).rewrite_all(rewritten)
     log.info("recode.observations", rows=written.rows, files=written.files)
     return written.rows
 

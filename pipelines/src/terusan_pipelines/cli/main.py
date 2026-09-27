@@ -440,6 +440,19 @@ def warehouse_compact(
     )
 
 
+@warehouse_app.command("migrate-observations")
+def warehouse_migrate_observations() -> None:
+    """Move Silver observations from one directory per series into hash buckets.
+
+    Resumable and safe to run beside the API: each bucket is written and renamed
+    into place before the series' old directories are removed, so every series
+    is readable in exactly one place throughout. See warehouse/observations.py.
+    """
+    from ..warehouse.observations import ObservationStore
+
+    typer.echo(json.dumps(ObservationStore(_resolver()).migrate_legacy(), indent=2))
+
+
 @warehouse_app.command("query")
 def warehouse_query(
     sql: Annotated[str, typer.Argument(help="SQL to run against the lake.")],

@@ -9,7 +9,11 @@ package query
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"hash/fnv"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -163,9 +167,15 @@ func (w *Warehouse) Source(layer storage.Layer, dataset string, partition ...str
 		return "", err
 	}
 	return fmt.Sprintf(
-		"read_parquet('%s', union_by_name=true, hive_partitioning=true)", pattern,
+		"read_parquet('%s', union_by_name=true, hive_partitioning=%t)", pattern, hivePartitioned(dataset),
 	), nil
 }
+
+// hivePartitioned is whether a dataset's partition keys are read from its
+// paths. Not the observations': they carry every key as a column, and DuckDB
+// refuses a glob whose paths hold two sets of keys — which a lake part-way
+// from one directory per series to hash buckets does.
+func hivePartitioned(dataset string) bool { return dataset != "observations" }
 
 // MaxNarrowedPartitions bounds how many partition globs are worth naming.
 //
@@ -193,7 +203,29 @@ func (w *Warehouse) SourceIn(
 	}
 
 	patterns := make([]string, 0, len(values))
+	bucketed := w.bucketed(layer, dataset, key)
+	seen := map[string]bool{}
 	for _, value := range values {
+		// A bucketed table holds the value in the bucket its hash names. The
+		// partition from the old layout is named too, for a lake part-way
+		// through its migration: a series is in one of the two.
+		if bucketed {
+			segment := BucketSegment(value)
+			if !seen[segment] {
+				seen[segment] = true
+				found, known := w.resolver.HasParquet(layer, dataset, segment)
+				if !known {
+					return w.Source(layer, dataset)
+				}
+				if found {
+					pattern, err := w.resolver.Glob(layer, dataset, segment)
+					if err != nil {
+						return w.Source(layer, dataset)
+					}
+					patterns = append(patterns, "'"+pattern+"'")
+				}
+			}
+		}
 		segment := key + "=" + value
 		// A partition that is not there must not be named: read_parquet
 		// raises "No files found that match the pattern" rather than
@@ -223,8 +255,8 @@ func (w *Warehouse) SourceIn(
 	}
 
 	return fmt.Sprintf(
-		"read_parquet([%s], union_by_name=true, hive_partitioning=true)",
-		strings.Join(patterns, ", "),
+		"read_parquet([%s], union_by_name=true, hive_partitioning=%t)",
+		strings.Join(patterns, ", "), hivePartitioned(dataset),
 	), nil
 }
 
@@ -277,3 +309,45 @@ func (w *Warehouse) HasColumn(
 
 // Ping verifies the connection is usable.
 func (w *Warehouse) Ping(ctx context.Context) error { return w.db.PingContext(ctx) }
+
+// Buckets is how many hash buckets a bucketed table has. The pipelines hold
+// the same number (warehouse/observations.py); a table's layout file says
+// which it was written with.
+const Buckets = 256
+
+// BucketSegment is the partition a value lands in: FNV-1a over its UTF-8,
+// modulo Buckets — the pipelines' `bucket_of`, byte for byte.
+func BucketSegment(value string) string {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(value))
+	return fmt.Sprintf("bucket=%03d", h.Sum32()%Buckets)
+}
+
+// bucketed reports whether a dataset is stored in hash buckets of `key`, as
+// its layout file says. Remembered like the other shape questions.
+func (w *Warehouse) bucketed(layer storage.Layer, dataset, key string) bool {
+	return w.remember("bucketed:"+layer.String()+":"+dataset+":"+key, func() bool {
+		if w.resolver.Config().IsObjectStorage() {
+			return false
+		}
+		root, err := w.resolver.Resolve(layer, dataset)
+		if err != nil {
+			return false
+		}
+		raw, err := os.ReadFile(filepath.Join(root, "_layout.json"))
+		if err != nil {
+			return false
+		}
+		var layout struct {
+			Layout  string `json:"layout"`
+			Key     string `json:"key"`
+			Hash    string `json:"hash"`
+			Buckets int    `json:"buckets"`
+		}
+		if json.Unmarshal(raw, &layout) != nil {
+			return false
+		}
+		return layout.Layout == "buckets" && layout.Key == key && layout.Hash == "fnv1a32" &&
+			layout.Buckets == Buckets
+	})
+}
