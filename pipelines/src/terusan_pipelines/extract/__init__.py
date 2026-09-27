@@ -23,13 +23,19 @@ from .runner import (
     walk_raw,
 )
 from .seki import SekiExtractor
+from .sina import SinaFuturesExtractor
 from .sipri import SipriMilexExtractor
 from .sp2kp import Sp2kpPricesExtractor
 from .sp2kp_national import Sp2kpNationalExtractor
 from .tabular import CsvExtractor, JsonExtractor, decode
-from .trading_economics import TradingEconomicsChartExtractor, TradingEconomicsExtractor
+from .trading_economics import (
+    TradingEconomicsChartExtractor,
+    TradingEconomicsExtractor,
+    TradingEconomicsMarketExtractor,
+)
 from .ucdp import UcdpOrganizedViolenceExtractor
 from .vews import VewsCollectiveViolenceExtractor
+from .westmetall import WestmetallLmeExtractor
 from .wits import RcaSeedExtractor, WitsTradeStatsExtractor
 from .workbooks import (
     SpreadsheetMLExtractor,
@@ -63,6 +69,7 @@ __all__ = [
     "PihpsPricesExtractor",
     "RcaSeedExtractor",
     "SekiExtractor",
+    "SinaFuturesExtractor",
     "SipriMilexExtractor",
     "Sp2kpNationalExtractor",
     "Sp2kpPricesExtractor",
@@ -70,8 +77,10 @@ __all__ = [
     "TextExtractor",
     "TradingEconomicsChartExtractor",
     "TradingEconomicsExtractor",
+    "TradingEconomicsMarketExtractor",
     "UcdpOrganizedViolenceExtractor",
     "VewsCollectiveViolenceExtractor",
+    "WestmetallLmeExtractor",
     "WitsTradeStatsExtractor",
     "SpreadsheetMLExtractor",
     "WorkbookExtractor",

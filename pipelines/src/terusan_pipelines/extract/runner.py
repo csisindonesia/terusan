@@ -36,13 +36,19 @@ from .hdx_mobility import MovementDistributionExtractor
 from .news import NewsArticleExtractor, NewsScreenshotExtractor, NewsTallyExtractor
 from .pihps import PihpsPricesExtractor
 from .seki import SekiExtractor
+from .sina import SinaFuturesExtractor
 from .sipri import SipriMilexExtractor
 from .sp2kp import Sp2kpPricesExtractor
 from .sp2kp_national import Sp2kpNationalExtractor
 from .tabular import CsvExtractor, JsonExtractor
-from .trading_economics import TradingEconomicsChartExtractor, TradingEconomicsExtractor
+from .trading_economics import (
+    TradingEconomicsChartExtractor,
+    TradingEconomicsExtractor,
+    TradingEconomicsMarketExtractor,
+)
 from .ucdp import UcdpOrganizedViolenceExtractor
 from .vews import VewsCollectiveViolenceExtractor
+from .westmetall import WestmetallLmeExtractor
 from .wits import RcaSeedExtractor, WitsTradeStatsExtractor
 from .workbooks import (
     SpreadsheetMLExtractor,
@@ -71,6 +77,12 @@ DEFAULT_EXTRACTORS: tuple[Extractor, ...] = (
     NewsTallyExtractor(),
     WorldBankExtractor(),
     YahooChartExtractor(),
+    # Before the generic HTML reader, which would land a year of LME prices
+    # as one blob of prose.
+    WestmetallLmeExtractor(),
+    # Before the generic JSON reader, which would land Sina's one-letter keys
+    # as column names and lose the symbol, which is not in the body.
+    SinaFuturesExtractor(),
     FredExtractor(),
     FredSeriesPageExtractor(),
     ConsumerSurveyExtractor(),
@@ -82,6 +94,9 @@ DEFAULT_EXTRACTORS: tuple[Extractor, ...] = (
     # Before the generic JSON reader, which would see a chart payload as one
     # quoted string of base64.
     TradingEconomicsChartExtractor(),
+    # Same encoding, different envelope: a market chart's points put the
+    # timestamp first.
+    TradingEconomicsMarketExtractor(),
     # Before the generic CSV reader, which would put every country Meta
     # reports on into an Indonesian warehouse's Bronze.
     MovementDistributionExtractor(),

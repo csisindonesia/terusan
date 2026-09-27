@@ -524,3 +524,75 @@ class TradingEconomicsChartExtractor(Extractor):
                             "publisher": str(serie.get("source") or ""),
                         },
                     }
+
+
+#: The market-chart sources: commodity prices, not Indonesian indicators.
+MARKET_SOURCES = frozenset({"tradingeconomics-coal"})
+
+
+def market_unit(stated: str) -> str:
+    """`USD/T` → `USD/t`. Trading Economics capitalises the tonne; the rest of
+    the lake writes it the SI way, and two spellings of one unit would read as
+    two units side by side."""
+    currency, _, quantity = stated.partition("/")
+    return f"{currency}/{quantity.lower()}" if quantity else stated
+
+
+class TradingEconomicsMarketExtractor(Extractor):
+    """A market chart window into one Bronze record per trading day.
+
+    The market endpoint's points are `[unix_ts, value, change, change_pct]` —
+    a different order from the economics charts', which put the value first —
+    stamped at midnight UTC on the session's date. Change and percentage are
+    Trading Economics' arithmetic and stay behind.
+    """
+
+    target = "records"
+
+    def handles(self, landed: Landed) -> bool:
+        return (
+            landed.source_slug in MARKET_SOURCES
+            and landed.path.suffix.lower() == ".json"
+            and (landed.extra or {}).get("kind") == "market"
+        )
+
+    def extract(self, landed: Landed) -> Iterator[dict[str, Any]]:
+        from datetime import UTC, datetime
+
+        from ..sources.trading_economics.charts import decode_payload
+
+        try:
+            payload = decode_payload(landed.path.read_bytes())
+        except Exception as exc:  # noqa: BLE001 - surfaced with the path attached
+            raise ExtractionError(str(landed.path), f"undecodable chart payload: {exc}") from exc
+
+        extra = landed.extra or {}
+        symbol = str(extra.get("symbol") or "").lower()
+        commodity = str(extra.get("commodity") or "")
+
+        number = 0
+        for entry in payload:
+            for serie in entry.get("series") or []:
+                if symbol and str(serie.get("symbol", "")).lower() != symbol:
+                    continue
+                unit = market_unit(str(serie.get("unit") or ""))
+                # One figure per day, the last one given for it.
+                closing: dict[str, Any] = {}
+                for point in serie.get("data") or []:
+                    if len(point) < 2 or point[0] is None or point[1] is None:
+                        continue
+                    day = datetime.fromtimestamp(int(point[0]), tz=UTC).date().isoformat()
+                    closing[day] = point[1]
+                for day, value in sorted(closing.items()):
+                    number += 1
+                    yield {
+                        "dataset": landed.dataset or "tradingeconomics-markets",
+                        "row_number": number,
+                        "columns": {
+                            "date": day,
+                            "close": format(Decimal(str(value)), "f"),
+                            "unit": unit,
+                            "symbol": symbol,
+                            "commodity": commodity,
+                        },
+                    }

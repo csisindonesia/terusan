@@ -17,16 +17,26 @@
 #
 # A commodity listed here with nothing collected against it is not a mistake:
 # the registry says what the warehouse *can* resolve, and the Commodities page
-# lists what it has figures for. Nickel is the current example — Indonesia's
-# largest metal export, present here only as Bank Indonesia's export value, and
-# no price series has been registered for it yet.
+# lists what it has figures for. Bauxite is the current example — its export is
+# banned and no free daily price for it exists, so it is present here only so a
+# trade figure about it can resolve.
 commodity_id,canonical_name,category,subcategory,hs_code,hs_version,unit_default,aliases
 gold,Gold,metals,precious,7108,HS2022,USD/troy oz,GC=F|XAU|Emas|Gold — COMEX
 copper,Copper,metals,base,7403,HS2022,USD/lb,HG=F|Tembaga|Copper — COMEX|Copper ore
 nickel,Nickel,metals,base,7502,HS2022,USD/t,Nikel|Nickel matte|LME Nickel
 tin,Tin,metals,base,8001,HS2022,USD/t,Timah
+aluminium,Aluminium,metals,base,7601,HS2022,USD/t,ALI=F|Aluminum|Aluminium — COMEX|LME Aluminium
+zinc,Zinc,metals,base,7901,HS2022,USD/t,ZNC=F|Seng|Zinc — COMEX|LME Zinc
+lead,Lead,metals,base,7801,HS2022,USD/t,Timbal|LME Lead
+silver,Silver,metals,precious,7106,HS2022,USD/troy oz,SI=F|Perak|Silver — COMEX
+platinum,Platinum,metals,precious,711011,HS2022,USD/troy oz,PL=F|Platina|Platinum — NYMEX
+palladium,Palladium,metals,precious,711021,HS2022,USD/troy oz,PA=F|Paladium|Palladium — NYMEX
+iron-ore,Iron ore,metals,ore,2601,HS2022,USD/t,TIO=F|Bijih besi|Iron ore 62% Fe
+hot-rolled-coil,Hot-rolled coil steel,metals,steel,7208,HS2022,USD/short ton,HRC=F|HRC|Baja canai panas
+stainless-steel,Stainless steel,metals,steel,7219,HS2022,CNY/t,Baja tahan karat|Stainless
 bauxite,Bauxite,metals,ore,2606,HS2022,USD/t,Bauksit|Aluminium ore
-thermal-coal,Thermal coal,energy,coal,2701,HS2022,USD/t,MTF=F|Coal|Batubara|Batu bara|API2|Steam coal
+thermal-coal,Thermal coal,energy,coal,2701,HS2022,USD/t,MTF=F|XAL1:COM|Coal|Batubara|Batu bara|API2|Newcastle|Steam coal
+coking-coal,Coking coal,energy,coal,270112,HS2022,CNY/t,Batubara kokas|Metallurgical coal|Met coal
 brent-crude,Brent crude oil,energy,crude,2709,HS2022,USD/bbl,BZ=F|Brent|Crude oil|Minyak mentah
 natural-gas,Natural gas,energy,gas,2711,HS2022,USD/MMBtu,LNG|Gas alam
 palm-oil,Crude palm oil,agriculture,vegetable-oil,1511,HS2022,USD/t,CPO=F|CPO|Kelapa sawit|Minyak sawit|Crude palm oil

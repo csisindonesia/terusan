@@ -2,7 +2,7 @@
 #
 # Yahoo's commodity futures, Bronze into Silver.
 #
-# Seven instruments, four series each — open, high, low and close, because
+# Fourteen instruments, four series each — open, high, low and close, because
 # Silver stores one figure per observation and a daily bar is four figures.
 #
 # The reason this script exists rather than four `normalize` calls per
@@ -42,6 +42,13 @@ INSTRUMENTS=(
   "palm-oil|yahoo-palm-oil|palm-oil"
   "coffee|yahoo-coffee|coffee"
   "cocoa|yahoo-cocoa|cocoa"
+  "aluminium|yahoo-aluminium|aluminium"
+  "zinc|yahoo-zinc|zinc"
+  "iron-ore|yahoo-iron-ore|iron-ore"
+  "silver|yahoo-silver|silver"
+  "platinum|yahoo-platinum|platinum"
+  "palladium|yahoo-palladium|palladium"
+  "hot-rolled-coil|yahoo-hot-rolled-coil|hot-rolled-coil"
 )
 
 FIELDS=(open high low close)

@@ -160,6 +160,7 @@ SUBTREES
   # them — so a run that fetched gold and copper normalizes once rather than
   # twice over the same seven.
   yahoo_normalized=0
+  sina_normalized=0
 
   for source in "${sources[@]}"; do
     # Same reasoning as the extract loop: a mapping that breaks on one source
@@ -229,13 +230,6 @@ SUBTREES
         echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: $source ==="
         normalize ./scripts/normalize-rca.sh
         ;;
-      yahoo-gold|yahoo-copper|yahoo-brent-crude|yahoo-thermal-coal|yahoo-palm-oil|yahoo-coffee|yahoo-cocoa)
-        if [ "$yahoo_normalized" = "0" ]; then
-          echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: yahoo commodities ==="
-          normalize ./scripts/normalize-yahoo.sh
-          yahoo_normalized=1
-        fi
-        ;;
       yahoo-exchange-rates)
         echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: $source ==="
         normalize ./scripts/normalize-fx.sh
@@ -243,6 +237,31 @@ SUBTREES
       yahoo-ihsg)
         echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: $source ==="
         normalize ./scripts/normalize-ihsg.sh
+        ;;
+      # Every other Yahoo source is a commodity, so the pattern rather than a
+      # list: a list here is a second edit every new instrument needs.
+      yahoo-*)
+        if [ "$yahoo_normalized" = "0" ]; then
+          echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: yahoo commodities ==="
+          normalize ./scripts/normalize-yahoo.sh
+          yahoo_normalized=1
+        fi
+        ;;
+      tradingeconomics-coal)
+        echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: $source ==="
+        normalize ./scripts/normalize-coal.sh
+        ;;
+      westmetall-lme)
+        echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: $source ==="
+        normalize ./scripts/normalize-lme.sh
+        ;;
+      sina-*)
+        # One script for every contract, run once.
+        if [ "$sina_normalized" = "0" ]; then
+          echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: sina futures ==="
+          normalize ./scripts/normalize-sina.sh
+          sina_normalized=1
+        fi
         ;;
       kemendag-sp2kp-prices)
         echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: $source ==="

@@ -579,6 +579,206 @@ DATASETS: tuple[DatasetMeta, ...] = (
         description="Daily open, high, low and close for API2 CIF ARA thermal coal futures.",
         tags=("coal", "energy", "mining", "commodities", "prices"),
     ),
+    DatasetMeta(
+        slug="newcastle-coal",
+        title="Thermal coal price (Newcastle)",
+        source="tradingeconomics-coal",
+        description=(
+            "Daily close of ICE Newcastle front-month thermal coal futures, the Asian "
+            "seaborne benchmark Indonesian coal is priced against, from December 2008."
+        ),
+        tags=("coal", "energy", "mining", "commodities", "prices"),
+    ),
+    # -- Metals: Yahoo, the LME, and China's exchanges --------------------
+    #
+    # Nickel and tin have no Yahoo contract, so the LME's official prices come
+    # through Westmetall and Shanghai's through Sina. Some metals appear in
+    # more than one market on purpose: London, New York and Shanghai quote
+    # them in different currencies and part company often enough to matter.
+    DatasetMeta(
+        slug="aluminium",
+        title="Aluminium price (COMEX)",
+        source="yahoo-aluminium",
+        description="Daily open, high, low and close for COMEX aluminium futures.",
+        tags=("aluminium", "metals", "mining", "commodities", "prices"),
+    ),
+    DatasetMeta(
+        slug="zinc",
+        title="Zinc price (COMEX)",
+        source="yahoo-zinc",
+        description="Daily open, high, low and close for COMEX zinc futures.",
+        tags=("zinc", "metals", "mining", "commodities", "prices"),
+    ),
+    DatasetMeta(
+        slug="iron-ore",
+        title="Iron ore price",
+        source="yahoo-iron-ore",
+        description=(
+            "Daily open, high, low and close for iron ore 62% Fe CFR China (TSI) futures on COMEX."
+        ),
+        tags=("iron-ore", "steel", "metals", "mining", "commodities", "prices"),
+    ),
+    DatasetMeta(
+        slug="silver",
+        title="Silver price",
+        source="yahoo-silver",
+        description="Daily open, high, low and close for COMEX silver futures.",
+        tags=("silver", "precious-metals", "metals", "mining", "commodities", "prices"),
+    ),
+    DatasetMeta(
+        slug="platinum",
+        title="Platinum price",
+        source="yahoo-platinum",
+        description="Daily open, high, low and close for NYMEX platinum futures.",
+        tags=("platinum", "precious-metals", "metals", "mining", "commodities", "prices"),
+    ),
+    DatasetMeta(
+        slug="palladium",
+        title="Palladium price",
+        source="yahoo-palladium",
+        description="Daily open, high, low and close for NYMEX palladium futures.",
+        tags=("palladium", "precious-metals", "metals", "mining", "commodities", "prices"),
+    ),
+    DatasetMeta(
+        slug="hot-rolled-coil",
+        title="Hot-rolled coil steel price",
+        source="yahoo-hot-rolled-coil",
+        description=(
+            "Daily open, high, low and close for US Midwest hot-rolled coil steel "
+            "futures, in dollars per short ton."
+        ),
+        tags=("steel", "metals", "mining", "commodities", "prices"),
+    ),
+    DatasetMeta(
+        slug="lme-nickel",
+        title="Nickel price (LME)",
+        source="westmetall-lme",
+        description=(
+            "The London Metal Exchange's daily official cash settlement and three-month "
+            "prices in USD/t, and LME warehouse stocks in tonnes, from 2008."
+        ),
+        tags=("nickel", "batteries", "lme", "metals", "mining", "commodities", "prices"),
+    ),
+    DatasetMeta(
+        slug="lme-tin",
+        title="Tin price (LME)",
+        source="westmetall-lme",
+        description=(
+            "The London Metal Exchange's daily official cash settlement and three-month "
+            "prices in USD/t, and LME warehouse stocks in tonnes, from 2008."
+        ),
+        tags=("tin", "lme", "metals", "mining", "commodities", "prices"),
+    ),
+    DatasetMeta(
+        slug="lme-copper",
+        title="Copper price (LME)",
+        source="westmetall-lme",
+        description=(
+            "The London Metal Exchange's daily official cash settlement and three-month "
+            "prices in USD/t, and LME warehouse stocks in tonnes, from 2008."
+        ),
+        tags=("copper", "lme", "metals", "mining", "commodities", "prices"),
+    ),
+    DatasetMeta(
+        slug="lme-aluminium",
+        title="Aluminium price (LME)",
+        source="westmetall-lme",
+        description=(
+            "The London Metal Exchange's daily official cash settlement and three-month "
+            "prices in USD/t, and LME warehouse stocks in tonnes, from 2008."
+        ),
+        tags=("aluminium", "lme", "metals", "mining", "commodities", "prices"),
+    ),
+    DatasetMeta(
+        slug="lme-zinc",
+        title="Zinc price (LME)",
+        source="westmetall-lme",
+        description=(
+            "The London Metal Exchange's daily official cash settlement and three-month "
+            "prices in USD/t, and LME warehouse stocks in tonnes, from 2008."
+        ),
+        tags=("zinc", "lme", "metals", "mining", "commodities", "prices"),
+    ),
+    DatasetMeta(
+        slug="lme-lead",
+        title="Lead price (LME)",
+        source="westmetall-lme",
+        description=(
+            "The London Metal Exchange's daily official cash settlement and three-month "
+            "prices in USD/t, and LME warehouse stocks in tonnes, from 2008."
+        ),
+        tags=("lead", "lme", "metals", "mining", "commodities", "prices"),
+    ),
+    DatasetMeta(
+        slug="shfe-nickel",
+        title="Nickel price (Shanghai)",
+        source="sina-shfe-nickel",
+        description=(
+            "Daily open, high, low, close and settlement for the continuous contract in "
+            "nickel on the Shanghai Futures Exchange, in yuan per tonne, from 2015."
+        ),
+        tags=("nickel", "china", "metals", "mining", "commodities", "prices"),
+    ),
+    DatasetMeta(
+        slug="shfe-tin",
+        title="Tin price (Shanghai)",
+        source="sina-shfe-tin",
+        description=(
+            "Daily open, high, low, close and settlement for the continuous contract in "
+            "tin on the Shanghai Futures Exchange, in yuan per tonne, from 2015."
+        ),
+        tags=("tin", "china", "metals", "mining", "commodities", "prices"),
+    ),
+    DatasetMeta(
+        slug="shfe-stainless",
+        title="Stainless steel price (Shanghai)",
+        source="sina-shfe-stainless",
+        description=(
+            "Daily open, high, low, close and settlement for the continuous contract in "
+            "stainless steel on the Shanghai Futures Exchange, in yuan per tonne, from 2019."
+        ),
+        tags=("steel", "nickel", "china", "metals", "mining", "commodities", "prices"),
+    ),
+    DatasetMeta(
+        slug="shfe-aluminium",
+        title="Aluminium price (Shanghai)",
+        source="sina-shfe-aluminium",
+        description=(
+            "Daily open, high, low, close and settlement for the continuous contract in "
+            "aluminium on the Shanghai Futures Exchange, in yuan per tonne, from 2005."
+        ),
+        tags=("aluminium", "china", "metals", "mining", "commodities", "prices"),
+    ),
+    DatasetMeta(
+        slug="shfe-zinc",
+        title="Zinc price (Shanghai)",
+        source="sina-shfe-zinc",
+        description=(
+            "Daily open, high, low, close and settlement for the continuous contract in "
+            "zinc on the Shanghai Futures Exchange, in yuan per tonne, from 2007."
+        ),
+        tags=("zinc", "china", "metals", "mining", "commodities", "prices"),
+    ),
+    DatasetMeta(
+        slug="dce-iron-ore",
+        title="Iron ore price (Dalian)",
+        source="sina-dce-iron-ore",
+        description=(
+            "Daily open, high, low, close and settlement for the continuous contract in "
+            "iron ore on the Dalian Commodity Exchange, in yuan per tonne, from 2013."
+        ),
+        tags=("iron-ore", "steel", "china", "metals", "mining", "commodities", "prices"),
+    ),
+    DatasetMeta(
+        slug="dce-coking-coal",
+        title="Coking coal price (Dalian)",
+        source="sina-dce-coking-coal",
+        description=(
+            "Daily open, high, low, close and settlement for the continuous contract in "
+            "coking coal on the Dalian Commodity Exchange, in yuan per tonne, from 2013."
+        ),
+        tags=("coal", "energy", "china", "mining", "commodities", "prices"),
+    ),
     # -- The Indonesian agency portals ------------------------------------
     #
     # One entry per collection the portal sources in `sources/` land. The

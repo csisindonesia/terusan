@@ -72,10 +72,10 @@ class ThermalCoal(YahooCommodity):
         "Stopped printing on 2025-12-26 — Yahoo still answers with dated rows "
         "but no prices, so a run lands bytes and adds no figures. Left "
         "registered because 1,074 priced sessions through 2025 are real history, "
-        "and inactive because there is nothing further to collect. Indonesia is "
-        "the largest thermal coal exporter, so a live replacement is worth "
-        "finding: API2 is a European delivered price in any case, not an "
-        "Indonesian FOB one.",
+        "and inactive because there is nothing further to collect. The live "
+        "replacement is tradingeconomics-coal — ICE Newcastle, the Asian "
+        "benchmark, which is nearer Indonesian coal than API2's European "
+        "delivered price ever was.",
         active=False,
     )
 
@@ -129,4 +129,98 @@ class Cocoa(YahooCommodity):
         "CC=F",
         "Indonesia is a major grinder as well as a grower, so this is an input "
         "price as much as an export one.",
+    )
+
+
+# -- Metals and steel --------------------------------------------------------
+#
+# What Indonesia mines, smelts or buys to build with. Nickel and tin are the
+# two it matters most for and neither is here: Yahoo carries no contract for
+# either (`NI=F`, `LN=F`, `TIN=F` and `SN=F` all answer "Not Found"). Their LME
+# prices arrive through `westmetall-lme`, and Shanghai's through Sina.
+
+
+class Aluminium(YahooCommodity):
+    symbol = "ALI=F"
+    dataset = "aluminium"
+    meta = _meta(
+        "yahoo-aluminium",
+        "Aluminium — COMEX",
+        "ALI=F",
+        "Inalum smelts it at Kuala Tanjung, and the bauxite export ban is meant "
+        "to push the rest of the ore through domestic refineries. Thin next to "
+        "the LME contract; `westmetall-lme` carries that price too.",
+    )
+
+
+class Zinc(YahooCommodity):
+    symbol = "ZNC=F"
+    dataset = "zinc"
+    meta = _meta(
+        "yahoo-zinc",
+        "Zinc — COMEX",
+        "ZNC=F",
+        "A small Indonesian export next to nickel and copper, and an input to "
+        "galvanised steel. Thinly traded; the LME price is in `westmetall-lme`.",
+    )
+
+
+class IronOre(YahooCommodity):
+    symbol = "TIO=F"
+    dataset = "iron-ore"
+    meta = _meta(
+        "yahoo-iron-ore",
+        "Iron ore 62% Fe CFR China — COMEX (TSI)",
+        "TIO=F",
+        "The seaborne benchmark, delivered to China. Indonesia is a minor "
+        "exporter; the reason to watch it is Chinese steel demand, which also "
+        "sets what Indonesian nickel pig iron and stainless are worth.",
+    )
+
+
+class Silver(YahooCommodity):
+    symbol = "SI=F"
+    dataset = "silver"
+    meta = _meta(
+        "yahoo-silver",
+        "Silver — COMEX",
+        "SI=F",
+        "A by-product of Indonesian gold and copper mines, Grasberg's above all.",
+    )
+
+
+class Platinum(YahooCommodity):
+    symbol = "PL=F"
+    dataset = "platinum"
+    meta = _meta(
+        "yahoo-platinum",
+        "Platinum — NYMEX",
+        "PL=F",
+        "Not mined in Indonesia. Here because it and palladium are the "
+        "catalytic-converter metals, and their price moves with the combustion "
+        "car market that Indonesia's nickel-for-batteries bet is against.",
+    )
+
+
+class Palladium(YahooCommodity):
+    symbol = "PA=F"
+    dataset = "palladium"
+    meta = _meta(
+        "yahoo-palladium",
+        "Palladium — NYMEX",
+        "PA=F",
+        "Not mined in Indonesia; see yahoo-platinum for why it is followed.",
+    )
+
+
+class HotRolledCoil(YahooCommodity):
+    symbol = "HRC=F"
+    dataset = "hot-rolled-coil"
+    meta = _meta(
+        "yahoo-hot-rolled-coil",
+        "Hot-rolled coil steel — US Midwest (CRU), COMEX",
+        "HRC=F",
+        "A US domestic price in dollars per short ton, not a seaborne one. The "
+        "nearest free daily read on steel, which is where most nickel ends up "
+        "by way of stainless.",
     )

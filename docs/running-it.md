@@ -752,10 +752,27 @@ uv --project pipelines run terusan sources run hdx-meta-movement-distribution
 uv --project pipelines run terusan warehouse extract research
 ./scripts/normalize-mobility.sh
 
-# Yahoo's commodity futures — seven instruments, four price series each
+# Yahoo's commodity futures — fourteen instruments, four price series each
 uv --project pipelines run terusan sources run yahoo-gold yahoo-copper
 uv --project pipelines run terusan warehouse extract statistics
 ./scripts/normalize-yahoo.sh
+
+# The LME's official base-metal prices via Westmetall — nickel, tin, copper,
+# aluminium, zinc, lead; cash, three-month and stocks, 2008 onwards
+uv --project pipelines run terusan sources run westmetall-lme   # no --since: full pull
+uv --project pipelines run terusan warehouse extract statistics westmetall-lme
+./scripts/normalize-lme.sh
+
+# Shanghai and Dalian futures via Sina — nickel, tin, stainless, aluminium,
+# zinc, iron ore, coking coal; CNY/t, full history every run
+uv --project pipelines run terusan sources run sina-shfe-nickel sina-shfe-tin
+uv --project pipelines run terusan warehouse extract statistics
+./scripts/normalize-sina.sh
+
+# ICE Newcastle thermal coal via Trading Economics' market chart, 2008 onwards
+uv --project pipelines run terusan sources run tradingeconomics-coal
+uv --project pipelines run terusan warehouse extract statistics tradingeconomics-coal
+./scripts/normalize-coal.sh
 
 # Yahoo's exchange rates — eight pairs in one dataset, four price series each
 uv --project pipelines run terusan sources run yahoo-exchange-rates
@@ -781,9 +798,24 @@ constant where a mapping declares both.
 
 A commodity in that file with nothing collected against it is not a mistake —
 the registry says what the warehouse can resolve, and the page lists what has
-figures. Nickel is the current example: Indonesia's largest metal export,
-present only as Bank Indonesia's monthly export value, with no price series
-registered yet.
+figures. Bauxite is the current example: its export is banned and no free daily
+price exists for it.
+
+**Nickel and tin** have no Yahoo contract (`NI=F`, `LN=F`, `TIN=F`, `SN=F` all
+answer "Not Found"), so their prices come from two other places: the LME's
+official settlement as Westmetall republishes it, one HTML table per metal per
+year, and the Shanghai Futures Exchange's continuous contract through Sina's
+quote API. The two are different markets in different currencies — SHFE is
+quoted in yuan including VAT — and the gap between them is itself worth
+reading. Both are licensed data republished openly: fine for research, not for
+redistributing the raw series.
+
+**Thermal coal** stopped on Yahoo in December 2025 (`MTF=F`, API2, still
+answers with dated rows and no prices). ICE Newcastle — the Asian benchmark,
+nearer Indonesian coal than API2 ever was — comes from Trading Economics'
+market chart endpoint, which caches on its `v` parameter and ignores the date
+range; see
+[`markets.py`](../pipelines/src/terusan_pipelines/sources/trading_economics/markets.py).
 
 **Yahoo's exchange rates** are one dataset rather than eight, because a reader
 asking for "the exchange rate" wants the table. The pairs are declared in
