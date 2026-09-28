@@ -13,6 +13,7 @@ import { PERIOD_PATTERN, PeriodFilter } from "~/components/period-filter";
 import { useDebounced } from "~/hooks/use-debounced";
 import { useIndicatorsById } from "~/hooks/use-indicators-by-id";
 import { api, type Indicator } from "~/lib/api";
+import { priceName, pricesAmong } from "~/lib/candles";
 import { indicatorLabel } from "~/lib/labels";
 import { toggle } from "~/lib/multi";
 
@@ -61,8 +62,11 @@ export function ObservationFilterBar({ value, onChange, onClear }: Props) {
   const [needle, setNeedle] = useState("");
   const q = useDebounced(needle.trim(), DEBOUNCE_MS);
   const indicators = useQuery({
-    queryKey: ["indicators", { q, limit: INDICATOR_OPTIONS }],
-    queryFn: () => api.indicators({ q: q || undefined, limit: INDICATOR_OPTIONS }),
+    // A price's open, high, low and close offered once, as the series lists
+    // offer it; choosing it takes all four.
+    queryKey: ["indicators", { q, fold: "ohlc", limit: INDICATOR_OPTIONS }],
+    queryFn: () =>
+      api.indicators({ q: q || undefined, fold: "ohlc", limit: INDICATOR_OPTIONS }),
   });
 
   // Every commodity, not a page of them: the list is a choice list, and one
@@ -79,24 +83,75 @@ export function ObservationFilterBar({ value, onChange, onClear }: Props) {
   // chip should still read as a name.
   const { byId } = useIndicatorsById(chosenIndicators);
 
+  // The four series of a price, by the identifier of its close: from the
+  // chosen series themselves, and from the search, whose folded close names
+  // all four.
+  const prices = useMemo(() => {
+    const found = pricesAmong(
+      chosenIndicators.flatMap((id) => {
+        const indicator = byId.get(id);
+        return indicator ? [indicator] : [];
+      }),
+    );
+    for (const indicator of indicators.data?.data ?? []) {
+      const { ohlc } = indicator;
+      if (ohlc)
+        found.set(indicator.indicator_id, [ohlc.open, ohlc.high, ohlc.low, ohlc.close]);
+    }
+    return found;
+  }, [byId, chosenIndicators, indicators.data]);
+
+  // What the list shows as chosen: a price whose four are all in the filter
+  // is one entry, its close; anything else is itself.
+  const chosenEntries = useMemo(() => {
+    const held = new Set(chosenIndicators);
+    const folded = new Set(
+      [...prices.values()]
+        .filter((ids) => ids.every((id) => held.has(id)))
+        .flatMap((ids) => ids.slice(0, 3)),
+    );
+    return chosenIndicators.filter((id) => !folded.has(id));
+  }, [chosenIndicators, prices]);
+
+  // A price is named as a price only where the entry stands for all four: a
+  // close chosen by itself is still the close.
+  const whole = (id: string) =>
+    Boolean(prices.get(id)?.every((entry) => chosenIndicators.includes(entry)));
+  const labelOf = (id: string, indicator = byId.get(id)) => {
+    const label = indicatorLabel(indicator ?? { indicator_id: id });
+    return whole(id) || indicator?.ohlc ? priceName(label) : label;
+  };
+
   // Chosen series first, so they can be unticked whatever the search shows;
   // then the matches, without repeating a chosen one.
-  const indicatorOptions = useMemo(() => {
-    const option = (indicator: Indicator) => ({
-      value: indicator.indicator_id,
-      label: indicatorLabel(indicator),
-      hint: `${indicator.period_start}–${indicator.period_end}`,
-    });
-    const chosen = chosenIndicators.map((id) => {
+  const held = new Set(chosenEntries);
+  const indicatorOptions = [
+    ...chosenEntries.map((id) => {
       const indicator = byId.get(id);
-      return indicator ? option(indicator) : { value: id, label: id };
-    });
-    const held = new Set(chosenIndicators);
-    const matches = (indicators.data?.data ?? [])
+      return {
+        value: id,
+        label: labelOf(id),
+        hint: indicator
+          ? `${indicator.period_start}–${indicator.period_end}`
+          : undefined,
+      };
+    }),
+    ...(indicators.data?.data ?? [])
       .filter((indicator) => !held.has(indicator.indicator_id))
-      .map(option);
-    return [...chosen, ...matches];
-  }, [byId, chosenIndicators, indicators.data]);
+      .map((indicator) => ({
+        value: indicator.indicator_id,
+        label: labelOf(indicator.indicator_id, indicator),
+        hint: `${indicator.period_start}–${indicator.period_end}`,
+      })),
+  ];
+
+  // Ticking a price takes its four series, and unticking it lets all four go.
+  function toggleIndicator(id: string) {
+    const ids = prices.get(id) ?? [id];
+    const on = chosenIndicators.includes(id);
+    const rest = chosenIndicators.filter((entry) => !ids.includes(entry));
+    onChange({ indicator: on ? rest : [...rest, ...ids] });
+  }
 
   const chosenTypes = value.geo_type ?? [];
   const chosenCommodities = value.commodity ?? [];
@@ -117,9 +172,7 @@ export function ObservationFilterBar({ value, onChange, onClear }: Props) {
     <div className="flex flex-wrap items-center gap-2">
       <FilterChip
         label="Indicator"
-        value={summarise(chosenIndicators, (id) =>
-          indicatorLabel(byId.get(id) ?? { indicator_id: id }),
-        )}
+        value={summarise(chosenEntries, (id) => labelOf(id))}
         onClear={() => onChange({ indicator: undefined })}
       >
         <ChoiceList
@@ -129,8 +182,8 @@ export function ObservationFilterBar({ value, onChange, onClear }: Props) {
           onSearch={setNeedle}
           isSearching={indicators.isFetching || q !== needle.trim()}
           searchPlaceholder="Search series"
-          selected={chosenIndicators}
-          onToggle={(id) => onChange({ indicator: toggle(chosenIndicators, id) })}
+          selected={chosenEntries}
+          onToggle={toggleIndicator}
           onClear={() => onChange({ indicator: undefined })}
           empty="No indicators yet."
         />

@@ -51,10 +51,16 @@ export function CandlestickChart({
   candles,
   unit,
   caption,
+  framed = true,
+  dashed = false,
 }: {
   candles: Candle[];
   unit?: string;
   caption?: string;
+  /** Its own border and surface; off where a card around it has them. */
+  framed?: boolean;
+  /** Dashed gridlines, as the chart cards draw theirs. */
+  dashed?: boolean;
 }) {
   const clipId = useId();
   const [hover, setHover] = useState<number | null>(null);
@@ -114,7 +120,11 @@ export function CandlestickChart({
         } as React.CSSProperties
       }
     >
-      <div className="relative overflow-hidden rounded-sm border bg-card">
+      <div
+        className={
+          framed ? "relative overflow-hidden rounded-sm border bg-card" : "relative"
+        }
+      >
         <svg
           viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
           className="h-[340px] w-full"
@@ -142,6 +152,7 @@ export function CandlestickChart({
                 y2={y(value)}
                 stroke="var(--viz-grid)"
                 strokeWidth={1}
+                strokeDasharray={dashed ? "4 4" : undefined}
               />
               <text
                 x={PADDING.left - 10}

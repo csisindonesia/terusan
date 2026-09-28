@@ -164,6 +164,13 @@ const columns: ColumnDef<Indicator>[] = [
     meta: { align: "right" },
     cell: ({ row }) => (
       <RowActions
+        collect={[
+          {
+            kind: "indicator",
+            id: row.original.indicator_id,
+            label: indicatorLabel(row.original),
+          },
+        ]}
         actions={[
           {
             label: "Copy identifier",
@@ -227,6 +234,8 @@ function Indicators() {
     tag: tags,
     sort: sortColumn,
     dir,
+    // A price's four series are one row; its page offers the other three.
+    fold: "ohlc" as const,
   };
 
   const query = useQuery({

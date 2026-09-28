@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { IconCopy, IconDownload } from "@tabler/icons-react";
+import { IconArrowRight, IconCopy, IconDownload } from "@tabler/icons-react";
+import { useState } from "react";
 import { z } from "zod";
 
 import { ClampedText } from "~/components/clamped-text";
@@ -19,15 +20,14 @@ import { api } from "~/lib/api";
 import { downloadCsv, toCsv } from "~/lib/csv";
 import { formatCount } from "~/lib/format";
 import { titleFromId } from "~/lib/labels";
+import { toggle } from "~/lib/multi";
 import { asText, asTextList, listParam, textParam } from "~/lib/search-params";
 import { collectTopics, type TopicSummary } from "~/lib/topics";
 
 const searchSchema = z.object({
   /**
-   * Which kinds of tag to list. Absent means topics alone, because that is
-   * what the page is called and what a reader browsing subjects wants; the
-   * facets are here because they are the same vocabulary and filtering by one
-   * is the same act, not because anyone browses "monthly".
+   * Which kinds of tag to list. Absent means no filter, so both: topics and
+   * facets are one vocabulary, and filtering by either is the same act.
    */
   kind: listParam,
   q: textParam,
@@ -60,26 +60,30 @@ function kindLabel(value: string): string {
 
 const columns: ColumnDef<TopicSummary>[] = [
   {
-    accessorKey: "tag",
+    id: "name",
     header: "Topic",
     cell: ({ row }) => (
-      // The tag as a reader would say it, and under it the tag as the filter
-      // takes it — the second is what goes in a URL or an API call, so it is
-      // shown rather than prettified away.
       <Link
         to="/topics/$tag"
         params={{ tag: row.original.tag }}
         className="underline-offset-4 hover:underline"
       >
-        <div className="leading-tight">
-          <ClampedText className="max-w-[18rem] font-medium">
-            {titleFromId(row.original.tag)}
-          </ClampedText>
-          <div className="font-mono text-xs text-muted-foreground">
-            {row.original.tag}
-          </div>
-        </div>
+        <ClampedText className="max-w-[18rem] font-medium">
+          {titleFromId(row.original.tag)}
+        </ClampedText>
       </Link>
+    ),
+  },
+  {
+    // The tag as the filter takes it — what goes in a URL or an API call — so
+    // it is shown rather than prettified away. Clamped, like the publisher:
+    // facet tags carry a whole publisher's name.
+    accessorKey: "tag",
+    header: "Slug",
+    cell: ({ row }) => (
+      <ClampedText className="max-w-[8rem] font-mono text-xs text-muted-foreground">
+        {row.original.tag}
+      </ClampedText>
     ),
   },
   {
@@ -118,7 +122,7 @@ const columns: ColumnDef<TopicSummary>[] = [
       if (!first) return <span className="text-muted-foreground">—</span>;
       return (
         <StackedCell
-          primary={<ClampedText className="max-w-[14rem]">{first}</ClampedText>}
+          primary={<ClampedText className="max-w-[12rem]">{first}</ClampedText>}
           secondary={rest.length ? `+${rest.length} more` : undefined}
         />
       );
@@ -140,6 +144,13 @@ const columns: ColumnDef<TopicSummary>[] = [
     cell: ({ row }) => (
       <RowActions
         actions={[
+          {
+            label: "Open",
+            icon: IconArrowRight,
+            onSelect: () => {
+              window.location.href = `/topics/${encodeURIComponent(row.original.tag)}`;
+            },
+          },
           {
             label: "Copy tag",
             icon: IconCopy,
@@ -174,13 +185,15 @@ const EXPORT_COLUMNS = [
 function Topics() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
+  const [selected, setSelected] = useState<TopicSummary[]>([]);
 
   // The same query keys the datasets and indicators pages use, so arriving
   // here after either is served from the cache rather than re-fetched.
   const datasets = useQuery({ queryKey: ["datasets"], queryFn: () => api.datasets() });
   const indicators = useQuery({
-    queryKey: ["indicators"],
-    queryFn: () => api.indicators(),
+    queryKey: ["indicators", "folded"],
+    // A price's four series as one, as every list counts them.
+    queryFn: () => api.indicators({ fold: "ohlc" }),
   });
   const sources = useQuery({ queryKey: ["sources"], queryFn: () => api.sources() });
 
@@ -193,7 +206,8 @@ function Topics() {
   });
 
   const kinds = asTextList(search.kind);
-  const shownKinds = kinds.length ? kinds : ["topic"];
+  // Nothing ticked is no filter, as on every other chip.
+  const shownKinds = kinds.length ? kinds : KINDS.map((kind) => kind.value);
   const needle = asText(search.q)?.toLowerCase() ?? "";
 
   const rows = all.filter(
@@ -205,23 +219,9 @@ function Topics() {
         topic.publishers.some((name) => name.toLowerCase().includes(needle))),
   );
 
-  /**
-   * Turning one kind on or off.
-   *
-   * Unticking the only kind that is on leaves the other rather than nothing:
-   * an empty selection reads as the default here, so "not topics" has to mean
-   * facets or the chip would undo itself. The default is kept out of the URL.
-   */
   function chooseKind(value: string) {
-    const next = shownKinds.includes(value)
-      ? shownKinds.filter((kind) => kind !== value)
-      : [...shownKinds, value];
-    const resolved = next.length
-      ? next
-      : KINDS.map((kind) => kind.value).filter((kind) => kind !== value);
-    const isDefault = resolved.length === 1 && resolved[0] === "topic";
     navigate({
-      search: (prev) => ({ ...prev, kind: isDefault ? undefined : resolved, page: 0 }),
+      search: (prev) => ({ ...prev, kind: toggle(kinds, value), page: 0 }),
     });
   }
 
@@ -230,6 +230,13 @@ function Topics() {
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const page = Math.min(search.page ?? 0, pageCount - 1);
   const visible = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  function exportRows(chosen: TopicSummary[], suffix: string) {
+    downloadCsv(
+      `topics-${suffix}.csv`,
+      toCsv(chosen as unknown as Record<string, unknown>[], EXPORT_COLUMNS),
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -245,12 +252,7 @@ function Topics() {
                 variant="outline"
                 size="sm"
                 disabled={!rows.length}
-                onClick={() =>
-                  downloadCsv(
-                    "topics.csv",
-                    toCsv(rows as unknown as Record<string, unknown>[], EXPORT_COLUMNS),
-                  )
-                }
+                onClick={() => exportRows(rows, "all")}
               >
                 <IconDownload className="size-4" />
                 Export
@@ -264,10 +266,7 @@ function Topics() {
               <>
                 <FilterChip
                   label="Kind"
-                  // What is on rather than what the URL carries: the default
-                  // is a filter too, and a quiet chip over a filtered table
-                  // is the thing the sticky header exists to prevent.
-                  value={summarise(shownKinds, kindLabel)}
+                  value={summarise(kinds, kindLabel)}
                   onClear={() =>
                     navigate({
                       search: (prev) => ({ ...prev, kind: undefined, page: 0 }),
@@ -276,7 +275,7 @@ function Topics() {
                 >
                   <ChoiceList
                     options={KINDS}
-                    selected={shownKinds}
+                    selected={kinds}
                     onToggle={chooseKind}
                     onClear={() =>
                       navigate({
@@ -316,7 +315,19 @@ function Topics() {
         data={visible}
         isLoading={isLoading}
         emptyMessage="No topics match this filter."
+        selectable
         getRowId={(row) => row.tag}
+        onSelectionChange={setSelected}
+        renderSelectionActions={(chosen) => (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => exportRows(chosen, "selection")}
+          >
+            <IconDownload className="size-4" />
+            Export {formatCount(chosen.length)}
+          </Button>
+        )}
       />
 
       <TablePagination
@@ -329,10 +340,11 @@ function Topics() {
             <>
               {formatCount(page * PAGE_SIZE + 1)}–
               {formatCount(Math.min((page + 1) * PAGE_SIZE, rows.length))} of{" "}
-              {formatCount(rows.length)} topic{rows.length === 1 ? "" : "s"}
+              {formatCount(rows.length)} tag{rows.length === 1 ? "" : "s"}
               {rows.length !== all.length
                 ? ` (${formatCount(all.length)} tags in all)`
                 : null}
+              {selected.length ? ` · ${formatCount(selected.length)} selected` : null}
             </>
           ) : null
         }

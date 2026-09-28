@@ -5,6 +5,7 @@ import {
   IconArrowUp,
   IconCheck,
   IconCopy,
+  IconDotsVertical,
   IconFolderPlus,
   IconHistory,
   IconPlayerStopFilled,
@@ -26,6 +27,14 @@ import { AssistantChart } from "~/components/assistant-chart";
 import { ChartProposalCard } from "~/components/chart-proposal";
 import { CollectButton } from "~/components/collect-button";
 import { Button } from "~/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
+import { Input } from "~/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import {
   Sheet,
@@ -58,6 +67,8 @@ import {
   type Conversation,
   type TurnRequest,
 } from "~/lib/assistant";
+import { useTypewriter } from "~/hooks/use-typewriter";
+import { formatMoment } from "~/lib/format";
 import { capabilitiesQuery, useUser } from "~/lib/session";
 import {
   addToCollection,
@@ -207,10 +218,11 @@ function Assistant() {
   }, [chatId, ready, recorded]);
 
   // Follow the reply as it grows, unless the reader has scrolled up to read.
-  useEffect(() => {
+  function follow() {
     const el = scrollRef.current;
     if (el && pinnedRef.current) el.scrollTop = el.scrollHeight;
-  }, [chat.messages]);
+  }
+  useEffect(follow, [chat.messages]);
 
   // ---- changing the chat ---------------------------------------------------
 
@@ -455,7 +467,9 @@ function Assistant() {
             <TooltipContent>New chat</TooltipContent>
           </Tooltip>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">{history}</div>
+        <div className="min-h-0 flex-1 scroll-fade-y overflow-y-auto px-2 pb-3">
+          {history}
+        </div>
       </aside>
 
       <section className="flex min-w-0 flex-1 flex-col">
@@ -472,7 +486,7 @@ function Assistant() {
               <SheetHeader className="border-b p-4">
                 <SheetTitle>Chats</SheetTitle>
               </SheetHeader>
-              <div className="overflow-y-auto p-2">{history}</div>
+              <div className="scroll-fade-y overflow-y-auto p-2">{history}</div>
             </SheetContent>
           </Sheet>
           <Button variant="ghost" size="icon" aria-label="New chat" onClick={startNew}>
@@ -482,7 +496,7 @@ function Assistant() {
 
         <div
           ref={scrollRef}
-          className="min-h-0 flex-1 overflow-y-auto"
+          className="min-h-0 flex-1 scroll-fade-y overflow-y-auto"
           onScroll={(event) => {
             const el = event.currentTarget;
             pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
@@ -517,6 +531,7 @@ function Assistant() {
                   question={messages[index - 1]?.content ?? ""}
                   pending={streaming && index === messages.length - 1}
                   isLast={index === messages.length - 1}
+                  onGrow={follow}
                   onRegenerate={regenerate}
                   onSaved={(collectionId) => saved(index, collectionId)}
                   canConfirm={!streaming && index === messages.length - 1}
@@ -599,6 +614,7 @@ function Message({
   question,
   pending,
   isLast,
+  onGrow,
   onRegenerate,
   onSaved,
   canConfirm,
@@ -610,6 +626,8 @@ function Message({
   question: string;
   pending: boolean;
   isLast: boolean;
+  /** The reply got taller as it was typed out. */
+  onGrow: () => void;
   onRegenerate: () => void;
   onSaved: (collectionId: string) => void;
   canConfirm: boolean;
@@ -617,13 +635,23 @@ function Message({
   onConfirm: (keep: string[]) => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [typed, typing] = useTypewriter(
+    message.content,
+    pending && message.role === "assistant",
+  );
+  // Still being written, as far as the reader can see: the stream may have
+  // closed while the text is still being typed out.
+  const busy = pending || typing;
   const suggested = useMemo(
     () =>
-      message.role === "assistant" && !pending
+      message.role === "assistant" && !busy
         ? suggestedItems(message.content, message.sources)
         : [],
-    [message.role, message.content, message.sources, pending],
+    [message.role, message.content, message.sources, busy],
   );
+  useEffect(() => {
+    if (typing) onGrow();
+  }, [typed, typing, onGrow]);
 
   if (message.role === "user") {
     return (
@@ -644,18 +672,22 @@ function Message({
         {message.chart ? (
           <AssistantChart chart={message.chart} className="mb-4" />
         ) : null}
-        {message.content ? (
+        {typed ? (
           <div
             className="markdown chat-reply"
             dangerouslySetInnerHTML={{
-              __html: renderReply(message.content, message.sources),
+              __html: renderReply(typed, message.sources),
             }}
           />
         ) : pending ? (
-          <span className="mt-2 inline-block size-3 animate-pulse rounded-full bg-foreground" />
+          <p role="status" className="shimmer mt-1 text-sm text-muted-foreground">
+            {message.sources?.length
+              ? `Reading ${message.sources.length} source${message.sources.length === 1 ? "" : "s"}…`
+              : "Searching the catalogue…"}
+          </p>
         ) : null}
 
-        {message.proposal && !pending ? (
+        {message.proposal && !busy ? (
           <ChartProposalCard
             proposal={message.proposal}
             active={canConfirm}
@@ -668,7 +700,7 @@ function Message({
           <p className="mt-2 text-sm text-destructive">{message.error}</p>
         ) : null}
 
-        {!pending && message.content ? (
+        {!busy && message.content ? (
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <div
               className={cn(
@@ -727,9 +759,10 @@ function Message({
  * Keep what a reply suggested.
  *
  * A reply is mostly a list of records, and the next thing a reader does with a
- * good list is keep it — so one click files every record it links to into a
- * new collection named after the question, and the button becomes the way to
- * that collection. Filing into one that already exists is the usual picker.
+ * good list is keep it — so the button asks for a name (the question, to start
+ * with), files every record it links to into a new collection of that name,
+ * and becomes the way to that collection. Filing into one that already exists
+ * is the usual picker.
  */
 function SaveSuggestions({
   items,
@@ -749,16 +782,23 @@ function SaveSuggestions({
     ? workspace.collections.find((collection) => collection.id === collectionId)
     : undefined;
 
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+
   // A shelf served read-only takes nothing, and a button that files into it
   // would only fail.
   if (shelf.mode === "server" && !shelf.writable) return null;
 
-  function save() {
+  function save(event: React.FormEvent) {
+    event.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed) return;
     const collection = createCollection(
-      titleFor(question) || "Assistant suggestions",
+      trimmed,
       question ? `Suggested by the assistant for: ${question}` : undefined,
     );
     addToCollection(collection.id, items);
+    setOpen(false);
     onSaved(collection.id);
   }
 
@@ -787,10 +827,39 @@ function SaveSuggestions({
       ) : (
         <>
           <CollectButton items={items} label="Add to existing" variant="ghost" />
-          <Button size="sm" onClick={save}>
-            <IconFolderPlus className="size-4" />
-            Save to new collection
-          </Button>
+          <Popover
+            open={open}
+            onOpenChange={(next) => {
+              // Start from the question each time; the reader edits from there.
+              if (next) setName(titleFor(question) || "Assistant suggestions");
+              setOpen(next);
+            }}
+          >
+            <PopoverTrigger
+              render={
+                <Button size="sm">
+                  <IconFolderPlus className="size-4" />
+                  Save to new collection
+                </Button>
+              }
+            />
+            <PopoverContent align="end" className="w-80 p-2">
+              <form onSubmit={save} className="flex items-center gap-1.5 p-1">
+                <Input
+                  autoFocus
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  onFocus={(event) => event.target.select()}
+                  placeholder="Collection name"
+                  aria-label="Collection name"
+                  className="h-8"
+                />
+                <Button type="submit" size="sm" disabled={!name.trim()}>
+                  Save
+                </Button>
+              </form>
+            </PopoverContent>
+          </Popover>
         </>
       )}
     </div>
@@ -886,20 +955,42 @@ function HistoryList({
             type="button"
             onClick={() => onPick(c.id)}
             className={cn(
-              "w-full truncate rounded-lg px-2 py-2 pr-8 text-left text-sm transition-colors hover:bg-muted",
-              c.id === activeId && "bg-muted font-medium",
+              "w-full rounded-lg px-2 py-1.5 pr-8 text-left transition-colors hover:bg-muted",
+              c.id === activeId && "bg-muted",
             )}
           >
-            {c.title}
+            <span
+              className={cn(
+                "block truncate text-sm",
+                c.id === activeId && "font-medium",
+              )}
+            >
+              {c.title}
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              {formatMoment(new Date(c.updatedAt).toISOString())}
+            </span>
           </button>
-          <button
-            type="button"
-            aria-label={`Delete “${c.title}”`}
-            onClick={() => onRemove(c.id)}
-            className="absolute top-1/2 right-1 hidden -translate-y-1/2 rounded-md p-1 text-muted-foreground hover:text-foreground group-hover:block focus-visible:block"
-          >
-            <IconTrash className="size-3.5" />
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`Actions for “${c.title}”`}
+                  className="absolute top-1/2 right-1 -translate-y-1/2 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[popup-open]:bg-muted data-[popup-open]:opacity-100"
+                >
+                  <IconDotsVertical />
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem variant="destructive" onClick={() => onRemove(c.id)}>
+                <IconTrash />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </li>
       ))}
     </ul>

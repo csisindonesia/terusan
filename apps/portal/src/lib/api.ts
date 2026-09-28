@@ -231,6 +231,11 @@ export type Indicator = {
   tags: string[];
   /** When the pipeline last wrote these rows, not how recent the figures are. */
   last_updated?: string;
+  /**
+   * Where this is one of a price's four series, all four: on the close of a
+   * folded list, and on any of the four asked for by itself.
+   */
+  ohlc?: { open: string; high: string; low: string; close: string };
 };
 
 export type Geography = {
@@ -263,6 +268,8 @@ export type Commodity = {
   units: string[];
   observations: number;
   indicators: number;
+  /** Which series those are; a price's four appear as its close. */
+  indicator_ids: string[];
   /** Zero for most: a commodity series names a date and a commodity, no place. */
   geographies: number;
   period_start: string;
@@ -305,6 +312,8 @@ export type IndicatorQuery = {
     | "coverage"
     | "last_updated";
   dir?: "asc" | "desc";
+  /** A price's open, high, low and close listed once, as the close. */
+  fold?: "ohlc";
   limit?: number;
   offset?: number;
 };
@@ -361,6 +370,11 @@ export type Dataset = {
   /** Cron, from the source registry. */
   schedule?: string;
   indicators: string[];
+  /**
+   * How many series a reader sees in it: a price's open, high, low and close
+   * are one. Absent from an API older than the folding.
+   */
+  series?: number;
   observations: number;
   period_start: string;
   period_end: string;

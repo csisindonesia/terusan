@@ -76,9 +76,15 @@ const columns: ColumnDef<Dataset>[] = [
       <StackedCell
         primary={
           row.original.organization ? (
-            <ClampedText className="max-w-[14rem]">
-              {row.original.organization}
-            </ClampedText>
+            <Link
+              to="/organizations/$name"
+              params={{ name: row.original.organization }}
+              className="underline-offset-4 hover:underline"
+            >
+              <ClampedText className="max-w-[14rem]">
+                {row.original.organization}
+              </ClampedText>
+            </Link>
           ) : (
             "—"
           )
@@ -91,7 +97,8 @@ const columns: ColumnDef<Dataset>[] = [
     id: "indicators",
     header: "Series",
     meta: { align: "right" },
-    cell: ({ row }) => formatCount(row.original.indicators.length),
+    cell: ({ row }) =>
+      formatCount(row.original.series ?? row.original.indicators.length),
   },
   {
     accessorKey: "observations",
@@ -176,20 +183,21 @@ function Datasets() {
   // which is what a reader picking a second one is asking for.
   const allTags = [...new Set(all.flatMap((dataset) => dataset.tags ?? []))].sort();
 
-  const rows = all.filter(
-    (dataset) =>
-      (!chosen.length || chosen.includes(dataset.organization ?? "")) &&
-      (!tags.length || tags.every((tag) => (dataset.tags ?? []).includes(tag))) &&
-      (!needle ||
-        dataset.dataset_id.toLowerCase().includes(needle) ||
-        datasetLabel(dataset).toLowerCase().includes(needle) ||
-        (dataset.slug ?? "").toLowerCase().includes(needle) ||
-        (dataset.organization ?? "").toLowerCase().includes(needle) ||
-        (dataset.tags ?? []).some((tag) => tag.includes(needle)) ||
-        // The series inside it, so searching for an indicator finds the
-        // collection it belongs to.
-        dataset.indicators.some((id) => id.toLowerCase().includes(needle))),
-  )
+  const rows = all
+    .filter(
+      (dataset) =>
+        (!chosen.length || chosen.includes(dataset.organization ?? "")) &&
+        (!tags.length || tags.every((tag) => (dataset.tags ?? []).includes(tag))) &&
+        (!needle ||
+          dataset.dataset_id.toLowerCase().includes(needle) ||
+          datasetLabel(dataset).toLowerCase().includes(needle) ||
+          (dataset.slug ?? "").toLowerCase().includes(needle) ||
+          (dataset.organization ?? "").toLowerCase().includes(needle) ||
+          (dataset.tags ?? []).some((tag) => tag.includes(needle)) ||
+          // The series inside it, so searching for an indicator finds the
+          // collection it belongs to.
+          dataset.indicators.some((id) => id.toLowerCase().includes(needle))),
+    )
     // Freshest first: what changed is what a returning reader looks for.
     // ISO timestamps sort as text; a collection never updated goes last.
     .sort((a, b) => (b.last_updated ?? "").localeCompare(a.last_updated ?? ""));

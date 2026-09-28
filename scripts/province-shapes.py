@@ -123,6 +123,9 @@ def main() -> None:
         "",
         f"export const PROVINCE_FRAME = {{ width: {width}, height: {height} }} as const;",
         "",
+        "/** Where the frame sits on the globe: x = (lon - west) * scale, y = (north - lat) * scale. */",
+        f"export const PROVINCE_PROJECTION = {{ west: {WEST}, north: {NORTH}, scale: {SCALE} }} as const;",
+        "",
         "export const PROVINCE_SHAPES: ProvinceShape[] = [",
         *(f"  {{ geo_id: {json.dumps(g)}, name: {json.dumps(n)}, d: {json.dumps(d)} }},"
           for g, n, d in shapes),

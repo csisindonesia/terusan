@@ -3,27 +3,16 @@ import {
   IconChartBar,
   IconChartDots,
   IconChartLine,
-  IconDownload,
-  IconMaximize,
-  IconMinimize,
+  IconMap,
   IconPlayerPauseFilled,
   IconPlayerPlayFilled,
-  IconShare,
   IconTable,
 } from "@tabler/icons-react";
 import { Link } from "@tanstack/react-router";
-import { toJpeg, toPng } from "html-to-image";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 
-import logoUrl from "~/assets/logo.png";
 import { Button } from "~/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "~/components/ui/dropdown-menu";
-
+import { ChartCard } from "~/components/chart-card";
 import { ColumnChart } from "~/components/column-chart";
 import {
   Annotations,
@@ -33,7 +22,7 @@ import {
 import type { ChartSpec, ChartStory } from "~/lib/assistant";
 import { formatCompact, formatDecimal } from "~/lib/format";
 import { cn } from "~/lib/utils";
-import { GRID, SERIES_DARK_SLOTS, SERIES_LIGHT_SLOTS, seriesColor } from "~/lib/viz";
+import { seriesColor } from "~/lib/viz";
 
 /**
  * The chart the assistant drew beside a reply, as a card that stands on its
@@ -57,6 +46,8 @@ export function AssistantChart({
   hidden = [],
   onToggle,
   linkBack = true,
+  plain = false,
+  map,
 }: {
   chart: ChartSpec;
   className?: string;
@@ -68,14 +59,34 @@ export function AssistantChart({
   onToggle?: (name: string) => void;
   /** Off on the series' own page, where "learn more" would link to itself. */
   linkBack?: boolean;
+  /** The page's heading type, with the span beneath: see `ChartCard`. */
+  plain?: boolean;
+  /**
+   * The same figures by place, as a third view beside the line and the table,
+   * and the one the card opens on. It is one period rather than a span, so it
+   * brings its own span, reason and note, and the span slider steps aside.
+   */
+  map?: {
+    content: React.ReactNode;
+    span: string;
+    reason: string;
+    note?: string;
+  };
 }) {
-  const cardRef = useRef<HTMLElement>(null);
   const last = chart.periods.length - 1;
   const [range, setRange] = useState<[number, number]>([0, last]);
-  const [view, setView] = useState<"chart" | "table">("chart");
+  const [view, setView] = useState<"map" | "chart" | "table">(map ? "map" : "chart");
+  // The map arrives after the line when it is fetched separately, and a card
+  // the reader has not touched should open on it once it does.
+  const [chosen, setChosen] = useState(false);
+  const hasMap = map !== undefined;
+  useEffect(() => {
+    if (!chosen) setView(hasMap ? "map" : "chart");
+  }, [hasMap, chosen]);
+  const onMap = view === "map" && map !== undefined;
+  // A map chosen and then filtered away falls back to the line, not the table.
+  const current = view === "map" && !onMap ? "chart" : view;
   const [playing, setPlaying] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
 
   // A new chart in the same slot (a regenerated reply) starts whole.
   useEffect(() => setRange([0, last]), [chart, last]);
@@ -99,75 +110,12 @@ export function AssistantChart({
     return () => window.clearInterval(timer);
   }, [playing, last]);
 
-  useEffect(() => {
-    const changed = () => setFullscreen(document.fullscreenElement === cardRef.current);
-    document.addEventListener("fullscreenchange", changed);
-    return () => document.removeEventListener("fullscreenchange", changed);
-  }, []);
-
   const shown = useMemo(() => sliceChart(chart, range), [chart, range]);
   const units = new Set(shown.series.map((s) => s.unit ?? ""));
   const sharedUnit = units.size === 1 ? shown.series[0]?.unit : undefined;
   const from = shown.periods[0];
   const to = shown.periods[shown.periods.length - 1];
   const sources = [...new Set(chart.series.map((s) => s.source).filter(Boolean))];
-  const page = typeof window === "undefined" ? "" : window.location.href;
-
-  function flash(message: string) {
-    setNotice(message);
-    window.setTimeout(() => setNotice(null), 2000);
-  }
-
-  async function download(format: "png" | "jpeg") {
-    const node = cardRef.current;
-    if (!node) return;
-    const background = getComputedStyle(node).backgroundColor || "#ffffff";
-    // Hidden for real rather than only filtered out of the copy, so the
-    // picture is as tall as what is left and not as tall as the card.
-    const controls = [...node.querySelectorAll<HTMLElement>("[data-export-skip]")];
-    const shownAs = controls.map((control) => control.style.display);
-    controls.forEach((control) => (control.style.display = "none"));
-    await new Promise((settled) => requestAnimationFrame(settled));
-    const options = {
-      pixelRatio: 2,
-      backgroundColor: background,
-      // The controls are for the page, not the picture.
-      filter: (element: HTMLElement) => !element.dataset?.exportSkip,
-    };
-    try {
-      const render = format === "png" ? toPng : toJpeg;
-      let url: string;
-      try {
-        url = await render(node, { ...options, quality: 0.95 });
-      } catch {
-        // A stylesheet it cannot read (an extension's, a CDN's) stops font
-        // embedding; the system fonts are an acceptable picture.
-        url = await render(node, { ...options, quality: 0.95, skipFonts: true });
-      }
-      const link = document.createElement("a");
-      link.download = `${fileName(chart.title)}.${format === "png" ? "png" : "jpg"}`;
-      link.href = url;
-      link.click();
-    } catch {
-      flash("Could not render the image.");
-    } finally {
-      controls.forEach((control, at) => (control.style.display = shownAs[at]!));
-    }
-  }
-
-  async function share() {
-    try {
-      await navigator.clipboard.writeText(page);
-      flash("Link copied");
-    } catch {
-      flash("Copy the address bar to share.");
-    }
-  }
-
-  function toggleFullscreen() {
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void cardRef.current?.requestFullscreen();
-  }
 
   const ChartIcon =
     chart.kind === "scatter"
@@ -176,70 +124,67 @@ export function AssistantChart({
         ? IconChartBar
         : IconChartLine;
 
-  return (
-    <figure
-      ref={cardRef}
-      className={cn(
-        "space-y-4 rounded-xl bg-card p-5 text-card-foreground sm:p-6",
-        fullscreen && "overflow-auto rounded-none",
-        SERIES_DARK_SLOTS,
-        className,
-      )}
-      style={{ ...SERIES_LIGHT_SLOTS, "--viz-grid": GRID } as React.CSSProperties}
-    >
-      <header className="flex items-start justify-between gap-4">
-        <div className="min-w-0 space-y-1">
-          {/* The finding as the title, and what is drawn beneath it: a reader
-              takes away the sentence at the top, so it says what the chart
-              shows rather than what it is of. */}
-          <h3 className="font-serif text-xl leading-snug font-semibold tracking-tight sm:text-2xl">
-            {chart.story?.headline ?? chart.title}
-            {!chart.story && from ? (
-              <span className="ml-2 font-sans text-base font-normal whitespace-nowrap text-muted-foreground">
-                {from === to ? from : `${from} to ${to}`}
-              </span>
-            ) : null}
-          </h3>
-          {chart.story ? (
-            <p className="text-sm font-medium text-muted-foreground">
-              {chart.title}
-              {from ? ` · ${from === to ? from : `${from} to ${to}`}` : ""}
-            </p>
-          ) : null}
-          {chart.reason ? (
-            <p className="text-sm text-muted-foreground">{chart.reason}</p>
-          ) : null}
-        </div>
-        <img src={logoUrl} alt="Terusan" className="h-9 w-auto shrink-0" />
-      </header>
+  const span = from ? (from === to ? from : `${from} to ${to}`) : undefined;
+  const chartLabel =
+    chart.kind === "scatter" ? "Scatter" : chart.kind === "bar" ? "Bar" : "Line";
 
+  return (
+    <ChartCard
+      title={chart.story?.headline ?? chart.title}
+      subtitle={chart.story ? chart.title : undefined}
+      span={onMap ? map.span : span}
+      reason={onMap ? map.reason : chart.reason}
+      sources={sources as string[]}
+      link={
+        !linkBack ? undefined : chart.series.length === 1 || chart.event ? (
+          <Link
+            to="/indicators/$indicatorId"
+            params={{ indicatorId: chart.event?.indicator ?? chart.series[0]!.id }}
+            className="text-foreground underline underline-offset-2"
+          >
+            Learn more about this data
+          </Link>
+        ) : (
+          <Link
+            to="/observations"
+            search={{ indicator: chart.series.map((s) => s.id) }}
+            className="text-foreground underline underline-offset-2"
+          >
+            Learn more about this data
+          </Link>
+        )
+      }
+      note={onMap ? map.note : (note ?? noteFor(chart, shown))}
+      plain={plain}
+      className={className}
+    >
       {chart.story?.figures.length ? (
         <StoryFigures chart={chart} story={chart.story} />
       ) : null}
 
       <div data-export-skip="true" className="inline-flex rounded-lg border p-0.5">
-        {(
-          [
-            ["table", "Table", IconTable],
-            [
-              "chart",
-              chart.kind === "scatter"
-                ? "Scatter"
-                : chart.kind === "bar"
-                  ? "Bar"
-                  : "Line",
-              ChartIcon,
-            ],
-          ] as const
+        {(map
+          ? ([
+              ["map", "Map", IconMap],
+              ["chart", chartLabel, ChartIcon],
+              ["table", "Table", IconTable],
+            ] as const)
+          : ([
+              ["table", "Table", IconTable],
+              ["chart", chartLabel, ChartIcon],
+            ] as const)
         ).map(([value, label, Icon]) => (
           <button
             key={value}
             type="button"
-            onClick={() => setView(value)}
-            aria-pressed={view === value}
+            onClick={() => {
+              setChosen(true);
+              setView(value);
+            }}
+            aria-pressed={current === value}
             className={cn(
               "flex items-center gap-1.5 rounded-md px-3 py-1 text-sm text-muted-foreground transition-colors hover:text-foreground",
-              view === value && "bg-muted font-medium text-foreground",
+              current === value && "bg-muted font-medium text-foreground",
             )}
           >
             <Icon className="size-4" />
@@ -248,7 +193,9 @@ export function AssistantChart({
         ))}
       </div>
 
-      {view === "chart" ? (
+      {onMap ? (
+        map.content
+      ) : view !== "table" ? (
         <div className="space-y-2">
           <ChartBody
             chart={shown}
@@ -266,7 +213,7 @@ export function AssistantChart({
         <FiguresTable chart={shown} />
       )}
 
-      {last > 1 ? (
+      {last > 1 && !onMap ? (
         <div data-export-skip="true" className="flex items-center gap-3 text-sm">
           <Button
             variant="secondary"
@@ -319,73 +266,7 @@ export function AssistantChart({
           <span className="w-16 shrink-0 tabular-nums">{chart.periods[range[1]]}</span>
         </div>
       ) : null}
-
-      <footer className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3 text-sm">
-        <div className="min-w-0 space-y-1 text-muted-foreground">
-          <p>
-            <span className="font-semibold text-foreground">Data source:</span>{" "}
-            {sources.length ? sources.join("; ") : "Terusan catalogue"}
-            {linkBack ? " – " : null}
-            {!linkBack ? null : chart.series.length === 1 || chart.event ? (
-              <Link
-                to="/indicators/$indicatorId"
-                params={{ indicatorId: chart.event?.indicator ?? chart.series[0]!.id }}
-                className="text-foreground underline underline-offset-2"
-              >
-                Learn more about this data
-              </Link>
-            ) : (
-              <Link
-                to="/observations"
-                search={{ indicator: chart.series.map((s) => s.id) }}
-                className="text-foreground underline underline-offset-2"
-              >
-                Learn more about this data
-              </Link>
-            )}
-          </p>
-          <p className="text-xs">
-            <span className="font-semibold text-foreground">Note:</span>{" "}
-            {note ?? noteFor(chart, shown)}
-          </p>
-          <p className="text-xs">
-            {page ? `${hostAndPath(page)} | ` : ""}Terusan · CSIS Indonesia
-          </p>
-        </div>
-
-        <div data-export-skip="true" className="flex flex-wrap items-center gap-2">
-          {notice ? (
-            <span className="text-xs text-muted-foreground">{notice}</span>
-          ) : null}
-          <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="secondary" size="sm" />}>
-              <IconDownload className="size-4" />
-              Download
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => void download("png")}>
-                Image (PNG)
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => void download("jpeg")}>
-                Image (JPG)
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button variant="secondary" size="sm" onClick={() => void share()}>
-            <IconShare className="size-4" />
-            Share
-          </Button>
-          <Button variant="secondary" size="sm" onClick={toggleFullscreen}>
-            {fullscreen ? (
-              <IconMinimize className="size-4" />
-            ) : (
-              <IconMaximize className="size-4" />
-            )}
-            {fullscreen ? "Exit full-screen" : "Enter full-screen"}
-          </Button>
-        </div>
-      </footer>
-    </figure>
+    </ChartCard>
   );
 }
 
@@ -470,27 +351,6 @@ function noteFor(chart: ChartSpec, shown: ChartSpec): string {
     );
   }
   return parts.join(" ");
-}
-
-function hostAndPath(href: string): string {
-  try {
-    const url = new URL(href);
-    return `${url.host}${url.pathname}`;
-  } catch {
-    return href;
-  }
-}
-
-function fileName(title: string): string {
-  return (
-    title
-      .normalize("NFKD")
-      .replace(/[^\w\s-]/g, "")
-      .trim()
-      .replace(/\s+/g, "-")
-      .toLowerCase()
-      .slice(0, 80) || "terusan-chart"
-  );
 }
 
 /** Which colour is which series. A scatter has one colour of dot, so it names

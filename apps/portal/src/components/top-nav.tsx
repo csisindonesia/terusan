@@ -24,7 +24,7 @@ import logoUrl from "~/assets/logo.png";
  */
 export function TopNav() {
   return (
-    <header className="sticky top-0 z-30 flex h-(--app-header) w-full shrink-0 items-center gap-3 border-b bg-background px-3 sm:px-4">
+    <header className="fixed inset-x-0 top-0 z-30 flex h-(--app-header) w-full shrink-0 items-center gap-3 border-b bg-background px-3 sm:px-4">
       <Link to="/" className="flex shrink-0 items-center gap-2 rounded-md">
         {/* The seal is dark teal, which is what it is: inverting it would
             make it salmon, and a monochrome copy would be a second file to

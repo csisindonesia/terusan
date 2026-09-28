@@ -87,7 +87,7 @@ function Search() {
   // to tens of thousands of rows, and a search wants only the first few.
   const indicators = useQuery({
     queryKey: ["search-indicators", q],
-    queryFn: () => api.indicators({ q, limit: PER_SECTION }),
+    queryFn: () => api.indicators({ q, fold: "ohlc", limit: PER_SECTION }),
     enabled: searching && wants("indicator"),
   });
   const datasets = useQuery({
@@ -305,7 +305,7 @@ function Search() {
               key={dataset.dataset_id}
               title={datasetLabel(dataset)}
               subtitle={dataset.organization ?? dataset.source_id}
-              meta={`${formatCount(dataset.indicators.length)} series · ${formatCount(
+              meta={`${formatCount(dataset.series ?? dataset.indicators.length)} series · ${formatCount(
                 dataset.observations,
               )} figures`}
               to={

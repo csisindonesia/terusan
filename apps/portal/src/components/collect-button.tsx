@@ -2,6 +2,14 @@ import { IconCheck, IconFolderPlus, IconPlus } from "@tabler/icons-react";
 import { useState } from "react";
 
 import { Button } from "~/components/ui/button";
+import {
+  DropdownMenuCheckboxItem,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+} from "~/components/ui/dropdown-menu";
 import { Input } from "~/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import {
@@ -162,5 +170,85 @@ export function CollectButton({
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+/**
+ * The same filing, as a submenu of a row's menu: on a table the popover's
+ * button would be one more control on every row, and the three dots are where
+ * a reader already looks for what can be done with one.
+ */
+export function CollectSubmenu({ items }: { items: NewItem[] }) {
+  const workspace = useWorkspace();
+  const [name, setName] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  function create(event: React.FormEvent) {
+    event.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const collection = createCollection(trimmed);
+    addToCollection(collection.id, items);
+    setName("");
+    setCreating(false);
+  }
+
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>
+        <IconFolderPlus />
+        Add to collection
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className="w-60">
+        <div className="max-h-64 overflow-y-auto">
+          {workspace.collections.map((collection) => {
+            const held = items.every((item) =>
+              holdersOf(workspace, item.kind, item.id).has(collection.id),
+            );
+            return (
+              <DropdownMenuCheckboxItem
+                key={collection.id}
+                checked={held}
+                onCheckedChange={(checked) => {
+                  if (checked) addToCollection(collection.id, items);
+                  else
+                    for (const item of items)
+                      removeFromCollection(collection.id, item.kind, item.id);
+                }}
+              >
+                <span className="truncate">{collection.name}</span>
+              </DropdownMenuCheckboxItem>
+            );
+          })}
+        </div>
+        {workspace.collections.length ? <DropdownMenuSeparator /> : null}
+        {creating || !workspace.collections.length ? (
+          <form
+            onSubmit={create}
+            // The menu reads keys for typeahead and arrow navigation; typing a
+            // name here is not either.
+            onKeyDown={(event) => event.stopPropagation()}
+            className="flex items-center gap-1.5 p-1"
+          >
+            <Input
+              autoFocus
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Collection name"
+              aria-label="Collection name"
+              className="h-8"
+            />
+            <Button type="submit" size="sm" disabled={!name.trim()}>
+              Create
+            </Button>
+          </form>
+        ) : (
+          <DropdownMenuItem closeOnClick={false} onClick={() => setCreating(true)}>
+            <IconPlus />
+            New collection
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
   );
 }

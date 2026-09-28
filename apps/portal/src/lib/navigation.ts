@@ -110,7 +110,7 @@ export const NAVIGATION: NavSection[] = [
           { label: "Data Explorer", icon: IconLayoutGrid, to: "/observations" },
           { label: "Geography", icon: IconMapPin, to: "/geography" },
           { label: "Commodities", icon: IconBox, to: "/commodities" },
-          { label: "Organizations", icon: IconBuilding },
+          { label: "Organizations", icon: IconBuilding, to: "/organizations" },
           { label: "Entities", icon: IconTopologyStar3 },
         ],
       },

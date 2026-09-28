@@ -95,7 +95,7 @@ export function CommandPalette({ className }: { className?: string }) {
   // far too much to fetch for the six a palette shows.
   const indicators = useQuery({
     queryKey: ["command-indicators", remote],
-    queryFn: () => api.indicators({ q: remote, limit: PER_GROUP }),
+    queryFn: () => api.indicators({ q: remote, fold: "ohlc", limit: PER_GROUP }),
     enabled: open && remote !== "",
   });
   const datasets = useQuery({

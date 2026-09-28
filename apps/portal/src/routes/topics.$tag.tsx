@@ -84,7 +84,8 @@ const datasetColumns: ColumnDef<Dataset>[] = [
     id: "indicators",
     header: "Series",
     meta: { align: "right" },
-    cell: ({ row }) => formatCount(row.original.indicators.length),
+    cell: ({ row }) =>
+      formatCount(row.original.series ?? row.original.indicators.length),
   },
   {
     accessorKey: "observations",
@@ -196,8 +197,9 @@ function TopicDetail() {
     queryFn: () => api.datasets(),
   });
   const indicatorQuery = useQuery({
-    queryKey: ["indicators"],
-    queryFn: () => api.indicators(),
+    queryKey: ["indicators", "folded"],
+    // A price's four series as one, as every list counts them.
+    queryFn: () => api.indicators({ fold: "ohlc" }),
   });
   const sourceQuery = useQuery({ queryKey: ["sources"], queryFn: () => api.sources() });
 

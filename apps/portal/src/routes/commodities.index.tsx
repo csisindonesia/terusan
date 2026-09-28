@@ -1,7 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { IconChartArea, IconCopy, IconDownload } from "@tabler/icons-react";
+import {
+  IconChartArea,
+  IconCopy,
+  IconDownload,
+  IconExternalLink,
+} from "@tabler/icons-react";
 import { useState } from "react";
 import { z } from "zod";
 
@@ -37,7 +42,15 @@ const columns: ColumnDef<Commodity>[] = [
     header: "Commodity",
     cell: ({ row }) => (
       <StackedCell
-        primary={row.original.name}
+        primary={
+          <Link
+            to="/commodities/$name"
+            params={{ name: row.original.name }}
+            className="underline-offset-4 hover:underline"
+          >
+            {row.original.name}
+          </Link>
+        }
         // The identifier where the registry resolved the commodity, and
         // otherwise a plain statement that it did not: a blank line here
         // reads as a rendering fault rather than as the gap it is.
@@ -112,6 +125,15 @@ const columns: ColumnDef<Commodity>[] = [
     cell: ({ row }) => (
       <RowActions
         actions={[
+          {
+            label: "Open",
+            icon: IconExternalLink,
+            onSelect: () => {
+              window.location.href = `/commodities/${encodeURIComponent(
+                row.original.name,
+              )}`;
+            },
+          },
           {
             label: "Copy name",
             icon: IconCopy,

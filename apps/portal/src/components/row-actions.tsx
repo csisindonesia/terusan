@@ -9,6 +9,8 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { Button } from "~/components/ui/button";
+import { CollectSubmenu } from "~/components/collect-button";
+import type { NewItem } from "~/lib/workspace";
 
 export type RowAction = {
   label: string;
@@ -33,7 +35,10 @@ export function RowActions({
   editable = false,
   bare = false,
   label = "Row actions",
+  collect,
 }: {
+  /** Records the row stands for, offered to file into a collection. */
+  collect?: NewItem[];
   /** The things that do work, shown above the standard pair. */
   actions?: RowAction[];
   /** Further entries that need an endpoint nobody has built yet. */
@@ -77,6 +82,7 @@ export function RowActions({
         }
       />
       <DropdownMenuContent align="end" className="w-52">
+        {collect?.length ? <CollectSubmenu items={collect} /> : null}
         {actions?.length ? (
           <>
             {actions.map((action) => (

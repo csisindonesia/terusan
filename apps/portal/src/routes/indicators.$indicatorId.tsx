@@ -13,6 +13,9 @@ import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 
 import { AssistantChart } from "~/components/assistant-chart";
+import { CandlestickChart } from "~/components/candlestick-chart";
+import { ChartCard } from "~/components/chart-card";
+import { ChoroplethMap } from "~/components/choropleth-map";
 import { ClampedText } from "~/components/clamped-text";
 import { CollectButton } from "~/components/collect-button";
 import { DataTable, StackedCell } from "~/components/data-table";
@@ -36,7 +39,21 @@ import { TagList } from "~/components/tag-list";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
+import {
+  hasIntradayRange,
+  OHLC,
+  ohlcSet,
+  toCandles,
+  type OhlcField,
+} from "~/lib/candles";
 import { summarise, gapsByStatus, type Figure } from "~/lib/analytics";
 import {
   commodityOf,
@@ -117,7 +134,26 @@ const searchSchema = z.object({
   sort: z.enum(["period", "bounds", "geography", "commodity", "value"]).optional(),
   dir: z.enum(["asc", "desc"]).optional(),
   page: z.number().int().min(0).optional(),
+  // The period the province map is drawn for. Absent means the latest.
+  map_period: textParam,
+  // Which of a price's open, high, low and close the figures table lists.
+  // Empty means all four.
+  price: listParam,
 });
+
+const OHLC_LABEL: Record<OhlcField, string> = {
+  open: "Open",
+  high: "High",
+  low: "Low",
+  close: "Close",
+};
+
+/**
+ * How many sessions a price's candles show. A year of trading days: five
+ * years is twelve hundred bars and a bar would be under a pixel wide. The
+ * Data tab holds the whole series.
+ */
+const SESSIONS = 250;
 
 export const Route = createFileRoute("/indicators/$indicatorId")({
   validateSearch: searchSchema,
@@ -212,7 +248,10 @@ function asPeriodParam(value: string): string | number | undefined {
 /** What the API tab shows as the example request. */
 type ApiQuery = { key: string; value: string }[];
 
-function columnsFor(dimension: Dimension): ColumnDef<Observation>[] {
+function columnsFor(
+  dimension: Dimension,
+  prices?: Record<string, OhlcField>,
+): ColumnDef<Observation>[] {
   const period: ColumnDef<Observation> = {
     accessorKey: "period",
     header: "Period",
@@ -280,9 +319,28 @@ function columnsFor(dimension: Dimension): ColumnDef<Observation>[] {
         ? [memberColumn("geography"), memberColumn("commodity")]
         : [memberColumn(dimension)];
 
+  // Which of a price's four readings a row is, where the table lists more
+  // than one series.
+  const price: ColumnDef<Observation>[] = prices
+    ? [
+        {
+          id: "price",
+          accessorFn: (row) => prices[row.indicator_id],
+          header: "Price",
+          enableSorting: false,
+          meta: { width: "w-28" },
+          cell: ({ row }) => {
+            const field = prices[row.original.indicator_id];
+            return field ? OHLC_LABEL[field] : "—";
+          },
+        },
+      ]
+    : [];
+
   return [
     period,
     bounds,
+    ...price,
     ...member,
     {
       accessorKey: "value",
@@ -522,6 +580,13 @@ function IndicatorDetail() {
   const chosenCommodities = asTextList(search.commodity);
   const chosenStatuses = asTextList(search.status);
   const chosenYears = asTextList(search.year);
+  // A price is four series, and the table lists whichever of the four the
+  // reader asks for — all of them until asked. Anything in the URL that is
+  // not one of the four is ignored rather than narrowing to nothing.
+  const ohlc = meta?.ohlc;
+  const chosenPrices = ohlc
+    ? OHLC.filter((field) => asTextList(search.price).includes(field))
+    : [];
   const hidden = asTextList(search.hide);
   const from = asText(search.from);
   const until = asText(search.until);
@@ -546,7 +611,9 @@ function IndicatorDetail() {
   // three have to agree: a table paged in the warehouse under one filter and
   // charted in the browser under another is two answers to one question.
   const filters: ObservationQuery = {
-    indicator: [indicatorId],
+    indicator: ohlc
+      ? (chosenPrices.length ? chosenPrices : OHLC).map((field) => ohlc[field])
+      : [indicatorId],
     // The primary axis chip narrows by place for most series and by commodity
     // for the ones that vary only that way. Places go by the name they were
     // published under rather than by `geo`, whose identifier most survey cities
@@ -592,11 +659,43 @@ function IndicatorDetail() {
   // prices across 34 provinces is 2.6 million rows and a chart a thousand
   // pixels wide; the warehouse returns a line per member at a granularity the
   // span can be drawn at, and says which.
+  //
+  // One series, whatever the table lists: of a price, the close. Four
+  // readings of one session averaged into a line would be a figure nobody
+  // published.
+  const seriesFilters: ObservationQuery = {
+    ...filters,
+    indicator: [ohlc?.close ?? indicatorId],
+  };
   const chart = useQuery({
-    queryKey: ["observations", "series", filters, dimension],
+    queryKey: ["observations", "series", seriesFilters, dimension],
     queryFn: () =>
-      api.observationSeries({ ...filters, dimension, members: MAX_SERIES }),
+      api.observationSeries({ ...seriesFilters, dimension, members: MAX_SERIES }),
   });
+
+  // A price drawn as a price: the four series reassembled into bars, for the
+  // most recent sessions under the same filters as everything else.
+  const priceSet = ohlc ? ohlcSet([{ indicator_id: ohlc.close, ohlc }]) : null;
+  const bars = useQuery({
+    queryKey: ["candles", "indicator", seriesFilters, priceSet?.ids],
+    enabled: Boolean(priceSet),
+    queryFn: () =>
+      api.observations({
+        ...seriesFilters,
+        indicator: priceSet!.ids,
+        // Newest first, so the limit takes the latest sessions; `toCandles`
+        // sorts them back. The slack covers a limit that falls part-way
+        // through a day, and is trimmed by the slice below.
+        order: "-period",
+        limit: 4 * (SESSIONS + 8),
+      }),
+  });
+  const candles = priceSet
+    ? toCandles(bars.data?.data ?? [], priceSet).slice(-SESSIONS)
+    : [];
+  // A contract that settles rather than trades has no range for a bar to
+  // show, and keeps its line.
+  const candled = Boolean(priceSet) && hasIntradayRange(candles);
 
   const paged = observations.data?.data ?? [];
   const total = observations.data?.meta?.total ?? 0;
@@ -626,6 +725,34 @@ function IndicatorDetail() {
   }));
   const stats = summarise(figures);
   const gaps = gapsByStatus(figures);
+
+  // The province map: one period at a time, every province at once. Offered
+  // periods are the chart's own only when it draws them as published — a
+  // coarser bucket holds several figures per province, and shading a province
+  // by their sum or their mean would draw a figure nobody published.
+  const mapPeriods = granularity === "native" ? periods : [];
+  const latestPeriod = mapPeriods.at(-1) ?? meta?.period_end;
+  const askedPeriod = asText(search.map_period);
+  const mapPeriod =
+    askedPeriod && mapPeriods.includes(askedPeriod) ? askedPeriod : latestPeriod;
+  const provinceFigures = useQuery({
+    queryKey: ["observations", "map", indicatorId, mapPeriod, chosenStatuses],
+    enabled: dimension === "geography" && Boolean(mapPeriod),
+    queryFn: () =>
+      api.observations({
+        indicator: [indicatorId],
+        geo_type: ["province"],
+        status: chosenStatuses,
+        period_start: mapPeriod,
+        period_end: periodCeiling(mapPeriod!),
+        limit: 200,
+      }),
+  });
+  const mapFigures = (provinceFigures.data?.data ?? []).flatMap((row) =>
+    row.geo_id && row.value !== null && row.period === mapPeriod
+      ? [{ geo_id: row.geo_id, value: Number(row.value) }]
+      : [],
+  );
 
   // A row to show the shape of the response with, and to carry the source link
   // at the foot of the page.
@@ -672,6 +799,7 @@ function IndicatorDetail() {
     chosenSeries.length +
     chosenCommodities.length +
     chosenYears.length +
+    chosenPrices.length +
     hidden.length +
     (from ? 1 : 0) +
     (until ? 1 : 0) +
@@ -1126,8 +1254,44 @@ function IndicatorDetail() {
               {/* Drawn as the assistant draws a chart — its own card with the
                   title, span, source and logo — so a figure taken from here
                   and one taken from a reply look like the same publication. */}
-              {chart.isLoading ? (
+              {chart.isLoading || (priceSet && bars.isLoading) ? (
                 <Skeleton className="h-[460px] w-full rounded-xl" />
+              ) : candled ? (
+                // A price is four readings of each session, and a candle is
+                // the one form that shows all four. Same card as the line, so
+                // either reads as the same publication.
+                <ChartCard
+                  plain
+                  title={heading}
+                  span={
+                    candles.length
+                      ? `${candles[0]?.label} to ${candles[candles.length - 1]?.label}`
+                      : undefined
+                  }
+                  reason={
+                    <>
+                      The last {formatCount(candles.length)} sessions. Each bar is one
+                      trading day: the wick spans the low to the high, the body spans
+                      the open to the close — hollow where it closed higher.
+                    </>
+                  }
+                  sources={meta?.publisher ? [meta.publisher] : []}
+                  note={[
+                    candles.some((candle) => candle.open === null)
+                      ? `${formatCount(candles.filter((candle) => candle.open === null).length)} of these sessions have no prices — the exchange was closed.`
+                      : null,
+                    "The whole series, each reading on its own, is on the data tab.",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  <CandlestickChart
+                    candles={candles}
+                    unit={meta?.unit}
+                    framed={false}
+                    dashed
+                  />
+                </ChartCard>
               ) : (
                 <AssistantChart
                   chart={{
@@ -1166,6 +1330,66 @@ function IndicatorDetail() {
                         }
                   }
                   linkBack={false}
+                  plain
+                  // Only where the series is published by province: a map of
+                  // two shaded provinces and thirty-six hatched ones says less
+                  // than the line does.
+                  map={
+                    mapFigures.length >= 2 && mapPeriod
+                      ? {
+                          span: mapPeriod,
+                          reason:
+                            "Shaded on a linear scale from zero, so a province's shade is proportional to its figure. A province with no figure is hatched, not drawn as zero.",
+                          note: "Provincial boundaries from BIG via github.com/ardian28/GeoJson-Indonesia-38-Provinsi, simplified for display.",
+                          content: (
+                            <div className="space-y-3">
+                              {mapPeriods.length > 1 ? (
+                                <div data-export-skip="true">
+                                  <Select
+                                    value={mapPeriod}
+                                    onValueChange={(next) =>
+                                      void navigate({
+                                        search: (prev) => ({
+                                          ...prev,
+                                          map_period:
+                                            next === latestPeriod
+                                              ? undefined
+                                              : (next as string),
+                                        }),
+                                        replace: true,
+                                      })
+                                    }
+                                    items={mapPeriods.map((period) => ({
+                                      value: period,
+                                      label: period,
+                                    }))}
+                                  >
+                                    <SelectTrigger size="sm" aria-label="Period">
+                                      <span className="text-muted-foreground">
+                                        Period
+                                      </span>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {[...mapPeriods].reverse().map((period) => (
+                                        <SelectItem key={period} value={period}>
+                                          {period}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              ) : null}
+                              <ChoroplethMap
+                                figures={mapFigures}
+                                unit={meta?.unit}
+                                format={(value) => formatDecimal(String(value))}
+                              />
+                            </div>
+                          ),
+                        }
+                      : undefined
+                  }
                   note={[
                     // Said plainly rather than left to be inferred from a
                     // legend that stops at eight.
@@ -1226,6 +1450,49 @@ function IndicatorDetail() {
                     a filter with one option cannot narrow anything, and a
                     row of inert controls is harder to read than a short
                     one. */}
+                    {/* A price's four readings, listed together until the
+                    reader picks: the close alone, or the high and the low. */}
+                    {ohlc ? (
+                      <FilterChip
+                        label="Price"
+                        value={summariseChip(
+                          chosenPrices,
+                          (field) => OHLC_LABEL[field as OhlcField],
+                        )}
+                        onClear={() =>
+                          navigate({
+                            search: (prev) => ({ ...prev, price: undefined, page: 0 }),
+                          })
+                        }
+                      >
+                        <ChoiceList
+                          options={OHLC.map((field) => ({
+                            value: field,
+                            label: OHLC_LABEL[field],
+                          }))}
+                          selected={chosenPrices}
+                          onToggle={(value) =>
+                            navigate({
+                              search: (prev) => ({
+                                ...prev,
+                                price: toggle(chosenPrices, value),
+                                page: 0,
+                              }),
+                            })
+                          }
+                          onClear={() =>
+                            navigate({
+                              search: (prev) => ({
+                                ...prev,
+                                price: undefined,
+                                page: 0,
+                              }),
+                            })
+                          }
+                        />
+                      </FilterChip>
+                    ) : null}
+
                     {statuses.length > 1 ? (
                       <FilterChip
                         label="Status"
@@ -1440,6 +1707,7 @@ function IndicatorDetail() {
                     chosenSeries.length ||
                     chosenCommodities.length ||
                     chosenYears.length ||
+                    chosenPrices.length ||
                     hidden.length ||
                     from ||
                     until ||
@@ -1459,7 +1727,7 @@ function IndicatorDetail() {
               />
 
               <DataTable
-                columns={columnsFor(dimension)}
+                columns={columnsFor(dimension, priceSet?.field)}
                 data={paged}
                 isLoading={observations.isLoading}
                 loadingRows={8}

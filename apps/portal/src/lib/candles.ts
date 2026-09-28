@@ -26,7 +26,12 @@ export type OhlcSet = {
 };
 
 /** What a series is recognised by here: its readable key, not its identifier. */
-type Named = { indicator_id: string; slug?: string };
+type Named = {
+  indicator_id: string;
+  slug?: string;
+  /** The four, where the API folded them into this one. */
+  ohlc?: Record<OhlcField, string>;
+};
 
 /**
  * A series' key, which is what says whether it is an open or a close.
@@ -49,6 +54,17 @@ function key(series: Named): string {
  * is made of.
  */
 export function ohlcSet(series: Named[]): OhlcSet | null {
+  // A folded list names the four on the close, and the other three are not
+  // in it to be found.
+  const folded = series.find((entry) => entry.ohlc);
+  if (folded?.ohlc) {
+    const ids = OHLC.map((field) => folded.ohlc![field]);
+    return {
+      prefix: key(folded).replace(/_close$/, ""),
+      ids,
+      field: Object.fromEntries(ids.map((id, index) => [id, OHLC[index] as OhlcField])),
+    };
+  }
   for (const candidate of series) {
     const match = /^(.*)_open$/.exec(key(candidate));
     if (!match) continue;
@@ -110,4 +126,44 @@ export function hasIntradayRange(candles: Candle[]): boolean {
   if (!priced.length) return false;
   const ranged = priced.filter((candle) => candle.high !== candle.low);
   return ranged.length / priced.length >= 0.5;
+}
+
+/** How the publishers' names end on a close: "…, close", "… close", "… — close". */
+const CLOSE_SUFFIX = /[\s,—–-]*\bclose$/i;
+
+/** A price's name as it is listed once: without the reading it is. */
+export function priceName(name: string): string {
+  return name.replace(CLOSE_SUFFIX, "");
+}
+
+/**
+ * Every complete price among these series, by the identifier of its close,
+ * with the four identifiers it stands for.
+ *
+ * The same test the API folds its lists by — four series sharing a key and a
+ * collection under the four suffixes — for a set of series held here, such as
+ * the ones a filter has chosen.
+ */
+export function pricesAmong(
+  series: (Named & { dataset_id?: string })[],
+): Map<string, string[]> {
+  const groups = new Map<string, Partial<Record<OhlcField, string>>>();
+  for (const entry of series) {
+    const match = /^(.*)_(open|high|low|close)$/.exec(key(entry));
+    if (!match) continue;
+    const group = `${entry.dataset_id ?? ""}\u0000${match[1]}`;
+    const fields = groups.get(group) ?? {};
+    fields[match[2] as OhlcField] = entry.indicator_id;
+    groups.set(group, fields);
+  }
+  const prices = new Map<string, string[]>();
+  for (const fields of groups.values()) {
+    if (OHLC.every((field) => fields[field])) {
+      prices.set(
+        fields.close!,
+        OHLC.map((field) => fields[field]!),
+      );
+    }
+  }
+  return prices;
 }

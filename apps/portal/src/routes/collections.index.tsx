@@ -1,13 +1,15 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import {
+  IconDots,
   IconDownload,
   IconFolder,
   IconFolderPlus,
   IconPencil,
+  IconSearch,
   IconTrash,
   IconUpload,
 } from "@tabler/icons-react";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { PageHeader } from "~/components/page-header";
 import { ShelfNote } from "~/components/shelf-note";
@@ -29,7 +31,19 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { Input } from "~/components/ui/input";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "~/components/ui/input-group";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Textarea } from "~/components/ui/textarea";
 import { formatCount, formatRelative } from "~/lib/format";
@@ -44,6 +58,7 @@ import {
   useShelf,
   useWorkspace,
   type Collection,
+  type ItemKind,
 } from "~/lib/workspace";
 
 /**
@@ -70,6 +85,21 @@ function Collections() {
   const workspace = useWorkspace();
   const shelf = useShelf();
   const collections = workspace.collections;
+  const [query, setQuery] = useState("");
+  const [kind, setKind] = useState<ItemKind | "all">("all");
+  const [sort, setSort] = useState<Sort>("updated");
+
+  const shown = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const matching = collections.filter(
+      (collection) =>
+        (kind === "all" || collection.items.some((item) => item.kind === kind)) &&
+        (!needle ||
+          collection.name.toLowerCase().includes(needle) ||
+          collection.description?.toLowerCase().includes(needle)),
+    );
+    return [...matching].sort(SORTS[sort].compare);
+  }, [collections, query, kind, sort]);
 
   return (
     <div className="space-y-5">
@@ -102,8 +132,8 @@ function Collections() {
       />
 
       {shelf.mode === "loading" ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 3 }, (_, index) => (
+        <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          {Array.from({ length: 5 }, (_, index) => (
             <Skeleton key={index} className="h-32 rounded-sm" />
           ))}
         </div>
@@ -121,12 +151,133 @@ function Collections() {
           </p>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {collections.map((collection) => (
-            <CollectionCard key={collection.id} collection={collection} />
-          ))}
-        </div>
+        <>
+          <Toolbar
+            query={query}
+            onQuery={setQuery}
+            kind={kind}
+            onKind={setKind}
+            sort={sort}
+            onSort={setSort}
+          />
+          {shown.length ? (
+            <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {shown.map((collection) => (
+                <CollectionCard key={collection.id} collection={collection} />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed px-6 py-10 text-center text-sm text-muted-foreground">
+              No collections match.{" "}
+              <button
+                type="button"
+                className="underline underline-offset-4 hover:text-foreground"
+                onClick={() => {
+                  setQuery("");
+                  setKind("all");
+                }}
+              >
+                Clear filters
+              </button>
+            </div>
+          )}
+        </>
       )}
+    </div>
+  );
+}
+
+type Sort = "updated" | "name" | "size";
+
+const SORTS: Record<
+  Sort,
+  { label: string; compare: (a: Collection, b: Collection) => number }
+> = {
+  updated: {
+    label: "Recently updated",
+    compare: (a, b) => b.updated_at.localeCompare(a.updated_at),
+  },
+  name: { label: "Name", compare: (a, b) => a.name.localeCompare(b.name) },
+  size: { label: "Most items", compare: (a, b) => b.items.length - a.items.length },
+};
+
+const KIND_OPTIONS = [
+  { value: "all", label: "All kinds" },
+  ...ITEM_KINDS.map((kind) => ({ value: kind, label: ITEM_KIND_LABELS[kind].many })),
+];
+
+const SORT_OPTIONS = (Object.keys(SORTS) as Sort[]).map((value) => ({
+  value,
+  label: SORTS[value].label,
+}));
+
+/**
+ * Finding a folder once there are more than a screenful. The kind filter keeps
+ * a folder holding *any* record of that kind, since folders mix kinds freely.
+ */
+function Toolbar({
+  query,
+  onQuery,
+  kind,
+  onKind,
+  sort,
+  onSort,
+}: {
+  query: string;
+  onQuery: (value: string) => void;
+  kind: ItemKind | "all";
+  onKind: (value: ItemKind | "all") => void;
+  sort: Sort;
+  onSort: (value: Sort) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <InputGroup className="w-full sm:w-72">
+        <InputGroupAddon>
+          <IconSearch className="size-4 text-muted-foreground" />
+        </InputGroupAddon>
+        <InputGroupInput
+          type="search"
+          value={query}
+          onChange={(event) => onQuery(event.target.value)}
+          placeholder="Search collections"
+          aria-label="Search collections"
+        />
+      </InputGroup>
+
+      <Select
+        items={KIND_OPTIONS}
+        value={kind}
+        onValueChange={(value) => onKind((value ?? "all") as ItemKind | "all")}
+      >
+        <SelectTrigger aria-label="Filter by kind" className="min-w-36">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {KIND_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <Select
+        items={SORT_OPTIONS}
+        value={sort}
+        onValueChange={(value) => onSort((value ?? "updated") as Sort)}
+      >
+        <SelectTrigger aria-label="Sort collections" className="ml-auto min-w-40">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {SORT_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }
@@ -143,7 +294,7 @@ function CollectionCard({ collection }: { collection: Collection }) {
   })).filter((entry) => entry.count > 0);
 
   return (
-    <Card className="transition-colors hover:ring-foreground/20">
+    <Card className="ring-0 transition-colors hover:bg-muted">
       <CardHeader>
         <CardTitle>
           <Link
@@ -164,7 +315,7 @@ function CollectionCard({ collection }: { collection: Collection }) {
             <DropdownMenuTrigger
               render={
                 <Button variant="ghost" size="icon-sm" aria-label="Collection actions">
-                  <IconPencil className="size-4" />
+                  <IconDots className="size-4" />
                 </Button>
               }
             />

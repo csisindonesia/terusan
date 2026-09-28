@@ -6,8 +6,9 @@ import { z } from "zod";
 import type { ColumnDef } from "@tanstack/react-table";
 
 import { CandlestickChart } from "~/components/candlestick-chart";
+import { ChartCard } from "~/components/chart-card";
 import { ClampedText } from "~/components/clamped-text";
-import { DataTable, StackedCell } from "~/components/data-table";
+import { DataTable } from "~/components/data-table";
 import { ChoiceList, FilterChip, summarise } from "~/components/filter-chip";
 import { SearchInput } from "~/components/search-input";
 import { TableToolbar } from "~/components/table-toolbar";
@@ -94,12 +95,13 @@ const seriesColumns: ColumnDef<Indicator>[] = [
     id: "coverage",
     header: "Coverage",
     accessorFn: (row) => row.period_start,
-    cell: ({ row }) => (
-      <StackedCell
-        primary={`${row.original.period_start}–${row.original.period_end}`}
-        secondary={`${formatCount(row.original.observations)} figures`}
-      />
-    ),
+    cell: ({ row }) => `${row.original.period_start}–${row.original.period_end}`,
+  },
+  {
+    accessorKey: "observations",
+    header: "Figures",
+    meta: { align: "right" },
+    cell: ({ row }) => formatCount(row.original.observations),
   },
 ];
 
@@ -140,7 +142,7 @@ function DatasetDetail() {
   // largest collections hold a few thousand, well inside one page.
   const indicators = useQuery({
     queryKey: ["indicators", { dataset: datasetId, limit: 10000 }],
-    queryFn: () => api.indicators({ dataset: datasetId, limit: 10000 }),
+    queryFn: () => api.indicators({ dataset: datasetId, fold: "ohlc", limit: 10000 }),
   });
   const sources = useQuery({ queryKey: ["sources"], queryFn: () => api.sources() });
   // How much material this collection was built from. Asked for one row
@@ -256,7 +258,7 @@ function DatasetDetail() {
                 meta
                   ? [
                       meta.description,
-                      `${formatCount(meta.observations)} figures in ${formatCount(meta.indicators.length)} series, covering ${meta.period_start} to ${meta.period_end}, published by ${meta.organization ?? meta.source_id}.`,
+                      `${formatCount(meta.observations)} figures in ${formatCount(meta.series ?? meta.indicators.length)} series, covering ${meta.period_start} to ${meta.period_end}, published by ${meta.organization ?? meta.source_id}.`,
                     ]
                       .filter(Boolean)
                       .join(" ")
@@ -304,7 +306,20 @@ function DatasetDetail() {
         <aside className={`lg:sticky lg:self-start ${BELOW_STICKY_HEADER}`}>
           <h2 className="font-heading text-sm font-semibold tracking-tight">About</h2>
           <dl className="mt-3 space-y-3">
-            <Fact label="Publisher" value={meta?.organization} />
+            <Fact
+              label="Publisher"
+              value={
+                meta?.organization ? (
+                  <Link
+                    to="/organizations/$name"
+                    params={{ name: meta.organization }}
+                    className="underline underline-offset-2"
+                  >
+                    {meta.organization}
+                  </Link>
+                ) : undefined
+              }
+            />
             <Fact label="Source" value={source?.name ?? meta?.source_id} />
             <Fact
               label="Refresh"
@@ -379,75 +394,80 @@ function DatasetDetail() {
 
         <div className="min-w-0 space-y-8">
           {ohlc ? (
-            <section className="space-y-3">
-              <h2 className="font-heading text-lg font-semibold tracking-tight">
-                Price
-              </h2>
-              <p className="max-w-2xl text-sm text-muted-foreground">
-                The last {formatCount(SESSIONS)} sessions.{" "}
+            // Framed as the assistant frames a chart — title, span, source and
+            // logo in one card — so a price taken from here and one taken from
+            // a reply look like the same publication.
+            bars.isLoading || indicators.isLoading ? (
+              <Skeleton className="h-[520px] w-full rounded-xl" />
+            ) : (
+              <ChartCard
+                plain
+                title={meta ? datasetLabel(meta) : titleFromId(datasetId)}
+                span={
+                  candles.length
+                    ? `${candles[0]?.label} to ${candles[candles.length - 1]?.label}`
+                    : undefined
+                }
+                reason={
+                  <>
+                    The last {formatCount(SESSIONS)} sessions.{" "}
+                    {tradeable
+                      ? "Each bar is one trading day: the wick spans the low to the high, the body spans the open to the close."
+                      : "Drawn as a line, not candles: this contract settles once a day rather than trading, so its open, high, low and close are one figure repeated and there is no range for a bar to show."}
+                  </>
+                }
+                sources={meta?.organization ? [meta.organization] : []}
+                link={
+                  ohlc.ids[3] ? (
+                    <Link
+                      to="/indicators/$indicatorId"
+                      params={{ indicatorId: ohlc.ids[3] }}
+                      className="text-foreground underline underline-offset-2"
+                    >
+                      The whole series
+                    </Link>
+                  ) : undefined
+                }
+                note={[
+                  // Yahoo lists a market holiday as a dated row with no
+                  // prices. The gap is the exchange being shut, not a figure
+                  // we failed to collect, and saying so stops it reading as a
+                  // hole in the data.
+                  closed
+                    ? `${formatCount(closed)} of these sessions have no prices — the exchange was closed.`
+                    : null,
+                  "Daily figures as published. Five years are held — the whole series is on each indicator’s own page.",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
                 {tradeable ? (
-                  <>
-                    Each bar is one trading day: the wick spans the low to the high, the
-                    body spans the open to the close.
-                  </>
+                  <CandlestickChart
+                    candles={candles}
+                    unit={series[0]?.unit}
+                    framed={false}
+                    dashed
+                  />
                 ) : (
-                  <>
-                    Drawn as a line, not candles: this contract settles once a day
-                    rather than trading, so its open, high, low and close are one figure
-                    repeated and there is no range for a bar to show.
-                  </>
-                )}{" "}
-                Five years are held — the whole series is on each indicator&rsquo;s own
-                page.
-              </p>
-              {bars.isLoading || indicators.isLoading ? (
-                <Skeleton className="h-[340px] w-full rounded-sm" />
-              ) : tradeable ? (
-                <CandlestickChart
-                  candles={candles}
-                  unit={series[0]?.unit}
-                  caption={
-                    candles.length
-                      ? [
-                          `${candles[0]?.label} to ${candles[candles.length - 1]?.label}.`,
-                          // Yahoo lists a market holiday as a dated row with no
-                          // prices. The gap is the exchange being shut, not a
-                          // figure we failed to collect, and saying so stops it
-                          // reading as a hole in the data.
-                          closed
-                            ? `${formatCount(closed)} of these sessions have no prices — the exchange was closed.`
-                            : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" ")
-                      : undefined
-                  }
-                />
-              ) : (
-                <TimeSeriesChart
-                  series={[
-                    {
-                      name: "Close",
-                      points: candles.map((candle) => ({
-                        label: candle.label,
-                        value: candle.close,
-                        status: candle.close === null ? "no price" : undefined,
-                      })),
-                    },
-                  ]}
-                  unit={series[0]?.unit}
-                  caption={
-                    candles.length
-                      ? `${candles[0]?.label} to ${candles[candles.length - 1]?.label}.${
-                          closed
-                            ? ` ${formatCount(closed)} of these sessions carry no price.`
-                            : ""
-                        }`
-                      : undefined
-                  }
-                />
-              )}
-            </section>
+                  <TimeSeriesChart
+                    series={[
+                      {
+                        name: "Close",
+                        points: candles.map((candle) => ({
+                          label: candle.label,
+                          value: candle.close,
+                          status: candle.close === null ? "no price" : undefined,
+                        })),
+                      },
+                    ]}
+                    unit={series[0]?.unit}
+                    framed={false}
+                    dashed
+                    markers
+                  />
+                )}
+              </ChartCard>
+            )
           ) : null}
 
           <section className="space-y-3">
@@ -636,7 +656,7 @@ function Fact({
   hint,
 }: {
   label: string;
-  value?: string;
+  value?: React.ReactNode;
   hint?: string;
 }) {
   return (

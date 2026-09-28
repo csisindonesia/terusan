@@ -27,7 +27,6 @@ import {
   NAVIGATION,
   defaultGroup,
   groupForPath,
-  navigationCoverage,
   type NavGroup,
   type NavItem,
 } from "~/lib/navigation";
@@ -43,7 +42,6 @@ import {
  */
 export function AppSidebar() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const coverage = navigationCoverage();
 
   // Open groups rather than one selected group: the rail could only ever point
   // at a single section, which made moving between, say, Discover and Explore
@@ -79,7 +77,7 @@ export function AppSidebar() {
     // because both declarations are fighting classes on the same element.
     <Sidebar
       collapsible="icon"
-      className="top-(--app-header)! h-[calc(100svh-var(--app-header))]!"
+      className="top-(--app-header)! h-[calc(100svh-var(--app-header))]! border-none!"
     >
       <SidebarContent>
         {NAVIGATION.map((section, index) => (
@@ -107,10 +105,6 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="gap-2 border-t">
-        <p className="px-2 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
-          {coverage.built} of {coverage.total} pages built. The rest are listed so the
-          shape is visible.
-        </p>
         <NavUser />
       </SidebarFooter>
     </Sidebar>
@@ -182,7 +176,11 @@ function NavGroupItem({
                 // is not here yet.
                 <SidebarMenuSubButton aria-disabled render={<span />}>
                   <item.icon />
-                  <span>{item.label}</span>
+                  <span className="truncate">{item.label}</span>
+                  <span className="ml-auto flex shrink-0 items-center gap-1 text-[10px] font-medium tracking-wide text-red-600 uppercase dark:text-red-400">
+                    <span aria-hidden className="size-1.5 rounded-full bg-red-500" />
+                    Soon
+                  </span>
                 </SidebarMenuSubButton>
               )}
             </SidebarMenuSubItem>
