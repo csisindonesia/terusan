@@ -401,6 +401,17 @@ rca-ingest: ## Land the HS6 RCA working files from tmp/rca (or $$RCA_DROP_DIR) i
 rca-silver: ## Normalize the RCA base years and WITS sector RCA into Silver
 	@./scripts/normalize-rca.sh
 
+.PHONY: adb-silver
+adb-silver: ## Land ADB's Key Indicators for Indonesia, extract and normalize into Silver
+	cd pipelines && uv run terusan sources run adb-kidb
+	cd pipelines && uv run terusan warehouse extract statistics adb-kidb
+	@./scripts/normalize-adb.sh
+
+.PHONY: dedupe
+dedupe: ## Delete Silver series another source publishes more completely (dry run: make dedupe DRY=1)
+	cd pipelines && uv run terusan silver dedupe $(if $(DRY),--dry-run,)
+	$(if $(DRY),,cd pipelines && uv run terusan silver dimensions)
+
 .PHONY: pihps-backfill
 pihps-backfill: ## Fetch every PIHPS price back to March 2017 (long: ~16k requests)
 	@echo "35 places x 4 markets x a month per window since 2017-03."

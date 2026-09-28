@@ -24,6 +24,7 @@ from ..warehouse import (
     Warehouse,
     table_from_rows,
 )
+from .adb import KidbCodelistExtractor, KidbDataExtractor
 from .bank_indonesia import ConsumerSurveyExtractor, RetailSalesExtractor
 from .base import PARSER_VERSION, ExtractionError, Extractor, Landed
 from .bnpb import BnpbDatastoreExtractor
@@ -88,6 +89,10 @@ DEFAULT_EXTRACTORS: tuple[Extractor, ...] = (
     # as column names and lose the symbol, which is not in the body.
     SinaFuturesExtractor(),
     FredExtractor(),
+    # Before the generic readers: the CSV would lose the unit multiplier and
+    # the codelist would land as one JSON object.
+    KidbDataExtractor(),
+    KidbCodelistExtractor(),
     FredSeriesPageExtractor(),
     ConsumerSurveyExtractor(),
     RetailSalesExtractor(),

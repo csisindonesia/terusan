@@ -5,6 +5,7 @@ RAW keeps the original, and a better parser can be pointed at the same bytes
 later — which is the whole reason the original is preserved.
 """
 
+from .adb import KidbCodelistExtractor, KidbDataExtractor
 from .bank_indonesia import ConsumerSurveyExtractor, RetailSalesExtractor
 from .base import PARSER_VERSION, ExtractionError, Extractor, Landed
 from .bnpb import BnpbDatastoreExtractor
@@ -64,6 +65,8 @@ __all__ = [
     "GdeltExtractor",
     "HtmlExtractor",
     "JsonExtractor",
+    "KidbCodelistExtractor",
+    "KidbDataExtractor",
     "Landed",
     "MovementDistributionExtractor",
     "PdfExtractor",

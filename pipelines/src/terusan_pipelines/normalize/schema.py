@@ -331,6 +331,36 @@ SILVER_EVENTS = pa.schema(
     ]
 )
 
+#: Series deleted from Silver because another source publishes the same
+#: figures more completely (normalize/duplicates.py). One row per deleted
+#: series, naming the one kept and the evidence: the figures were compared,
+#: not the titles, so the row says how many periods agreed and at what scale.
+#: Normalization reads it to keep a deleted series from being written back.
+SILVER_INDICATOR_DUPLICATES = pa.schema(
+    [
+        pa.field("indicator_id", pa.string(), nullable=False),
+        pa.field("source_id", pa.string(), nullable=False),
+        pa.field("name", pa.string()),
+        pa.field("superseded_by", pa.string(), nullable=False),
+        pa.field("superseded_by_source_id", pa.string(), nullable=False),
+        pa.field("superseded_by_name", pa.string()),
+        pa.field("temporal_resolution", pa.string()),
+        # Periods (place and period) where both publish a figure, and how many
+        # of those agree to three significant figures.
+        pa.field("overlap", pa.int64()),
+        pa.field("matches", pa.int64()),
+        pa.field("match_share", pa.float64()),
+        # The power of ten between the two: kept value = deleted value x
+        # 10^scale. A copy in billions of rupiah kept over one in rupiah is -9.
+        pa.field("scale", pa.int32()),
+        # Share of the deleted series' own observations the kept one also has.
+        pa.field("coverage", pa.float64()),
+        pa.field("observations", pa.int64()),
+        pa.field("superseded_by_observations", pa.int64()),
+        pa.field("processed_at", pa.timestamp("us", tz="UTC")),
+    ]
+)
+
 SILVER_SCHEMAS: dict[str, pa.Schema] = {
     "indicators": SILVER_INDICATORS,
     "observations": SILVER_OBSERVATIONS,
@@ -341,4 +371,5 @@ SILVER_SCHEMAS: dict[str, pa.Schema] = {
     "sources": SILVER_SOURCES,
     "datasets": SILVER_DATASETS,
     "events": SILVER_EVENTS,
+    "indicator_duplicates": SILVER_INDICATOR_DUPLICATES,
 }

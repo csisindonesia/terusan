@@ -30,6 +30,7 @@ from ..tagging import SourceFacts, dataset_tags, indicator_tags, retopic, source
 from ..warehouse import ParquetWriter, Warehouse, table_from_rows
 from ..warehouse.observations import ObservationStore
 from . import documents as document_catalogue
+from . import duplicates as duplicate_series
 from . import events as event_calendar
 from .dimensions import CommodityRegistry, Geography, GeographyRegistry
 from .observations import ColumnMapping, NormalizationResult, ObservationNormalizer
@@ -39,6 +40,7 @@ from .schema import (
     SILVER_DOCUMENTS,
     SILVER_EVENTS,
     SILVER_GEOGRAPHY,
+    SILVER_INDICATOR_DUPLICATES,
     SILVER_INDICATORS,
     SILVER_NEWS_OUTLETS,
     SILVER_OBSERVATIONS,
@@ -91,6 +93,10 @@ class SilverResult:
     #: in the history, as a mapping that stopped producing.
     dry_run: bool = False
 
+    #: The series kept in this one's place, where it was not written because
+    #: another source publishes the same figures (normalize/duplicates.py).
+    superseded_by: str | None = None
+
     @property
     def observations(self) -> int:
         return self.stats.observations
@@ -111,6 +117,7 @@ class SilverRunner:
         self._geography = geography or GeographyRegistry()
         self._commodities = commodities or CommodityRegistry()
         self._writer = writer or ParquetWriter(resolver)
+        self._superseded_cache: dict[str, dict] | None = None
 
     def normalize(
         self,
@@ -166,6 +173,16 @@ class SilverRunner:
         if dry_run or not rows:
             result.finished_at = datetime.now(UTC)
             self._log(result)
+            return result
+
+        if (kept := self._held_out(mapping.indicator_id, rows)) is not None:
+            # Deleted by a duplicate sweep, and the series kept in its place
+            # still holds these figures. Writing it back would undo the sweep
+            # on every scheduled run.
+            result.superseded_by = kept
+            result.stats.observations = 0
+            result.finished_at = datetime.now(UTC)
+            log.info("silver.superseded", indicator=mapping.indicator_id, superseded_by=kept)
             return result
 
         table = table_from_rows(rows, SILVER_OBSERVATIONS)
@@ -265,6 +282,18 @@ class SilverRunner:
                 }
             )
 
+        superseded = self._superseded()
+        if superseded:
+            # A series a sweep deleted, and that normalization therefore did
+            # not write, must not be listed as if it had figures.
+            store = ObservationStore(self._resolver)
+            rows = [
+                row
+                for row in rows
+                if row["indicator_id"] not in superseded
+                or store.series(row["indicator_id"]) is not None
+            ]
+
         if merge:
             # Newly written rows win: this run read the same Bronze the earlier
             # one did, and a name that changed here changed on purpose.
@@ -285,6 +314,107 @@ class SilverRunner:
         )
         log.info("silver.indicators", source=source_id, indicators=written.rows)
         return written.rows
+
+    def sweep_duplicates(
+        self,
+        *,
+        thresholds: duplicate_series.Thresholds | None = None,
+        dry_run: bool = False,
+    ) -> list[dict]:
+        """Delete series another source publishes more completely.
+
+        Finds them by their figures (normalize/duplicates.py), records each in
+        `indicator_duplicates` beside the series kept in its place, and deletes
+        its observations and its row in the indicators table. Bronze is not
+        touched, so any of them can be normalized again.
+
+        Returns every standing deletion, this sweep's and earlier ones'.
+        """
+        thresholds = thresholds or duplicate_series.Thresholds()
+        names = self._indicator_names()
+        found = duplicate_series.find(self._resolver, thresholds=thresholds, names=names)
+        present = set(names) | {row["superseded_by"] for row in found}
+        standing = duplicate_series.carried_forward(
+            list(self._superseded().values()), found, present
+        )
+        if dry_run:
+            return standing
+
+        self._replace(Layer.SILVER, duplicate_series.TABLE)
+        if standing:
+            self._writer.write(
+                Layer.SILVER,
+                duplicate_series.TABLE,
+                table_from_rows(standing, SILVER_INDICATOR_DUPLICATES),
+                run_id="sweep",
+            )
+        self._superseded_cache = None
+
+        doomed = {row["indicator_id"] for row in found}
+        ObservationStore(self._resolver).remove(doomed)
+        by_source: dict[str, set[str]] = {}
+        for row in found:
+            by_source.setdefault(row["source_id"], set()).add(row["indicator_id"])
+        for source_id, identifiers in sorted(by_source.items()):
+            held = self._published_indicators(source_id)
+            kept = [row for row in held if row["indicator_id"] not in identifiers]
+            if len(kept) == len(held):
+                continue
+            self._replace_partition(Layer.SILVER, "indicators", f"source_id={slugify(source_id)}")
+            if kept:
+                self._writer.write(
+                    Layer.SILVER,
+                    "indicators",
+                    table_from_rows(kept, SILVER_INDICATORS),
+                    partition_by=["source_id"],
+                    run_id=slugify(source_id),
+                )
+        log.info("silver.duplicates_swept", deleted=len(doomed), standing=len(standing))
+        return standing
+
+    def _superseded(self) -> dict[str, dict]:
+        """Standing deletions by series, read once per runner."""
+        if self._superseded_cache is None:
+            root = Path(self._resolver.resolve(Layer.SILVER, duplicate_series.TABLE))
+            held: list[dict] = []
+            if any(root.rglob("*.parquet")):
+                with Warehouse(self._resolver) as warehouse:
+                    held = (
+                        warehouse.query(
+                            "SELECT * FROM read_parquet(?, union_by_name=true)",
+                            [self._resolver.glob(Layer.SILVER, duplicate_series.TABLE)],
+                        )
+                        .fetch_arrow_table()
+                        .to_pylist()
+                    )
+            self._superseded_cache = {row["indicator_id"]: row for row in held}
+        return self._superseded_cache
+
+    def _held_out(self, indicator_id: str, rows: list[dict]) -> str | None:
+        """The series kept in this one's place, if it still covers these rows."""
+        entry = self._superseded().get(indicator_id)
+        if entry is None:
+            return None
+        kept = entry["superseded_by"]
+        winner = ObservationStore(self._resolver).series(kept)
+        if not duplicate_series.covered(winner, rows, duplicate_series.Thresholds().min_coverage):
+            # The kept series no longer holds what this one does — it stopped,
+            # or this one started publishing periods it lacks. Let it back in;
+            # the next sweep decides again with both in view.
+            return None
+        return kept
+
+    def _indicator_names(self) -> dict[str, str]:
+        root = Path(self._resolver.resolve(Layer.SILVER, "indicators"))
+        if not any(root.rglob("*.parquet")):
+            return {}
+        with Warehouse(self._resolver) as warehouse:
+            rows = warehouse.query(
+                "SELECT indicator_id, any_value(name) FROM "
+                "read_parquet(?, union_by_name=true, hive_partitioning=true) GROUP BY 1",
+                [self._resolver.glob(Layer.SILVER, "indicators")],
+            ).fetchall()
+        return {str(row[0]): row[1] for row in rows}
 
     def retag_indicators(self, *, dry_run: bool = False) -> dict[str, int]:
         """Read every published series' title again with today's topic rules.

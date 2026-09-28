@@ -88,6 +88,34 @@ Every stage is idempotent. Re-running the first writes nothing if the source is
 unchanged, the second skips documents already extracted, and the fourth rebuilds
 its indicator from scratch. A refresh over a stable archive should move no bytes.
 
+## The same figures from two sources
+
+Several sources redistribute one another: ADB's Key Indicators and SEKI
+republish BPS, and FRED and Trading Economics republish everyone. After
+normalizing, sweep the copies out of Silver:
+
+```bash
+uv run terusan silver dedupe --dry-run     # what would go, and what it gives way to
+uv run terusan silver dedupe               # delete them
+uv run terusan silver dimensions           # so the catalogue counts follow
+```
+
+Duplicates are found by their figures, not their titles: two series are one
+where, over the periods both report, four in five agree to three significant
+figures at a single power of ten (rupiah against billions of rupiah). The most
+complete is kept — most observations, then latest period, then earliest — and
+ties go to the source easiest to collect again: open API, then download, then
+scrape, and a source needing a requested key last.
+
+A series is deleted only where the kept one holds nine in ten of its own
+observations, so two series that each extend past the other both stay. Every
+deletion is recorded in the Silver table `indicator_duplicates`, with the series
+kept in its place and how many periods agreed. Normalization reads that table
+and does not write a deleted series back — unless the kept series no longer
+covers it, in which case it returns and the next sweep decides again. Bronze
+is untouched: to restore every deleted series, remove
+`silver/indicator_duplicates/` and re-run the normalizations.
+
 ## Identifiers, and what a reader sees instead
 
 A series is published under a derived code — `v9io529v` — not under the key its

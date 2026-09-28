@@ -1315,6 +1315,77 @@ def silver_documents() -> None:
     typer.echo(json.dumps({"documents": written}, indent=2))
 
 
+@silver_app.command("dedupe")
+def silver_dedupe(
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Report what would be deleted; change nothing.")
+    ] = False,
+    min_match_share: Annotated[
+        float,
+        typer.Option(
+            "--min-match-share", help="Share of overlapping periods that must agree (0-1)."
+        ),
+    ] = 0.8,
+    min_coverage: Annotated[
+        float,
+        typer.Option(
+            "--min-coverage",
+            help="Share of the deleted series' observations the kept one must also hold (0-1).",
+        ),
+    ] = 0.9,
+    show: Annotated[
+        int, typer.Option("--show", help="How many deletions to list in the output.")
+    ] = 20,
+) -> None:
+    """Delete series another source publishes more completely.
+
+    Several sources redistribute one another — ADB and SEKI republish BPS,
+    FRED and Trading Economics republish everyone — so one set of figures can
+    sit in Silver five times over. This finds them by comparing the figures,
+    keeps the most complete (then the easiest to collect again), and deletes
+    the rest from Silver. Bronze is untouched, and each deletion is recorded in
+    `indicator_duplicates` beside the series kept in its place.
+
+    Run it after normalizing, then `silver dimensions` so the catalogue counts
+    follow. Always `--dry-run` first.
+    """
+    from terusan_pipelines.normalize.duplicates import Thresholds
+
+    runner = SilverRunner(_resolver())
+    standing = runner.sweep_duplicates(
+        thresholds=Thresholds(min_match_share=min_match_share, min_coverage=min_coverage),
+        dry_run=dry_run,
+    )
+    pairs: dict[str, int] = {}
+    for row in standing:
+        key = f"{row['source_id']} -> {row['superseded_by_source_id']}"
+        pairs[key] = pairs.get(key, 0) + 1
+    typer.echo(
+        json.dumps(
+            {
+                "dry_run": dry_run,
+                "deleted": len(standing),
+                "observations": sum(int(row["observations"] or 0) for row in standing),
+                "by_source": dict(sorted(pairs.items(), key=lambda kv: -kv[1])),
+                "examples": [
+                    {
+                        "deleted": f"{row['source_id']}: {row['name'] or row['indicator_id']}",
+                        "kept": (
+                            f"{row['superseded_by_source_id']}: "
+                            f"{row['superseded_by_name'] or row['superseded_by']}"
+                        ),
+                        "agree": f"{row['matches']}/{row['overlap']}",
+                        "coverage": row["coverage"],
+                    }
+                    for row in standing[:show]
+                ],
+            },
+            indent=2,
+            default=str,
+        )
+    )
+
+
 @silver_app.command("events")
 def silver_events() -> None:
     """Publish the event calendar into Silver.

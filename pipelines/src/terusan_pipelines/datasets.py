@@ -49,6 +49,28 @@ class DatasetMeta:
 #: Every collection the pipelines currently produce.
 DATASETS: tuple[DatasetMeta, ...] = (
     DatasetMeta(
+        slug="adb-key-indicators",
+        title="ADB Key Indicators for Indonesia",
+        source="adb-kidb",
+        description=(
+            "Every indicator in the Asian Development Bank's Key Indicators "
+            "Database for Indonesia, 2000 onward: national accounts, prices, "
+            "money and finance, government finance, trade, external debt, "
+            "population, labour, poverty, energy, environment, transport and the "
+            "SDG indicators. ADB compiles most of them from BPS, Bank Indonesia "
+            "and the Ministry of Finance, and names the original source on each "
+            "figure."
+        ),
+        tags=(
+            "macroeconomy",
+            "international",
+            "redistributed",
+            "sdg",
+            "development",
+            "annual-series",
+        ),
+    ),
+    DatasetMeta(
         slug="apbd-national",
         title="APBD, national roll-up",
         source="djpk-apbd",

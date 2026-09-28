@@ -141,6 +141,56 @@ class ObservationStore:
         )
         return result
 
+    def remove(self, indicator_ids: set[str]) -> int:
+        """Delete these series' rows. Returns how many rows went.
+
+        Bucket by bucket under the same lock `replace` takes, so a normalization
+        running beside a sweep either lands before the delete or after it,
+        never half-way through a bucket rewrite.
+        """
+        if not indicator_ids:
+            return 0
+        root = self._root()
+        removed = 0
+        if self.legacy(root):
+            for indicator_id in indicator_ids:
+                directory = root / f"{_LEGACY_PREFIX}{indicator_id}"
+                held = _read_directory(directory)
+                removed += held.num_rows if held is not None else 0
+                shutil.rmtree(directory, ignore_errors=True)
+            return removed
+
+        by_bucket: dict[int, set[str]] = defaultdict(set)
+        for indicator_id in indicator_ids:
+            by_bucket[bucket_of(indicator_id)].add(indicator_id)
+        for bucket, series in sorted(by_bucket.items()):
+            with self._locked(root, bucket):
+                existing = self._read_bucket(root, bucket)
+                if existing is None:
+                    continue
+                kept = _without(existing, series)
+                if kept is None or kept.num_rows == existing.num_rows:
+                    continue
+                removed += existing.num_rows - kept.num_rows
+                if kept.num_rows:
+                    self._write_bucket(root, bucket, kept)
+                else:
+                    (root / bucket_name(bucket) / BUCKET_FILE).unlink(missing_ok=True)
+        log.info("observations.removed", series=len(indicator_ids), rows=removed)
+        return removed
+
+    def series(self, indicator_id: str) -> pa.Table | None:
+        """One series' rows, or None where it holds none."""
+        root = self._root()
+        if self.legacy(root):
+            return _read_directory(root / f"{_LEGACY_PREFIX}{indicator_id}")
+        held = self._read_bucket(root, bucket_of(indicator_id))
+        if held is None:
+            return None
+        mask = pc.equal(held.column("indicator_id"), indicator_id)
+        rows = held.filter(pc.fill_null(mask, False))
+        return rows if rows.num_rows else None
+
     def rewrite_all(self, table: pa.Table) -> WriteResult:
         """Replace the whole table with `table`, for a migration that rewrites
         every series (a recode). Bucket by bucket, each renamed into place."""
