@@ -26,7 +26,7 @@ from ..extract.base import PARSER_VERSION
 from ..extract.runner import walk_raw
 from ..identifiers import dataset_code, indicator_code, is_code
 from ..storage import Layer, StorageResolver, slugify
-from ..tagging import SourceFacts, dataset_tags, indicator_tags, source_tags
+from ..tagging import SourceFacts, dataset_tags, indicator_tags, retopic, source_tags
 from ..warehouse import ParquetWriter, Warehouse, table_from_rows
 from ..warehouse.observations import ObservationStore
 from . import documents as document_catalogue
@@ -285,6 +285,67 @@ class SilverRunner:
         )
         log.info("silver.indicators", source=source_id, indicators=written.rows)
         return written.rows
+
+    def retag_indicators(self, *, dry_run: bool = False) -> dict[str, int]:
+        """Read every published series' title again with today's topic rules.
+
+        Tags are derived when a series is published, so a rule corrected
+        afterwards — "Nilai Tukar Petani" read as an exchange rate, "Emisi GRK"
+        read as nothing — would otherwise stay wrong until each source was
+        collected again. Only the topics move: the facets came from the
+        registry and the run, and are kept as published (see
+        `tagging.retopic`). Returns how many series changed, by source.
+        """
+        root = Path(self._resolver.resolve(Layer.SILVER, "indicators"))
+        if not root.exists():
+            return {}
+        slugs = self._dataset_slugs()
+
+        changed: dict[str, int] = {}
+        for partition in sorted(root.glob("source_id=*")):
+            source_id = partition.name.split("=", 1)[1]
+            facts = _source_facts(source_id)
+            rows = self._published_indicators(source_id)
+            moved = 0
+            for row in rows:
+                slug = row.get("slug")
+                dataset_slug = slugs.get(row.get("dataset_id") or "")
+                tags = retopic(
+                    list(row.get("tags") or []),
+                    row.get("name"),
+                    slug and slug.replace("_", " "),
+                    dataset_slug and dataset_slug.replace("-", " "),
+                    row.get("unit"),
+                    source=facts,
+                )
+                if tags != list(row.get("tags") or []):
+                    row["tags"] = tags
+                    moved += 1
+            changed[source_id] = moved
+            if moved and not dry_run:
+                self._replace_partition(Layer.SILVER, "indicators", f"source_id={source_id}")
+                self._writer.write(
+                    Layer.SILVER,
+                    "indicators",
+                    table_from_rows(rows, SILVER_INDICATORS),
+                    partition_by=["source_id"],
+                    run_id=source_id,
+                )
+            log.info("silver.retag", source=source_id, changed=moved, dry_run=dry_run)
+        return changed
+
+    def _dataset_slugs(self) -> dict[str, str]:
+        """Each published dataset's slug by its code, for reading its series."""
+        root = Path(self._resolver.resolve(Layer.SILVER, "datasets"))
+        if not any(root.rglob("*.parquet")):
+            return {}
+        with Warehouse(self._resolver) as warehouse:
+            rows = warehouse.query(
+                "SELECT dataset_id, slug FROM read_parquet(?, union_by_name=true) "
+                "WHERE slug IS NOT NULL",
+                [self._resolver.glob(Layer.SILVER, "datasets")],
+            ).fetchall()
+        return {str(dataset_id): str(slug) for dataset_id, slug in rows}
 
     def collected_datasets(self) -> list[tuple[str, str | None]]:
         """Every dataset Bronze holds, with the source that collected it.

@@ -59,13 +59,28 @@ _TOPICS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (r"gross national income|\bgni\b", ("national-accounts", "macroeconomy")),
     (r"inflation|consumer price|\bcpi\b|deflator|harga konsumen", ("inflation", "prices")),
     (r"producer price|wholesale price", ("prices", "producer-prices")),
-    (r"\bprice\b|harga|quote|close|open|high|low", ("prices", "markets")),
+    # A quote's open, high, low and close. Bounded, since "low" is inside
+    # "flow", and never an estimate's or a confidence's high and low.
+    (
+        r"\bprice\b|harga|quote|\bclose\b|\bopen\b(?! shrubland)"
+        r"|\b(?:high|low)\b(?! estimate)(?!,? (?:nominal|or|and|confidence))",
+        ("prices", "markets"),
+    ),
     (r"export|import|trade balance|balance of trade|perdagangan", ("trade", "external-sector")),
     (
         r"current account|balance of payment|financial account|reserve",
         ("external-sector", "balance-of-payments"),
     ),
-    (r"exchange rate|kurs|nilai tukar|rupiah per", ("exchange-rate", "monetary")),
+    # "Nilai Tukar Petani" is what a farmer's harvest buys, not a currency,
+    # and BPS publishes some three thousand series of it.
+    (
+        r"exchange rate|\bkurs\b|nilai tukar(?! (?:petani|nelayan|usaha|pembudidaya))|rupiah per",
+        ("exchange-rate", "monetary"),
+    ),
+    (
+        r"nilai tukar (?:petani|nelayan|usaha|pembudidaya)|\bntp[a-z]*\b|\bntn\b|\bntup\b",
+        ("farmers-terms-of-trade", "agriculture"),
+    ),
     (
         r"interest rate|policy rate|central bank rate|suku bunga|yield",
         ("interest-rates", "monetary"),
@@ -84,7 +99,7 @@ _TOPICS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (r"realisasi|transfer|dana desa|own revenue", ("public-finance", "subnational")),
     (r"employment|unemployment|labor|labour|wage|upah|tenaga kerja", ("labour", "employment")),
     (r"population|penduduk|demograph|birth|mortalit", ("demography", "population")),
-    (r"povert|gini|inequalit|kemiskinan", ("poverty", "welfare")),
+    (r"povert|gini|inequalit|kemiskinan|kemisikinan|\bmiskin", ("poverty", "welfare")),
     (
         r"consumer confidence|consumer survey|sentiment|expectation|tendency",
         ("sentiment", "surveys"),
@@ -92,7 +107,7 @@ _TOPICS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (r"retail sale|penjualan eceran|consumption|konsumsi", ("retail", "consumption")),
     (r"manufactur|industrial production|industri|\bpmi\b", ("industry", "manufacturing")),
     (r"construction|konstruksi|building", ("construction",)),
-    (r"tourism|wisata|visitor|arrival", ("tourism",)),
+    (r"tourism|wisata|visitor|arrival|\bhotel|akomodasi", ("tourism",)),
     (r"agricultur|pertanian|\bfood|pangan|\brice\b|\bberas\b|\bcrop", ("agriculture", "food")),
     (r"palm oil|kelapa sawit|cpo", ("palm-oil", "commodities", "agriculture")),
     (r"\bcoal\b|batubara", ("coal", "energy", "commodities")),
@@ -105,14 +120,72 @@ _TOPICS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
     (r"cocoa|kakao", ("cocoa", "agriculture", "commodities")),
     (r"coffee|kopi", ("coffee", "agriculture", "commodities")),
-    (r"electricity|energy|listrik|\bpower\b", ("energy",)),
+    (
+        r"electricity|energy|energi|listrik|\bpower\b|bahan bakar|\bbbm\b|pembangkit",
+        ("energy",),
+    ),
+    (
+        r"renewable|terbarukan|\bsolar\b|surya|geothermal|panas bumi|hydropower|biofuel|biodiesel",
+        ("renewable-energy", "energy"),
+    ),
+    (r"pertambangan|\btambang\b|\bmining\b|\bmineral", ("mining",)),
+    (r"perikanan|\bikan\b|nelayan|fisher|aquacultur", ("fisheries",)),
+    (
+        r"transport|angkutan|kendaraan|vehicle|penumpang|passenger|pelabuhan|bandara|airport"
+        r"|penerbangan|kereta api",
+        ("transport",),
+    ),
+    (
+        r"internet|telekomunikasi|telecommunication|komputer|computer|telepon seluler|mobile phone",
+        ("digital",),
+    ),
     (
         r"military|defence|defense|milex|armed forces|pertahanan",
         ("defence", "security", "military-spending"),
     ),
-    (r"education|pendidikan|school", ("education",)),
-    (r"health|kesehatan|hospital", ("health",)),
-    (r"climate|emission|environment|lingkungan", ("environment",)),
+    (
+        r"education|pendidikan|school|sekolah|siswa|murid|\bguru\b|literacy|melek huruf|buta huruf",
+        ("education",),
+    ),
+    (
+        r"health|kesehatan|hospital|rumah sakit|puskesmas|stunting|\bgizi\b|nutrition|penyakit"
+        r"|disease|imunisasi|berobat|morbidit",
+        ("health",),
+    ),
+    (
+        r"pembangunan manusia|human development|\bipm\b|harapan hidup|life expectancy"
+        r"|pembangunan gender|\bipg\b",
+        ("human-development", "welfare"),
+    ),
+    (r"environment|lingkungan", ("environment",)),
+    (r"climate|iklim", ("climate", "environment")),
+    # Emissions as a statistics office counts them, and as a reader asking
+    # about decarbonisation means them.
+    (
+        # Bounded: BPS spells "kemiskinan" as "kemisikinan" in one table.
+        # "CO2" alone is also a soft drink's: BPS lists "minuman bersoda/mengandung CO2".
+        r"\bemission|\bemisi|greenhouse|gas rumah kaca|\bgrk\b|ton co2|co2e|carbon|karbon",
+        ("emissions", "climate", "environment"),
+    ),
+    # "hutan" is bounded because it sits inside "hutang".
+    (
+        r"forest|\bhutan\b|kehutanan|perhutanan|deforest|tree cover|mangrove|kayu bulat"
+        r"|\bhph\b|timber",
+        ("forestry", "environment"),
+    ),
+    (
+        r"kebakaran|burned area|burnt area|active fire|hotspot|titik panas|karhutla|wildfire",
+        ("fire", "disasters", "environment"),
+    ),
+    (
+        r"disaster|bencana|banjir|\bflood|gempa|earthquake|longsor|landslide|tsunami",
+        ("disasters",),
+    ),
+    (
+        r"air minum|drinking water|air bersih|sanitasi|sanitation|surface water|groundwater"
+        r"|air tanah",
+        ("water",),
+    ),
     (
         r"pollution|polusi|air quality|kualitas udara|pm2\.5|pm10|\bno2\b|\bso2\b|aerosol",
         ("environment", "air-quality"),
@@ -123,6 +196,11 @@ _TOPICS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 _COMPILED = tuple((re.compile(pattern), topics) for pattern, topics in _TOPICS)
+
+#: Every tag a topic rule can give. `retopic` takes these off a published
+#: record before reading its title again, so a rule that was wrong — or has
+#: been narrowed — stops applying to what it once tagged.
+_TOPIC_TAGS = frozenset(tag for _, topics in _TOPICS for tag in topics)
 
 #: A country name in a title is worth a tag; the country column rarely holds
 #: one for a series about somewhere else.
@@ -213,6 +291,46 @@ def topics_of(*texts: str | None) -> list[str]:
         if re.search(pattern, haystack):
             found.append(place)
     return found
+
+
+def retopic(
+    tags: Sequence[str], *texts: str | None, source: SourceFacts | None = None
+) -> list[str]:
+    """A published record's tags, with its topics read again.
+
+    The facets are kept as they are: they came from columns and a registry the
+    record no longer carries beside it. Only the topics — which come from the
+    title alone — are replaced, so the rules can be corrected without
+    collecting a source again. Idempotent: a record retopicked twice is the
+    record retopicked once.
+
+    `source` is the registry record, where it is known: a facet can spell the
+    same word as a topic — a source whose category is "government" — and is
+    kept even where the title no longer says it.
+    """
+    facts = set()
+    if source:
+        facts = {
+            normalize_tag(value)
+            for value in (
+                source.source_id,
+                source.category,
+                source.source_type,
+                _publisher_tag(source.organization) or _publisher_tag(source.name),
+            )
+        }
+    topics = [normalize_tag(topic) for topic in topics_of(*texts)]
+    # A place the title names is both a facet and a topic; left where the
+    # facets are, it would move on every pass.
+    kept = [
+        tag
+        for tag in tags
+        if (tag in facts or tag not in _TOPIC_TAGS) and tag not in _STRUCTURAL and tag not in topics
+    ]
+    structural = [tag for tag in tags if tag in _STRUCTURAL]
+    # Past the cap, the last topics go rather than the structural tags, which
+    # the catalogue filters on.
+    return _finish([*kept, *topics])[: MAX_TAGS - len(structural)] + structural
 
 
 def source_tags(source: SourceFacts) -> list[str]:

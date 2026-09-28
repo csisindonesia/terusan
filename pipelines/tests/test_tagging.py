@@ -12,6 +12,7 @@ from terusan_pipelines.tagging import (
     dataset_tags,
     indicator_tags,
     normalize_tag,
+    retopic,
     source_tags,
     topics_of,
 )
@@ -138,3 +139,92 @@ def test_an_undeclared_dataset_is_still_described() -> None:
     assert meta.title == "Brand new thing"
     assert meta.source == "some-source"
     assert dataset_registry.get("brand-new-thing") is None
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # BPS titles its tables in Indonesian; each of these was tagged with
+        # nothing but its unit.
+        ("Penyediaan dan Penggunaan Fisik untuk Emisi GRK Indonesia — Total", "emissions"),
+        ("Penggunaan Fisik untuk Energi Indonesia", "energy"),
+        (
+            "Produksi Kayu Bulat Perusahaan Hak Pengusahaan Hutan (HPH) Menurut Jenis Kayu",
+            "forestry",
+        ),
+        ("Capaian Luas Perhutanan Sosial per Skema (1.000 Ha)", "forestry"),
+        ("Tree cover and tree cover loss by province (Hansen)", "forestry"),
+        ("Luas Kebakaran Hutan dan Lahan (Ha)", "fire"),
+        ("Indeks Pembangunan Manusia (IPM) menurut Jenis Kelamin", "human-development"),
+        ("Umur Harapan Hidup saat lahir menurut Jenis Kelamin", "human-development"),
+        ("Prevalensi Balita Stunting", "health"),
+        ("Persentase Rumah Tangga dengan Akses Air Minum Layak", "water"),
+        ("Produksi Perikanan Tangkap menurut Provinsi", "fisheries"),
+        ("Jumlah Penumpang Angkutan Udara", "transport"),
+        ("Persentase Penduduk yang Mengakses Internet", "digital"),
+        ("Jumlah Kejadian Bencana Alam menurut Jenis Bencana", "disasters"),
+        ("Produksi Barang Tambang Mineral", "mining"),
+        (
+            "NTPR (Nilai Tukar Petani Tanaman Perkebunan) Menurut Subsektor",
+            "farmers-terms-of-trade",
+        ),
+    ],
+)
+def test_indonesian_titles_reach_their_topic(text: str, expected: str) -> None:
+    assert expected in topics_of(text)
+
+
+@pytest.mark.parametrize(
+    ("text", "unexpected"),
+    [
+        # A farmer's terms of trade is not a currency.
+        ("NTPR (Nilai Tukar Petani Tanaman Perkebunan) Menurut Subsektor", "exchange-rate"),
+        ("Indeks Nilai Tukar Nelayan", "exchange-rate"),
+        # "hutan" sits inside "hutang", and debt is not forestry.
+        ("Posisi Hutang Luar Negeri Pemerintah", "forestry"),
+        # "low" sits inside "flow", and a cash flow is not a price.
+        ("Net cash flow of the central government", "prices"),
+        ("Air teh kemasan, minuman bersoda/mengandung CO2", "emissions"),
+        ("Deaths in interstate conflict, high estimate", "prices"),
+        ("Each pixel flagged as fire at low, nominal or high confidence", "prices"),
+        ("Land cover: open shrubland (MODIS IGBP)", "prices"),
+        ("Kemisikinan rumah tangga", "emissions"),
+        # "kurs" sits inside "kursus".
+        ("Jumlah Peserta Kursus Keterampilan", "exchange-rate"),
+    ],
+)
+def test_a_word_inside_another_is_not_its_topic(text: str, unexpected: str) -> None:
+    assert unexpected not in topics_of(text)
+
+
+def test_a_quote_is_still_a_price() -> None:
+    for text in ("US dollar / rupiah exchange rate, high", "IHSG close", "Gold price open"):
+        assert "prices" in topics_of(text), text
+
+
+def test_the_exchange_rate_is_still_an_exchange_rate() -> None:
+    assert "exchange-rate" in topics_of("Kurs Tengah Rupiah terhadap Dolar AS")
+    assert "exchange-rate" in topics_of("Nilai Tukar Rupiah terhadap USD")
+
+
+def test_retopic_replaces_the_topics_and_keeps_the_facets() -> None:
+    """A published series is re-read with today's rules, and nothing else moves."""
+    held = [
+        "bps-indicators",
+        "statistics",
+        "badan-pusat-statistik",
+        "monthly",
+        "exchange-rate",
+        "monetary",
+        "labour",
+        "employment",
+        "indicator",
+    ]
+    tags = retopic(held, "NTPR (Nilai Tukar Petani Tanaman Perkebunan) — f) Upah Buruh Tani")
+    assert tags[:4] == ["bps-indicators", "statistics", "badan-pusat-statistik", "monthly"]
+    assert "exchange-rate" not in tags and "monetary" not in tags
+    assert {"farmers-terms-of-trade", "labour"} <= set(tags)
+    assert tags[-1] == "indicator"
+    assert (
+        retopic(tags, "NTPR (Nilai Tukar Petani Tanaman Perkebunan) — f) Upah Buruh Tani") == tags
+    )

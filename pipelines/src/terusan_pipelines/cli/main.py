@@ -1330,6 +1330,41 @@ def silver_events() -> None:
     typer.echo(json.dumps({"events": runner.write_events()}, indent=2))
 
 
+@silver_app.command("retag")
+def silver_retag(
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Report how many series would change, and write nothing."),
+    ] = False,
+) -> None:
+    """Re-read every published series' topics with the current tagging rules.
+
+    For after a change to `terusan_pipelines.tagging`: the facets stay as
+    published, the topics are derived again from each title, and the dataset
+    catalogue is republished so a collection's tags follow its series. No
+    source is collected and no figure changes.
+    """
+    runner = SilverRunner(_resolver())
+    changed = runner.retag_indicators(dry_run=dry_run)
+    datasets = None
+    if not dry_run:
+        datasets = runner.write_datasets(
+            runner.collected_datasets(),
+            member_tags=runner.indicator_tags_by_dataset(),
+        )
+    typer.echo(
+        json.dumps(
+            {
+                "changed": {source: n for source, n in changed.items() if n},
+                "series_changed": sum(changed.values()),
+                "datasets": datasets,
+                "dry_run": dry_run,
+            },
+            indent=2,
+        )
+    )
+
+
 @silver_app.command("recode")
 def silver_recode(
     dry_run: Annotated[
