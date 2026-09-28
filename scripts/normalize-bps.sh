@@ -49,8 +49,11 @@ cd "$(dirname "$0")/.."
 BATCH="${BPS_NORMALIZE_BATCH:-150}"
 
 # Every variable Bronze holds, read in the scan so nothing else is loaded.
+# Without its progress bar: on a slow machine DuckDB draws one on stdout,
+# and the bar's characters become variable ids.
 VARS=$(uv --project pipelines run python -c '
 import duckdb
+duckdb.sql("SET enable_progress_bar = false")
 from terusan_pipelines.storage import Layer, StorageConfig, StorageResolver
 pattern = StorageResolver(StorageConfig()).glob(Layer.BRONZE, "records")
 rows = duckdb.sql(
