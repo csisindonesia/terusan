@@ -52,6 +52,9 @@ type Indicator struct {
 	// which is how recent the *figures* are — a series can cover 2025 and have
 	// been refreshed this morning, or last year.
 	LastUpdated *string `json:"last_updated,omitempty"`
+	// Where this is one of a price's four series, all four. On the close of
+	// a folded list, and on any of the four when asked for by itself.
+	OHLC *OHLC `json:"ohlc,omitempty"`
 }
 
 // handleIndicator returns one series.
@@ -76,7 +79,14 @@ func (s *Server) handleIndicator(w http.ResponseWriter, r *http.Request) {
 		notFound(w, "no such indicator", id)
 		return
 	}
-	writeData(w, indicators[0], &Meta{Layer: "silver"})
+	// The set is found in the catalogue rather than queried: a series' own
+	// page asks one partition, and its siblings live in three others. A cold
+	// catalogue is not worth waiting on for a dropdown, so it is left out.
+	indicator := indicators[0]
+	if catalogue := s.heldCatalogue(); catalogue != nil {
+		indicator.OHLC = ohlcSets(catalogue.series)[id]
+	}
+	writeData(w, indicator, &Meta{Layer: "silver"})
 }
 
 func (s *Server) handleIndicators(w http.ResponseWriter, r *http.Request) {
@@ -95,12 +105,16 @@ func (s *Server) handleIndicators(w http.ResponseWriter, r *http.Request) {
 		internalError(w, s.log, "build catalogue", err)
 		return
 	}
+	series := catalogue.series
+	if query.fold {
+		series = foldOHLC(series)
+	}
 	if !asked {
 		// Every series, for the pages that summarise the whole catalogue.
-		writeData(w, catalogue.series, &Meta{Total: int64(len(catalogue.series)), Layer: "silver"})
+		writeData(w, series, &Meta{Total: int64(len(series)), Layer: "silver"})
 		return
 	}
-	matched := query.apply(catalogue.series)
+	matched := query.apply(series)
 	page := matched[min(offset, len(matched)):min(offset+limit, len(matched))]
 	writeData(w, page, &Meta{
 		Total: int64(len(matched)), Limit: limit, Offset: offset,

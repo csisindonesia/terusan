@@ -38,11 +38,13 @@ type Dataset struct {
 	Schedule     *string `json:"schedule,omitempty"`
 	// Named rather than counted: a reader deciding whether to open a dataset
 	// wants to know which series are inside it.
-	Indicators   []string `json:"indicators"`
-	Observations int64    `json:"observations"`
-	PeriodStart  string   `json:"period_start"`
-	PeriodEnd    string   `json:"period_end"`
-	LastUpdated  *string  `json:"last_updated,omitempty"`
+	Indicators []string `json:"indicators"`
+	// How many series a reader sees in it: a price's four series are one.
+	Series       int     `json:"series"`
+	Observations int64   `json:"observations"`
+	PeriodStart  string  `json:"period_start"`
+	PeriodEnd    string  `json:"period_end"`
+	LastUpdated  *string `json:"last_updated,omitempty"`
 }
 
 // datasetSelect groups the figures and hangs the registry record off them.

@@ -91,6 +91,14 @@ func (s *Server) lakeCatalogue(ctx context.Context) (*lakeCatalogue, error) {
 	return built, err
 }
 
+// heldCatalogue is the catalogue if one is held, without building or
+// refreshing it: for what can go without rather than wait.
+func (s *Server) heldCatalogue() *lakeCatalogue {
+	s.catalogue.mu.Lock()
+	defer s.catalogue.mu.Unlock()
+	return s.catalogue.held
+}
+
 // buildCatalogueDetached builds under its own deadline rather than the
 // reader's, so the build is not thrown away if they close the tab.
 func (s *Server) buildCatalogueDetached() (*lakeCatalogue, error) {
@@ -149,6 +157,10 @@ func (s *Server) buildCatalogue(ctx context.Context) (*lakeCatalogue, error) {
 			return nil, err
 		}
 	}
+	sets := ohlcSets(built.series)
+	for at := range built.datasets {
+		built.datasets[at].Series = foldedCount(built.datasets[at].Indicators, sets)
+	}
 	return built, nil
 }
 
@@ -177,7 +189,8 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stats := LakeStats{
-		Series:      len(catalogue.series),
+		// As the series list counts them: a price's four series are one.
+		Series:      len(foldOHLC(catalogue.series)),
 		Datasets:    len(catalogue.datasets),
 		Commodities: len(catalogue.commodities),
 		AsOf:        catalogue.at.UTC().Format(time.RFC3339),

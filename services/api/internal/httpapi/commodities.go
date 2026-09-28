@@ -41,6 +41,9 @@ type Commodity struct {
 	// a commodity narrowed to one source reports that source's figures.
 	Observations int64 `json:"observations"`
 	Indicators   int64 `json:"indicators"`
+	// Which series those are, so a commodity's page can list and chart them.
+	// Folded as the count is: a price's four series appear as its close.
+	IndicatorIDs []string `json:"indicator_ids"`
 	// Zero for most: a commodity series names a date and a commodity and no
 	// place at all, which is why this dimension exists separately.
 	Geographies int64    `json:"geographies"`
@@ -192,7 +195,7 @@ func (s *Server) handleCommodities(w http.ResponseWriter, r *http.Request) {
 		            THEN list_sort(list(DISTINCT o.unit))
 		            ELSE [any_value(c.unit_default)] END,
 		       %s AS observations,
-		       count(DISTINCT o.indicator_id),
+		       list(DISTINCT o.indicator_id),
 		       count(DISTINCT o.geo_id),
 		       %s AS period_start,
 		       %s AS period_end,
@@ -209,14 +212,22 @@ func (s *Server) handleCommodities(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
+	// A price's open, high, low and close are one series to a reader, as the
+	// series list shows them: gold is one, not four. Counted raw where no
+	// catalogue is held, rather than waiting on one for a number.
+	var prices map[string]*OHLC
+	if catalogue := s.heldCatalogue(); catalogue != nil {
+		prices = ohlcSets(catalogue.series)
+	}
+
 	results := make([]Commodity, 0, limit)
 	for rows.Next() {
 		var commodity Commodity
-		var units, sourceIDs any
+		var units, sourceIDs, indicatorIDs any
 		if err := rows.Scan(
 			&commodity.Name, &commodity.CommodityID, &commodity.Category,
 			&commodity.Subcategory, &commodity.HSCode, &units,
-			&commodity.Observations, &commodity.Indicators, &commodity.Geographies,
+			&commodity.Observations, &indicatorIDs, &commodity.Geographies,
 			&commodity.PeriodStart, &commodity.PeriodEnd, &sourceIDs,
 			&commodity.LastUpdated,
 		); err != nil {
@@ -234,6 +245,8 @@ func (s *Server) handleCommodities(w http.ResponseWriter, r *http.Request) {
 		if commodity.Sources == nil {
 			commodity.Sources = []string{}
 		}
+		commodity.IndicatorIDs = foldedIDs(asStrings(indicatorIDs), prices)
+		commodity.Indicators = int64(len(commodity.IndicatorIDs))
 		results = append(results, commodity)
 	}
 	if err := rows.Err(); err != nil {

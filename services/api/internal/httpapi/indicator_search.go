@@ -30,6 +30,8 @@ type indicatorQuery struct {
 	dataset     string
 	sort        string
 	descending  bool
+	// A price's four series as one: see foldOHLC.
+	fold bool
 }
 
 // Bounds on what a request may ask, since these values are matched in Go
@@ -96,11 +98,20 @@ func readIndicatorQuery(r *http.Request) (indicatorQuery, bool, error) {
 	default:
 		return q, false, paramErr("dir", "is asc or desc")
 	}
+	switch values.Get("fold") {
+	case "":
+	case "ohlc":
+		q.fold = true
+	default:
+		return q, false, paramErr("fold", "is ohlc")
+	}
 	// The newest first unless asked otherwise, as the series page orders.
 	if q.sort == "" {
 		q.sort, q.descending = "last_updated", values.Get("dir") != "asc"
 	}
-	asked := len(values) > 0
+	// Folding alone is still the whole catalogue, only shown as a reader
+	// counts it: the topic pages want every series, a price once.
+	asked := len(values) > 0 && !(len(values) == 1 && q.fold)
 	return q, asked, nil
 }
 
@@ -149,6 +160,8 @@ func seriesMentions(i Indicator, word string) bool {
 		slices.ContainsFunc(i.Tags, func(tag string) bool { return strings.Contains(tag, word) }) ||
 		strings.Contains(strings.ToLower(indicatorTitle(i)), word) ||
 		contains(i.Code) ||
+		// A folded price answers to any of its four readings.
+		(i.OHLC != nil && slices.ContainsFunc(ohlcFields, func(f string) bool { return strings.Contains(f, word) })) ||
 		contains(i.Description) ||
 		contains(i.Publisher) ||
 		slices.ContainsFunc(i.Sources, func(s string) bool { return strings.Contains(strings.ToLower(s), word) })
