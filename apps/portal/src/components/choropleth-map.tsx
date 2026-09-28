@@ -60,11 +60,24 @@ const TILES = {
 };
 const ATTRIBUTION = "Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ";
 
+/**
+ * Pale yellow through green to the deep teal, after ColorBrewer's YlGn: the
+ * lightness falls steadily end to end, so a darker province is always a larger
+ * figure, and the hue shift keeps neighbouring shades apart.
+ */
+const RAMP = ["#ffffcc", "#78c679", "#005357"] as const;
+
+/** A point along the ramp, from 0 (palest) to 100 (darkest). */
+function along(share: number): string {
+  const [low, mid, high] = RAMP;
+  return share <= 50
+    ? `color-mix(in oklab, ${mid} ${(share * 2).toFixed(1)}%, ${low})`
+    : `color-mix(in oklab, ${high} ${((share - 50) * 2).toFixed(1)}%, ${mid})`;
+}
+
 function shade(value: number, max: number): string {
-  if (value <= 0 || max <= 0)
-    return "color-mix(in oklab, var(--series-1) 5%, var(--muted))";
-  const share = FLOOR + (100 - FLOOR) * Math.min(value / max, 1);
-  return `color-mix(in oklab, var(--series-1) ${share.toFixed(1)}%, var(--muted))`;
+  if (value <= 0 || max <= 0) return along(0);
+  return along(FLOOR + (100 - FLOOR) * Math.min(value / max, 1));
 }
 
 /** The outline's SVG path, unprojected back to latitude and longitude. */
@@ -293,7 +306,7 @@ export function ChoroplethMap({
           <span
             className="h-2.5 w-40 rounded-sm"
             style={{
-              background: `linear-gradient(to right, ${shade(0, 1)}, ${shade(1e-9, 1)} 2%, ${shade(1, 1)})`,
+              background: `linear-gradient(to right, ${shade(0, 1)}, ${shade(1e-9, 1)} 2%, ${along(50)} ${2 + 98 * ((50 - FLOOR) / (100 - FLOOR))}%, ${shade(1, 1)})`,
             }}
           />
           <span className="tabular-nums">
