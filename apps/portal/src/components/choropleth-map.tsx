@@ -236,8 +236,7 @@ export function ChoroplethMap({
     if (!ready) return;
     for (const shape of PROVINCE_SHAPES) {
       const element = layers.current.get(shape.geo_id)?.getElement() as
-        | SVGPathElement
-        | undefined;
+        SVGPathElement | undefined;
       if (!element) continue;
       const value = byGeo.get(shape.geo_id);
       const on = active === shape.geo_id;
@@ -326,7 +325,14 @@ export function ChoroplethMap({
                   patternTransform="rotate(45)"
                 >
                   <rect width="4" height="4" fill="var(--muted)" />
-                  <line x1="0" y1="0" x2="0" y2="4" stroke="var(--border)" strokeWidth="2" />
+                  <line
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="4"
+                    stroke="var(--border)"
+                    strokeWidth="2"
+                  />
                 </pattern>
               </defs>
               <rect width="12" height="12" fill={`url(#${hatch}-key)`} />
