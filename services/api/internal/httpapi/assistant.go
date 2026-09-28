@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,7 @@ import (
 	"sync"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/csis/terusan/services/api/internal/conversations"
 	"github.com/csis/terusan/services/api/internal/storage"
@@ -216,6 +218,9 @@ func (s *Server) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 	question := readQuestion(messages)
 	route := s.routeQuestion(r.Context(), messages, question)
 	question.aboutRegulation = route.wantsRegulations()
+	if route.Intent != "other" {
+		question.topicTerms = topicTerms(route.Topics, question.terms)
+	}
 
 	if reason := route.refusal(catalogueMatches(catalogue, question)); reason != "" {
 		// Answered here, and the writing model is never called.
@@ -603,7 +608,7 @@ func assistantPrompt(
 	fmt.Fprintf(&b, "\nToday is %s.\n", time.Now().Format("2006-01-02"))
 	var sources []assistantSource
 
-	matched := rankDatasets(datasets, q.terms)
+	matched := rankDatasets(datasets, q.terms, q.topicTerms...)
 	if len(matched) > 0 {
 		fmt.Fprintf(&b, "\n## Datasets matching the question (%d of %d)\n", len(matched), len(datasets))
 		for _, d := range matched {
@@ -627,7 +632,7 @@ func assistantPrompt(
 		}
 	}
 
-	series := rankSeries(catalogue.series, titles, q.terms)
+	series := rankSeries(catalogue.series, titles, q.terms, q.topicTerms...)
 	if len(series) > 0 {
 		fmt.Fprintf(&b, "\n## Series matching the question\n")
 	}
@@ -648,7 +653,7 @@ func assistantPrompt(
 		sources = append(sources, assistantSource{Kind: "indicator", ID: i.IndicatorID, Label: indicatorTitle(i)})
 	}
 
-	commodities := rankCommodities(catalogue.commodities, q.terms)
+	commodities := rankCommodities(catalogue.commodities, q.terms, q.topicTerms...)
 	if len(commodities) > 0 {
 		bySource := map[string][]string{}
 		for _, d := range datasets {
@@ -731,6 +736,7 @@ func assistantPrompt(
 const assistantInstructions = `You are the assistant of Terusan, CSIS Indonesia's research data portal. You help readers find datasets, series, commodities and regulations in this portal. Below is what the portal's own search found for the question.
 
 Rules:
+- The lists below are candidates from a keyword search, not answers: an item can share a word with the question and be about something else entirely. Judge each by its title, and suggest only the ones a researcher asking this would actually use.
 - Suggest only items listed below. Never invent one. Never state a figure: you see what a series is and its coverage, not its numbers.
 - Every item you mention must be a link with its title as the text, exactly as given, e.g. [Title](/datasets/abc123). Never translate or reword a title, never bold a name without linking it, never change a link.
 - At most 6 items, the best fits first, a few words each on why. Leave out anything only loosely related. Note when two differ in frequency or unit.
@@ -748,6 +754,10 @@ Rules:
 type assistantQuery struct {
 	// Words to match on, with Indonesian and English each way.
 	terms []string
+	// What the router's topics add to the catalogue search: the words the
+	// topic's data is titled and tagged with. Kept apart from terms, which
+	// also measure how much of the question the catalogue covers.
+	topicTerms []string
 	// Whether the reader is asking about regulations, and which instruments.
 	aboutRegulation bool
 	instruments     []string
@@ -1142,13 +1152,67 @@ var stopWords = func() map[string]bool {
 		tentang pada atau juga mau ingin cari carikan berapa mana adakah punya kah
 		harusnya seharusnya bukan kan sudah belum mencover cover mencakup termasuk
 		tidak menjadi adalah bagi oleh sebagai
-		kalau gimana aja sih dong yg utk dgn baru terbaru lama terkini berlaku terhadap`)
+		kalau gimana aja sih dong yg utk dgn baru terbaru lama terkini berlaku terhadap
+		kita gunakan menggunakan digunakan pakai memakai dipakai dapat`)
 	set := make(map[string]bool, len(words))
 	for _, word := range words {
 		set[word] = true
 	}
 	return set
 }()
+
+// foreground is how much more a match on the question's own words counts
+// than one on its topic's: more than a topic's words can add up to, so a
+// series that shares a word with the question is never outranked by one
+// that only shares its topic.
+const foreground = 10000
+
+// rankPoints scores each record's fields: the question's words at full
+// weight, and the background words by how rare they are among the records.
+// A topic's words run from its broad tag to its specific terms — "health",
+// then "stunting" and "gizi" — and the few series that say "gizi" answer a
+// question about stunting better than the thousands tagged health.
+func rankPoints(records [][]field, terms, background []string) []int {
+	weights := rarity(records, background)
+	points := make([]int, len(records))
+	for n, fields := range records {
+		points[n] = foreground * score(terms, fields...)
+		for _, term := range background {
+			if weights[term] == 0 {
+				continue
+			}
+			for _, f := range fields {
+				if containsWord(f.text, term) {
+					points[n] += f.weight * weights[term]
+					break
+				}
+			}
+		}
+	}
+	return points
+}
+
+// rarity weighs each term by how few records it matches: one plus the log
+// of how many times over the records could hold it. A term that matches
+// nothing weighs nothing.
+func rarity(records [][]field, terms []string) map[string]int {
+	weights := make(map[string]int, len(terms))
+	for _, term := range terms {
+		matched := 0
+		for _, fields := range records {
+			for _, f := range fields {
+				if containsWord(f.text, term) {
+					matched++
+					break
+				}
+			}
+		}
+		if matched > 0 {
+			weights[term] = 1 + int(math.Log2(float64(len(records))/float64(matched)))
+		}
+	}
+	return weights
+}
 
 // field is text to match against, and what a match in it is worth.
 type field struct {
@@ -1162,13 +1226,33 @@ func score(terms []string, weighted ...field) int {
 	total := 0
 	for _, term := range terms {
 		for _, field := range weighted {
-			if strings.Contains(field.text, term) {
+			if containsWord(field.text, term) {
 				total += field.weight
 				break
 			}
 		}
 	}
 	return total
+}
+
+// containsWord is whether a term begins a word of the text: "rice" is not in
+// "price", nor "kita" in "Minyakita", nor "gunakan" in "menggunakan". A word
+// may still run on past the term, so "forest" finds "forests".
+func containsWord(text, term string) bool {
+	for from := 0; from < len(text); {
+		at := strings.Index(text[from:], term)
+		if at < 0 {
+			return false
+		}
+		at += from
+		before, _ := utf8.DecodeLastRuneInString(text[:at])
+		if at == 0 || !unicode.IsLetter(before) && !unicode.IsDigit(before) {
+			return true
+		}
+		_, size := utf8.DecodeRuneInString(text[at:])
+		from = at + size
+	}
+	return false
 }
 
 func lower(values ...*string) string {
@@ -1183,22 +1267,28 @@ func lower(values ...*string) string {
 
 // rankDatasets is the collections that share words with the question, best
 // first.
-func rankDatasets(datasets []Dataset, terms []string) []Dataset {
-	if len(terms) == 0 {
+//
+// background is the router's topic words: they find what the question's own
+// words cannot, and order it, but never outrank a match on those words.
+func rankDatasets(datasets []Dataset, terms []string, background ...string) []Dataset {
+	if len(terms) == 0 && len(background) == 0 {
 		return nil
+	}
+	records := make([][]field, len(datasets))
+	for n, d := range datasets {
+		title := strings.ToLower(datasetTitle(d))
+		records[n] = []field{
+			{title + " " + lower(d.Slug), 3},
+			{strings.ToLower(strings.Join(d.Tags, " ")), 2},
+			{lower(d.Description, d.Organization, d.SourceName) + " " + d.SourceID, 1},
+		}
 	}
 	scores := make(map[string]int, len(datasets))
 	var ranked []Dataset
-	for _, d := range datasets {
-		title := strings.ToLower(datasetTitle(d))
-		points := score(terms,
-			field{title + " " + lower(d.Slug), 3},
-			field{strings.ToLower(strings.Join(d.Tags, " ")), 2},
-			field{lower(d.Description, d.Organization, d.SourceName) + " " + d.SourceID, 1},
-		)
+	for n, points := range rankPoints(records, terms, background) {
 		if points > 0 {
-			scores[d.DatasetID] = points
-			ranked = append(ranked, d)
+			scores[datasets[n].DatasetID] = points
+			ranked = append(ranked, datasets[n])
 		}
 	}
 	sort.SliceStable(ranked, func(a, b int) bool {
@@ -1211,22 +1301,25 @@ func rankDatasets(datasets []Dataset, terms []string) []Dataset {
 }
 
 // rankCommodities is the goods named in the question, best first.
-func rankCommodities(commodities []Commodity, terms []string) []Commodity {
-	if len(terms) == 0 {
+func rankCommodities(commodities []Commodity, terms []string, background ...string) []Commodity {
+	if len(terms) == 0 && len(background) == 0 {
 		return nil
 	}
 	type scored struct {
 		commodity Commodity
 		score     int
 	}
+	records := make([][]field, len(commodities))
+	for n, c := range commodities {
+		records[n] = []field{
+			{strings.ToLower(c.Name), 3},
+			{lower(c.CommodityID, c.Category, c.Subcategory), 1},
+		}
+	}
 	var hits []scored
-	for _, c := range commodities {
-		points := score(terms,
-			field{strings.ToLower(c.Name), 3},
-			field{lower(c.CommodityID, c.Category, c.Subcategory), 1},
-		)
+	for n, points := range rankPoints(records, terms, background) {
 		if points > 0 {
-			hits = append(hits, scored{c, points})
+			hits = append(hits, scored{commodities[n], points})
 		}
 	}
 	sort.SliceStable(hits, func(a, b int) bool { return hits[a].score > hits[b].score })
@@ -1260,27 +1353,30 @@ func trimHistory(messages []assistantMessage) []assistantMessage {
 }
 
 // rankSeries is the series that share words with the question, best first.
-func rankSeries(series []Indicator, titles map[string]string, terms []string) []Indicator {
-	if len(terms) == 0 {
+func rankSeries(series []Indicator, titles map[string]string, terms []string, background ...string) []Indicator {
+	if len(terms) == 0 && len(background) == 0 {
 		return nil
 	}
 	type scored struct {
 		indicator Indicator
 		score     int
 	}
-	var hits []scored
-	for _, i := range series {
+	records := make([][]field, len(series))
+	for n, i := range series {
 		dataset := ""
 		if i.DatasetID != nil {
 			dataset = strings.ToLower(titles[*i.DatasetID])
 		}
-		points := score(terms,
-			field{strings.ToLower(indicatorTitle(i)) + " " + lower(i.Slug, i.Code), 3},
-			field{strings.ToLower(strings.Join(i.Tags, " ")) + " " + dataset, 2},
-			field{lower(i.Description, i.Publisher, i.Unit) + " " + strings.Join(i.Sources, " "), 1},
-		)
+		records[n] = []field{
+			{strings.ToLower(indicatorTitle(i)) + " " + lower(i.Slug, i.Code), 3},
+			{strings.ToLower(strings.Join(i.Tags, " ")) + " " + dataset, 2},
+			{lower(i.Description, i.Publisher, i.Unit) + " " + strings.Join(i.Sources, " "), 1},
+		}
+	}
+	var hits []scored
+	for n, points := range rankPoints(records, terms, background) {
 		if points > 0 {
-			hits = append(hits, scored{i, points})
+			hits = append(hits, scored{series[n], points})
 		}
 	}
 	sort.SliceStable(hits, func(a, b int) bool {

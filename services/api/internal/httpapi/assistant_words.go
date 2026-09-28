@@ -109,6 +109,12 @@ var moreTranslations = map[string]string{
 	// Environment.
 	"lingkungan": "environment environmental", "hutan": "forest forestry",
 	"deforestasi": "deforestation", "emisi": "emission emissions",
+	// Decarbonisation is asked about as a whole and catalogued by its parts:
+	// the carbon held in forests and mangroves, the fires that release it,
+	// the energy that is burned.
+	"dekarbonisasi": "decarbonization decarbonisation carbon emission emissions deforestation forests fire energy renewable emisi grk karbon energi",
+	"karbon":        "carbon emission emissions", "terbarukan": "renewable",
+	"surya": "solar", "gambut": "peat peatland", "lahan": "land",
 	"polusi": "pollution", "pencemaran": "pollution", "udara": "air",
 	// Elections.
 	"pemilihan": "election electoral", "suara": "vote votes", "partai": "party parties",

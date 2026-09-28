@@ -65,6 +65,8 @@ type routing struct {
 	// "id" or "en", for the fixed replies and for the writing model, which
 	// otherwise answers a two-word Indonesian question in English.
 	Language string
+	// What the question is about, most likely first (see assistantTopics).
+	Topics []string
 }
 
 // refusal is why a question is answered with a fixed reply, if it is.
@@ -156,6 +158,7 @@ func (s *Server) routeQuestion(ctx context.Context, messages []assistantMessage,
 		"injection", decided.Injection,
 		"harmful", decided.Harmful,
 		"language", decided.Language,
+		"topics", decided.Topics,
 		"ms", time.Since(started).Milliseconds())
 	return decided
 }
@@ -321,6 +324,7 @@ var routerQuestions = map[string]any{
 		"instructions": "Which language is the message written in?",
 		"criteria":     map[string]string{"id": "Indonesian", "en": "English or another language"},
 	},
+	"topic": topicQuestion(),
 }
 
 // askRouter puts the question set to Jev.
@@ -424,6 +428,12 @@ func routingFrom(answers map[string]jevAnswer) (routing, error) {
 	}
 	if a, ok := answers["language"]; ok && a.Choice == "id" {
 		decided.Language = "id"
+	}
+	if a, ok := answers["topic"]; ok && a.Choice != noTopic {
+		decided.Topics = pickTopics(a.Probabilities)
+		if _, known := assistantTopics[a.Choice]; known && len(decided.Topics) == 0 {
+			decided.Topics = []string{a.Choice}
+		}
 	}
 	return decided, nil
 }

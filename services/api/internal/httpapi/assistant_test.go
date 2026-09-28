@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -202,6 +203,118 @@ func TestADisasterQuestionFindsTheDisasterDataset(t *testing.T) {
 				t.Errorf("%q matched the violence dataset", question)
 			}
 		}
+	}
+}
+
+func TestADecarbonisationQuestionFindsTheCarbonData(t *testing.T) {
+	// The question that found food prices and life expectancy: "kita" sat
+	// inside "Minyakita", "gunakan" inside "(menggunakan UHH …)", and
+	// "dekarbonisasi" reached nothing at all.
+	title := func(s string) *string { return &s }
+	datasets := []Dataset{
+		{DatasetID: "gq9c5bs5", Title: title("Food prices by regency, and the ceiling"),
+			Description: title("Daily food prices, including Minyakita"), SourceID: "panel-harga"},
+		{DatasetID: "mangrove", Title: title("Mangrove extent by province (Global Mangrove Watch)"),
+			Tags: []string{"mangroves", "coastal", "forests", "blue-carbon", "province"}, SourceID: "gee-global-mangrove-watch"},
+		{DatasetID: "hansen", Title: title("Tree cover and tree cover loss by province (Hansen)"),
+			Tags: []string{"forests", "deforestation", "tree-cover", "remote-sensing", "province"}, SourceID: "gee-global-forest-change"},
+	}
+	series := []Indicator{
+		{IndicatorID: "1wmsskkk", Name: title("Indeks Pembangunan Manusia (IPM) menurut Jenis Kelamin (menggunakan UHH hasil SP2020 LF) — Laki-laki")},
+		// BPS's greenhouse gas accounts, titled in Indonesian and tagged
+		// with nothing but their unit.
+		{IndicatorID: "grk", Name: title("Penyediaan dan Penggunaan Fisik untuk Emisi GRK Indonesia — Total"),
+			Tags: []string{"bps-indicators", "annual", "ribu-ton-co2"}},
+	}
+	terms := searchTerms("carikan data yang bisa kita gunakan untuk dekarbonisasi")
+	for _, stop := range []string{"kita", "gunakan"} {
+		if slices.Contains(terms, stop) {
+			t.Errorf("terms %v keep the filler word %q", terms, stop)
+		}
+	}
+	ranked := rankDatasets(datasets, terms)
+	var ids []string
+	for _, d := range ranked {
+		ids = append(ids, d.DatasetID)
+	}
+	if !slices.Contains(ids, "mangrove") || !slices.Contains(ids, "hansen") {
+		t.Errorf("ranked %v, want the mangrove and forest datasets", ids)
+	}
+	if slices.Contains(ids, "gq9c5bs5") {
+		t.Errorf("ranked %v, want no food prices", ids)
+	}
+	if got := rankSeries(series, nil, terms); len(got) != 1 || got[0].IndicatorID != "grk" {
+		t.Errorf("series matched %v, want the emissions accounts alone", got)
+	}
+}
+
+func TestTheRoutersTopicFindsDataTheWordsCannot(t *testing.T) {
+	// "net zero" shares no word with any title; the router reads it as
+	// emissions, and the emissions topic knows what the data is called.
+	title := func(s string) *string { return &s }
+	catalogue := assistantCatalogue{
+		datasets: []Dataset{
+			{DatasetID: "gq9c5bs5", Title: title("Food prices by regency, and the ceiling"), SourceID: "panel-harga"},
+			{DatasetID: "hansen", Title: title("Tree cover and tree cover loss by province (Hansen)"),
+				Tags: []string{"forests", "deforestation", "forestry"}, SourceID: "gee-global-forest-change"},
+		},
+		series: []Indicator{
+			{IndicatorID: "grk", Name: title("Penyediaan dan Penggunaan Fisik untuk Emisi GRK Indonesia — Total"),
+				Tags: []string{"bps-indicators", "ribu-ton-co2", "emissions", "climate"}},
+			{IndicatorID: "ipm", Name: title("Indeks Pembangunan Manusia (IPM)")},
+		},
+	}
+	q := readQuestion([]assistantMessage{{Role: "user", Content: "data net zero"}})
+	if prompt, _ := assistantPrompt(catalogue, nil, q); strings.Contains(prompt, "/indicators/grk") {
+		t.Fatal("found the emissions accounts without the router, so the test proves nothing")
+	}
+	q.topicTerms = topicTerms([]string{"emissions"}, q.terms)
+	prompt, _ := assistantPrompt(catalogue, nil, q)
+	for _, want := range []string{"/indicators/grk", "/datasets/hansen"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("the prompt lacks %s", want)
+		}
+	}
+	for _, unwanted := range []string{"/indicators/ipm", "Datasets matching the question (2"} {
+		if strings.Contains(prompt, unwanted) {
+			t.Errorf("the prompt has %q", unwanted)
+		}
+	}
+	// The coverage the regulations are weighed by is still the question's own.
+	if len(q.terms) != len(searchTerms("data net zero")) {
+		t.Error("the topic's words leaked into the question's terms")
+	}
+}
+
+func TestARareTopicWordOutranksACommonOne(t *testing.T) {
+	// "stunting per provinsi": no title says stunting, and the health topic's
+	// broad words match every health series. The one that says "gizi" is the
+	// answer.
+	title := func(s string) *string { return &s }
+	series := []Indicator{{IndicatorID: "gizi", Name: title("Prevalensi balita gizi kurang menurut Provinsi"),
+		Tags: []string{"health"}}}
+	for n := 0; n < 20; n++ {
+		series = append(series, Indicator{IndicatorID: fmt.Sprint("sehat", n),
+			Name: title("Indikator Kesehatan — Persentase penduduk berobat jalan menurut Provinsi"), Tags: []string{"health"},
+			Observations: 1000})
+	}
+	q := readQuestion([]assistantMessage{{Role: "user", Content: "stunting per provinsi"}})
+	ranked := rankSeries(series, nil, q.terms, topicTerms([]string{"health"}, q.terms)...)
+	if len(ranked) == 0 || ranked[0].IndicatorID != "gizi" {
+		t.Errorf("ranked %v first, want the nutrition series", ranked[0].IndicatorID)
+	}
+}
+
+func TestScoreMatchesWordsNotTheInsideOfThem(t *testing.T) {
+	text := field{"harga minyakita, beras premium", 1}
+	for term, want := range map[string]int{"kita": 0, "rice": 0, "minyak": 1, "beras": 1, "premium": 1} {
+		if got := score([]string{term}, text); got != want {
+			t.Errorf("score(%q) = %d, want %d", term, got, want)
+		}
+	}
+	// A tag's parts are words too.
+	if score([]string{"carbon"}, field{"mangroves blue-carbon", 1}) != 1 {
+		t.Error("carbon did not match blue-carbon")
 	}
 }
 

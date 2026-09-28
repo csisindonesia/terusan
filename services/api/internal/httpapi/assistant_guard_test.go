@@ -156,3 +156,46 @@ func TestGuessLanguageReadsShortIndonesianQuestions(t *testing.T) {
 		}
 	}
 }
+
+func TestParseRoutingReadsTheTopics(t *testing.T) {
+	reply := strings.Replace(jevReply, `"language":`,
+		`"topic":{"type":"choice","choice":"energy","probabilities":{"energy":0.77,"emissions":0.23,"poverty":0.0}},"language":`, 1)
+	decided, err := parseRouting([]byte(reply))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(decided.Topics, ",") != "energy,emissions" {
+		t.Fatalf("topics %v, want energy then emissions", decided.Topics)
+	}
+
+	none := strings.Replace(jevReply, `"language":`,
+		`"topic":{"type":"choice","choice":"none","probabilities":{"none":0.9,"energy":0.1}},"language":`, 1)
+	if decided, _ := parseRouting([]byte(none)); len(decided.Topics) != 0 {
+		t.Errorf("a message about no topic was given %v", decided.Topics)
+	}
+}
+
+func TestPickTopicsKeepsTheLikelyFew(t *testing.T) {
+	got := pickTopics(map[string]float64{
+		"emissions": 0.4, "energy": 0.3, "forestry": 0.2, "fire": 0.25, // fire is not a topic
+		"disasters": 0.21, "poverty": 0.05,
+	})
+	if strings.Join(got, ",") != "emissions,energy,disasters" {
+		t.Errorf("picked %v", got)
+	}
+}
+
+func TestEveryTopicCanBeSearched(t *testing.T) {
+	question := topicQuestion()["criteria"].(map[string]string)
+	if _, ok := question[noTopic]; !ok {
+		t.Error("the router cannot say a message is about no topic")
+	}
+	for name, topic := range assistantTopics {
+		if topic.criterion == "" || len(topic.terms) == 0 {
+			t.Errorf("topic %q has no criterion or no terms", name)
+		}
+		if question[name] != topic.criterion {
+			t.Errorf("topic %q is not asked", name)
+		}
+	}
+}
