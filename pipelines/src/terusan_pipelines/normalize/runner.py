@@ -26,7 +26,14 @@ from ..extract.base import PARSER_VERSION
 from ..extract.runner import walk_raw
 from ..identifiers import dataset_code, indicator_code, is_code
 from ..storage import Layer, StorageResolver, slugify
-from ..tagging import SourceFacts, dataset_tags, indicator_tags, retopic, source_tags
+from ..tagging import (
+    SourceFacts,
+    dataset_tags,
+    indicator_tags,
+    program_tags,
+    retopic,
+    source_tags,
+)
 from ..warehouse import ParquetWriter, Warehouse, table_from_rows
 from ..warehouse.observations import ObservationStore
 from . import documents as document_catalogue
@@ -490,7 +497,9 @@ class SilverRunner:
         read as nothing — would otherwise stay wrong until each source was
         collected again. Only the topics move: the facets came from the
         registry and the run, and are kept as published (see
-        `tagging.retopic`). Returns how many series changed, by source.
+        `tagging.retopic`). Program tags follow `reference/programs/` as it
+        stands, so declaring a series there needs this and nothing else.
+        Returns how many series changed, by source.
         """
         root = Path(self._resolver.resolve(Layer.SILVER, "indicators"))
         if not root.exists():
@@ -513,6 +522,7 @@ class SilverRunner:
                     dataset_slug and dataset_slug.replace("-", " "),
                     row.get("unit"),
                     source=facts,
+                    programs=program_tags(source_id, slug),
                 )
                 if tags != list(row.get("tags") or []):
                     row["tags"] = tags

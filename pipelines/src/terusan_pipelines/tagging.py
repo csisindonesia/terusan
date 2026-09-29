@@ -20,14 +20,23 @@ Every catalogue record carries at least `MIN_TAGS`. A record too thin to reach
 it — an unnamed series with no unit, which does happen — is padded from
 `_FALLBACK` rather than published under three tags, because a minimum that
 holds only sometimes is not a minimum anyone can filter on.
+
+One kind is not derived: a **program** — the series a funded programme of work
+has chosen, such as DfD's. Membership is a decision rather than a fact any
+column records, so it is declared, one file per program in
+`reference/programs/`, and applied here like every other tag: rebuilt with the
+record, and gone from it when the file no longer lists it.
 """
 
 from __future__ import annotations
 
+import csv
 import re
 import unicodedata
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from functools import cache
+from pathlib import Path
 
 #: Every catalogue record carries at least this many tags.
 MIN_TAGS = 5
@@ -211,6 +220,44 @@ _PLACES: tuple[tuple[str, str], ...] = (
 )
 
 
+#: One CSV per program, named for its tag, listing its series by source and
+#: slug. Four directories up from here is the repository root, and /app in the
+#: pipelines image, which copies `reference/` beside the package.
+PROGRAMS_DIR = Path(__file__).resolve().parents[3] / "reference" / "programs"
+
+
+@cache
+def programs(directory: Path = PROGRAMS_DIR) -> dict[tuple[str, str], tuple[str, ...]]:
+    """Each declared series' program tags, keyed by (source_id, slug)."""
+    members: dict[tuple[str, str], list[str]] = {}
+    if not directory.is_dir():
+        return {}
+    for path in sorted(directory.glob("*.csv"), key=lambda p: normalize_tag(p.stem) or ""):
+        tag = normalize_tag(path.stem)
+        if tag is None:
+            continue
+        with path.open(newline="", encoding="utf-8") as handle:
+            for row in csv.DictReader(line for line in handle if not line.startswith("#")):
+                key = (row["source_id"].strip(), row["slug"].strip())
+                members.setdefault(key, []).append(tag)
+    return {key: tuple(tags) for key, tags in members.items()}
+
+
+def program_tags(source_id: str | None, slug: str | None) -> list[str]:
+    """The programs that have declared this series theirs."""
+    if not source_id or not slug:
+        return []
+    return list(programs().get((source_id, slug), ()))
+
+
+def _program_names(directory: Path = PROGRAMS_DIR) -> frozenset[str]:
+    """Every tag a program file gives, listed or not, so a series a program
+    has dropped loses the tag rather than keeping it as a facet."""
+    if not directory.is_dir():
+        return frozenset()
+    return frozenset(filter(None, (normalize_tag(p.stem) for p in directory.glob("*.csv"))))
+
+
 @dataclass(frozen=True, slots=True)
 class SourceFacts:
     """What the registry knows about a provider, in the shape tagging needs.
@@ -294,7 +341,10 @@ def topics_of(*texts: str | None) -> list[str]:
 
 
 def retopic(
-    tags: Sequence[str], *texts: str | None, source: SourceFacts | None = None
+    tags: Sequence[str],
+    *texts: str | None,
+    source: SourceFacts | None = None,
+    programs: Sequence[str] | None = None,
 ) -> list[str]:
     """A published record's tags, with its topics read again.
 
@@ -307,6 +357,10 @@ def retopic(
     `source` is the registry record, where it is known: a facet can spell the
     same word as a topic — a source whose category is "government" — and is
     kept even where the title no longer says it.
+
+    `programs` are the series' program tags as the files declare them today
+    (see `program_tags`). Given, they replace whatever program tags the record
+    carried; left out, those are kept as they are.
     """
     facts = set()
     if source:
@@ -327,10 +381,15 @@ def retopic(
         for tag in tags
         if (tag in facts or tag not in _TOPIC_TAGS) and tag not in _STRUCTURAL and tag not in topics
     ]
+    declared: list[str] = []
+    if programs is not None:
+        stale = _program_names()
+        kept = [tag for tag in kept if tag not in stale]
+        declared = [tag for tag in (normalize_tag(p) for p in programs) if tag]
     structural = [tag for tag in tags if tag in _STRUCTURAL]
     # Past the cap, the last topics go rather than the structural tags, which
-    # the catalogue filters on.
-    return _finish([*kept, *topics])[: MAX_TAGS - len(structural)] + structural
+    # the catalogue filters on, or a program, which somebody chose.
+    return _finish([*kept, *declared, *topics])[: MAX_TAGS - len(structural)] + structural
 
 
 def source_tags(source: SourceFacts) -> list[str]:
@@ -369,7 +428,9 @@ def indicator_tags(
 
     The facets come from the columns beside it — its source, its dataset, the
     unit it is quoted in, how often it refreshes — and the topics from its
-    title, which is the only place most series say what they are about.
+    title, which is the only place most series say what they are about. A
+    program that has declared the series its own comes straight after the
+    source, where the cap cannot reach it.
     """
     places = [_country_tag(geo) for geo in geographies]
     return _finish(
@@ -384,6 +445,7 @@ def indicator_tags(
                 if source
                 else []
             ),
+            *program_tags(source.source_id if source else None, slug),
             _publisher_tag(publisher),
             dataset_slug,
             _frequency_tag(frequency),

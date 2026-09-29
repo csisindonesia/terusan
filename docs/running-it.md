@@ -154,6 +154,13 @@ it describes. The rules live in `terusan_pipelines/tagging.py`; what a dataset
 is called and the topics its slug cannot be read for live in
 `terusan_pipelines/datasets.py`.
 
+The exception is a program's selection, which is somebody's choice rather than
+anything a title says. Each program is one file in `reference/programs/`, named
+for its tag (`dfd.csv` gives `dfd`), listing its series by `source_id` and
+`slug`. Edit the file and run `terusan silver retag`: a series listed gains the
+tag, and one no longer listed loses it. A BPS table is one series, so listing
+the table tags all of its rows.
+
 `terusan silver dimensions` publishes the dataset catalogue along with the
 geography, commodity and source dimensions, so run it after adding a source or
 a collection — otherwise the portal has a code where a title should be.

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from terusan_pipelines import datasets as dataset_registry
@@ -12,6 +14,8 @@ from terusan_pipelines.tagging import (
     dataset_tags,
     indicator_tags,
     normalize_tag,
+    program_tags,
+    programs,
     retopic,
     source_tags,
     topics_of,
@@ -228,3 +232,40 @@ def test_retopic_replaces_the_topics_and_keeps_the_facets() -> None:
     assert (
         retopic(tags, "NTPR (Nilai Tukar Petani Tanaman Perkebunan) — f) Upah Buruh Tani") == tags
     )
+
+
+def test_a_program_file_names_its_series(tmp_path: Path) -> None:
+    """A program is its file's name, and its series are the rows under the comments."""
+    (tmp_path / "dfd.csv").write_text(
+        "# The program's selection.\nsource_id,slug,name\nbps-indicators,1843.1118,Investasi\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "Other Program.csv").write_text(
+        "source_id,slug,name\nbps-indicators,1843.1118,Investasi\n", encoding="utf-8"
+    )
+    assert programs(tmp_path) == {("bps-indicators", "1843.1118"): ("dfd", "other-program")}
+    assert programs(tmp_path / "absent") == {}
+
+
+def test_a_declared_series_carries_its_program() -> None:
+    """The DfD selection is tagged where the series is published, ahead of the cap."""
+    facts = SourceFacts(source_id="bps-indicators", category="statistics")
+    title = (
+        "Realisasi Investasi Penanaman Modal Luar Negeri Menurut Negara/Wilayah/Entitas "
+        "tertentu — Investasi"
+    )
+    tags = indicator_tags(slug="1843.1118", name=title, unit="Juta US$", source=facts)
+    assert "dfd" in tags
+    assert program_tags("bps-indicators", "1843.1118") == ["dfd"]
+    assert "dfd" not in indicator_tags(slug="0.0", name=title, source=facts)
+
+
+def test_retopic_follows_the_program_files() -> None:
+    """A program added is tagged, a program dropped is untagged, and none given leaves it."""
+    held = ["bps-indicators", "statistics", "annual", "investment", "indicator"]
+    title = "Realisasi Investasi Penanaman Modal Luar Negeri"
+    added = retopic(held, title, programs=["dfd"])
+    assert "dfd" in added and added[-1] == "indicator"
+    assert "dfd" not in retopic(added, title, programs=[])
+    assert "dfd" in retopic(added, title)
+    assert retopic(added, title, programs=["dfd"]) == added
