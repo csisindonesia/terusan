@@ -3,6 +3,13 @@
 # Bring the NAS's Silver up to the laptop's: finish BPS, add ADB and the
 # metals, sweep duplicates, republish the catalogue.
 #
+# BPS is extracted from RAW first, so a lake whose BPS Bronze predates tables
+# becoming one series (or has none) gets the Bronze those series are read
+# from. Then the row-by-row series that Bronze no longer names are pruned —
+# only after BPS normalized cleanly, because pruning ahead of a failed run
+# would take the old series away before their replacements were written. Every
+# step is idempotent, so on a lake that is already current they change nothing.
+#
 # Runs inside the pipelines container, which holds only pipelines/ and a venv
 # at /opt/venv — no scripts/ and no uv project to sync. So the scripts are
 # copied in first, and a shim stands in for `uv --project pipelines run`,
@@ -38,9 +45,18 @@ step() {
   if "$@"; then echo "--- ok: $*"; else echo "!!! FAILED ($?): $*"; failed+=("$*"); fi
 }
 
-# 1. BPS. The script packs its batches by Bronze rows, which keeps each one
-#    under what the NAS's earlyoom tolerates.
+# 1. BPS. Bronze first, and every Silver bucket given the columns the schema
+#    has gained (`category` among them). The script packs its batches by
+#    Bronze rows, which keeps each one under what the NAS's earlyoom tolerates.
+bps_failed=${#failed[@]}
+step terusan warehouse extract statistics bps-indicators
+step terusan warehouse migrate-observations
 step ./scripts/normalize-bps.sh
+if (( ${#failed[@]} == bps_failed )); then
+  step terusan silver prune --source bps-indicators --show 5
+else
+  echo "!!! skipping the BPS prune: BPS did not extract and normalize cleanly"
+fi
 
 if [[ "${1:-}" != "--bps-only" ]]; then
 
@@ -72,6 +88,8 @@ fi
 step terusan silver dedupe --show 0
 step terusan silver dimensions
 step terusan silver documents
+# Program tags (reference/programs/, DfD's among them) and today's topics.
+step terusan silver retag
 
 echo "=== $(date '+%F %T') done; ${#failed[@]} failed step(s)"
 for f in "${failed[@]}"; do echo "  - $f"; done
