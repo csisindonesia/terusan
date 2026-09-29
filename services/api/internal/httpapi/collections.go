@@ -100,7 +100,8 @@ func (s *Server) shelfError(w http.ResponseWriter, context string, err error) {
 		writeError(w, http.StatusForbidden, CodeForbidden, "this shelf is read-only", "")
 	case errors.Is(err, collections.ErrForbidden):
 		writeError(w, http.StatusForbidden, CodeForbidden, err.Error(),
-			"only the owner renames, deletes or changes who is in a collection")
+			"only the owner renames, deletes or changes who may open a collection, "+
+				"and only its owner and members file into it")
 	case errors.Is(err, collections.ErrInvalid):
 		badRequest(w, "invalid request", "the owner is already in the collection")
 	default:
@@ -125,7 +126,7 @@ type memberView struct {
 // in it, and what they may do there.
 type collectionView struct {
 	collections.Collection
-	// owner, member or shared — see collections.RoleOwner.
+	// owner, member, shared or viewer — see collections.RoleOwner.
 	Role    string       `json:"role"`
 	Owner   *person      `json:"owner,omitempty"`
 	Members []memberView `json:"members"`
@@ -219,8 +220,10 @@ type collectionBody struct {
 	Name        *string `json:"name"`
 	Description *string `json:"description"`
 	// Whether the collection's figures are served under its own path.
-	API   *bool `json:"api"`
-	Items []struct {
+	API *bool `json:"api"`
+	// limited or public — see collections.VisibilityLimited.
+	Visibility *string `json:"visibility"`
+	Items      []struct {
 		Kind  string `json:"kind"`
 		ID    string `json:"id"`
 		Label string `json:"label"`
@@ -311,9 +314,14 @@ func (s *Server) handleUpdateCollection(w http.ResponseWriter, r *http.Request) 
 		badRequest(w, "invalid body", "description: is too long")
 		return
 	}
+	if body.Visibility != nil && !collections.ValidVisibility(*body.Visibility) {
+		badRequest(w, "invalid body", "visibility: is limited or public")
+		return
+	}
 
 	updated, err := s.shelf.Update(r.Context(), s.viewer(r), id, collections.Changes{
 		Name: body.Name, Description: body.Description, API: body.API,
+		Visibility: body.Visibility,
 	})
 	if err != nil {
 		s.shelfError(w, "update collection", err)

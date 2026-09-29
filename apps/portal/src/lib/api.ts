@@ -945,9 +945,16 @@ export type ShelfPerson = {
 /**
  * The viewer's part in a collection: `owner` does everything, `member` files
  * and removes records, `shared` is a folder from before there were owners
- * that everyone may change.
+ * that everyone may change, and `viewer` is anyone reading a collection its
+ * owner has made public.
  */
-export type ShelfRole = "owner" | "member" | "shared";
+export type ShelfRole = "owner" | "member" | "shared" | "viewer";
+
+/**
+ * Who may open a collection: `limited` is its owner and members, `public` is
+ * anyone who can reach this API, to read.
+ */
+export type ShelfVisibility = "limited" | "public";
 
 export type ShelfCollection = {
   id: string;
@@ -961,6 +968,8 @@ export type ShelfCollection = {
    * owner and members. Absent from an API older than the setting.
    */
   api?: boolean;
+  /** Absent from an API older than the setting, where it is `limited`. */
+  visibility?: ShelfVisibility;
   /** Absent from an API older than members. */
   role?: ShelfRole;
   owner?: ShelfPerson;
@@ -1452,7 +1461,12 @@ export const api = {
   }) => send<ShelfCollection>("POST", "/v1/collections", body),
   updateCollection: (
     id: string,
-    body: { name?: string; description?: string; api?: boolean },
+    body: {
+      name?: string;
+      description?: string;
+      api?: boolean;
+      visibility?: ShelfVisibility;
+    },
   ) =>
     send<ShelfCollection>("PATCH", `/v1/collections/${encodeURIComponent(id)}`, body),
   deleteCollection: (id: string) =>

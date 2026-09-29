@@ -177,3 +177,54 @@ func TestCollectionsHoldIndicatorsOnly(t *testing.T) {
 		t.Fatalf("filing a dataset = %d, want 400: %s", w.Code, w.Body)
 	}
 }
+
+func TestAPublicCollectionOpensToEveryoneButFilesOnlyForItsPeople(t *testing.T) {
+	h, as := shelved(t)
+	asViewer(h, http.MethodPost, "/v1/collections", as["ana"],
+		`{"id":"col-1","name":"Prices","items":[{"kind":"indicator","id":"cpi00001","label":"CPI"}]}`)
+	asViewer(h, http.MethodPost, "/v1/collections/col-1/members", as["ana"], `{"email":"budi@example.org"}`)
+
+	if got := asViewer(h, http.MethodGet, "/v1/collections/col-1", as["citra"], "").Code; got != http.StatusNotFound {
+		t.Fatalf("a stranger opening a limited collection = %d, want 404", got)
+	}
+	if got := asViewer(h, http.MethodPatch, "/v1/collections/col-1", as["budi"], `{"visibility":"public"}`).Code; got != http.StatusForbidden {
+		t.Fatalf("a member making it public = %d, want 403", got)
+	}
+	if got := asViewer(h, http.MethodPatch, "/v1/collections/col-1", as["ana"], `{"visibility":"everyone"}`).Code; got != http.StatusBadRequest {
+		t.Fatalf("an unknown visibility = %d, want 400", got)
+	}
+	w := asViewer(h, http.MethodPatch, "/v1/collections/col-1", as["ana"], `{"visibility":"public","api":true}`)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"visibility":"public"`) {
+		t.Fatalf("owner making it public = %d: %s", w.Code, w.Body)
+	}
+
+	w = asViewer(h, http.MethodGet, "/v1/collections/col-1", as["citra"], "")
+	var seen Response[collectionView]
+	json.Unmarshal(w.Body.Bytes(), &seen)
+	if w.Code != http.StatusOK || seen.Data.Role != "viewer" {
+		t.Fatalf("a stranger opening a public collection = %d: %s", w.Code, w.Body)
+	}
+	// Found by its link, not listed on everyone's shelf.
+	var list Response[[]collectionView]
+	json.Unmarshal(asViewer(h, http.MethodGet, "/v1/collections", as["citra"], "").Body.Bytes(), &list)
+	if len(list.Data) != 0 {
+		t.Errorf("a stranger's list = %+v, want nothing", list.Data)
+	}
+	// Reading, not changing.
+	if got := asViewer(h, http.MethodPost, "/v1/collections/col-1/items", as["citra"],
+		`{"items":[{"kind":"indicator","id":"gdp00001","label":"GDP"}]}`).Code; got != http.StatusForbidden {
+		t.Errorf("a viewer filing = %d, want 403", got)
+	}
+	if got := asViewer(h, http.MethodDelete, "/v1/collections/col-1/items/indicator/cpi00001", as["citra"], "").Code; got != http.StatusForbidden {
+		t.Errorf("a viewer removing = %d, want 403", got)
+	}
+	if got := asViewer(h, http.MethodPatch, "/v1/collections/col-1", as["citra"], `{"name":"Mine"}`).Code; got != http.StatusForbidden {
+		t.Errorf("a viewer renaming = %d, want 403", got)
+	}
+
+	// Back to limited, and the stranger is a stranger again.
+	asViewer(h, http.MethodPatch, "/v1/collections/col-1", as["ana"], `{"visibility":"limited"}`)
+	if got := asViewer(h, http.MethodGet, "/v1/collections/col-1", as["citra"], "").Code; got != http.StatusNotFound {
+		t.Errorf("after limiting it again = %d, want 404", got)
+	}
+}

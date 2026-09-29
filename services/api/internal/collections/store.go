@@ -13,6 +13,13 @@
 // and no more. Everybody else does not see it at all — not a 403, a 404, so a
 // folder's name is not something a stranger can probe for.
 //
+// Unless the owner makes it public. A public collection opens for anyone who
+// can reach this API, and its figures are served to them too; they read it
+// and nothing more — filing into it stays with the owner and the members. It
+// is still found by its link rather than listed on everyone's shelf, because
+// a shelf crowded with other people's folders is one nobody can find their
+// own on.
+//
 // Folders made before there were owners belong to nobody, and stay what they
 // were: visible to and editable by everyone on the deployment. Anyone may
 // claim one, which makes it theirs and private, and is the only way one gets
@@ -67,7 +74,23 @@ const (
 	// An unowned folder from before there were owners, which everyone on the
 	// deployment may do anything with, as they always could.
 	RoleShared = "shared"
+	// Anyone else, on a collection its owner has made public: reads it and
+	// its API, changes nothing.
+	RoleViewer = "viewer"
 )
+
+// Who may open a collection beyond its owner and members.
+const (
+	// Its owner and members only. What every collection starts as.
+	VisibilityLimited = "limited"
+	// Anyone who can reach this API, to read.
+	VisibilityPublic = "public"
+)
+
+// ValidVisibility reports whether a visibility is one this store keeps.
+func ValidVisibility(v string) bool {
+	return v == VisibilityLimited || v == VisibilityPublic
+}
 
 // Member is an account added to a collection by its owner.
 type Member struct {
@@ -110,6 +133,9 @@ type Collection struct {
 	// somebody's reading list first, and an endpoint that other programs
 	// depend on is a promise about it.
 	API bool `json:"api"`
+	// VisibilityLimited or VisibilityPublic. Meaningless on a folder nobody
+	// owns, which everyone can already open.
+	Visibility string `json:"visibility"`
 
 	// The account that made it, or "" for a folder from before there were
 	// owners. Not serialized: who someone is, as opposed to their id, is the
@@ -124,22 +150,28 @@ func (c Collection) RoleOf(viewer string) string {
 	if c.OwnerID == "" {
 		return RoleShared
 	}
-	if viewer == "" {
-		return ""
-	}
-	if c.OwnerID == viewer {
-		return RoleOwner
-	}
-	for _, m := range c.Members {
-		if m.UserID == viewer {
-			return RoleMember
+	if viewer != "" {
+		if c.OwnerID == viewer {
+			return RoleOwner
 		}
+		for _, m := range c.Members {
+			if m.UserID == viewer {
+				return RoleMember
+			}
+		}
+	}
+	if c.Visibility == VisibilityPublic {
+		return RoleViewer
 	}
 	return ""
 }
 
 // manages reports whether the role may rename or delete the collection.
 func manages(role string) bool { return role == RoleOwner || role == RoleShared }
+
+// files reports whether the role may add records to the collection and take
+// them out: everyone with a part in it except those only reading a public one.
+func files(role string) bool { return role != RoleViewer }
 
 // Query is a named set of filters, stored as the filters rather than as the
 // rows they return — so it answers against the warehouse as it is when it is
@@ -180,7 +212,8 @@ CREATE TABLE IF NOT EXISTS collections (
     updated_at     TIMESTAMP WITH TIME ZONE NOT NULL,
     -- '' for a folder nobody owns, which everyone on the deployment shares.
     owner_id       TEXT DEFAULT '',
-    api_enabled    BOOLEAN DEFAULT FALSE
+    api_enabled    BOOLEAN DEFAULT FALSE,
+    visibility     TEXT DEFAULT 'limited'
 );
 
 CREATE TABLE IF NOT EXISTS collection_members (
@@ -224,6 +257,9 @@ var migrations = []string{
 	`UPDATE collections SET owner_id = '' WHERE owner_id IS NULL`,
 	`ALTER TABLE collections ADD COLUMN IF NOT EXISTS api_enabled BOOLEAN DEFAULT FALSE`,
 	`UPDATE collections SET api_enabled = FALSE WHERE api_enabled IS NULL`,
+	// Every folder that existed before visibility did was its people's only.
+	`ALTER TABLE collections ADD COLUMN IF NOT EXISTS visibility TEXT DEFAULT 'limited'`,
+	`UPDATE collections SET visibility = 'limited' WHERE visibility IS NULL`,
 	// Collections became indicators-only. Anything else filed before then is
 	// removed rather than kept out of sight: a row nothing shows and nothing
 	// can remove is a row that confuses the next person to read this table.
@@ -268,7 +304,8 @@ func (s *Store) guard() error {
 func (s *Store) List(ctx context.Context, viewer string) ([]Collection, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT collection_id, name, COALESCE(description, ''), created_at, updated_at,
-		       COALESCE(owner_id, ''), COALESCE(api_enabled, FALSE)
+		       COALESCE(owner_id, ''), COALESCE(api_enabled, FALSE),
+		       COALESCE(visibility, 'limited')
 		FROM collections
 		WHERE COALESCE(owner_id, '') = ''
 		   OR (? <> '' AND owner_id = ?)
@@ -285,7 +322,7 @@ func (s *Store) List(ctx context.Context, viewer string) ([]Collection, error) {
 	for rows.Next() {
 		var c Collection
 		if err := rows.Scan(&c.ID, &c.Name, &c.Description, &c.CreatedAt, &c.UpdatedAt,
-			&c.OwnerID, &c.API); err != nil {
+			&c.OwnerID, &c.API, &c.Visibility); err != nil {
 			return nil, err
 		}
 		c.Items = []Item{}
@@ -371,16 +408,16 @@ func (s *Store) access(ctx context.Context, viewer, id string, allowed func(stri
 	return c, role, nil
 }
 
-func anyRole(string) bool { return true }
-
 // load is one collection whoever is asking.
 func (s *Store) load(ctx context.Context, id string) (Collection, error) {
 	var c Collection
 	err := s.db.QueryRowContext(ctx, `
 		SELECT collection_id, name, COALESCE(description, ''), created_at, updated_at,
-		       COALESCE(owner_id, ''), COALESCE(api_enabled, FALSE)
+		       COALESCE(owner_id, ''), COALESCE(api_enabled, FALSE),
+		       COALESCE(visibility, 'limited')
 		FROM collections WHERE collection_id = ?`, id,
-	).Scan(&c.ID, &c.Name, &c.Description, &c.CreatedAt, &c.UpdatedAt, &c.OwnerID, &c.API)
+	).Scan(&c.ID, &c.Name, &c.Description, &c.CreatedAt, &c.UpdatedAt, &c.OwnerID, &c.API,
+		&c.Visibility)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Collection{}, ErrNotFound
 	}
@@ -448,6 +485,12 @@ func (s *Store) Put(ctx context.Context, c Collection) error {
 }
 
 func (s *Store) put(ctx context.Context, c Collection) error {
+	// Anything but an explicit "public" is limited, so an import from before
+	// the setting — or one that misspells it — opens to nobody new.
+	visibility := VisibilityLimited
+	if c.Visibility == VisibilityPublic {
+		visibility = VisibilityPublic
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -464,10 +507,10 @@ func (s *Store) put(ctx context.Context, c Collection) error {
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO collections (collection_id, name, description, created_at, updated_at,
-		                         owner_id, api_enabled)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		                         owner_id, api_enabled, visibility)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		c.ID, c.Name, nullable(c.Description), c.CreatedAt, c.UpdatedAt,
-		c.OwnerID, c.API); err != nil {
+		c.OwnerID, c.API, visibility); err != nil {
 		return err
 	}
 	if err := insertItems(ctx, tx, c.ID, c.Items); err != nil {
@@ -504,18 +547,32 @@ type Changes struct {
 	Name        *string
 	Description *string
 	API         *bool
+	// Only the owner's to change: who else may open a folder is the decision
+	// that makes it theirs.
+	Visibility *string
 }
 
-// Update renames a collection, changes what it says it is for, or turns its
-// API on or off.
+// Update renames a collection, changes what it says it is for, turns its API
+// on or off, or changes who may open it.
 func (s *Store) Update(ctx context.Context, viewer, id string, change Changes) (Collection, error) {
 	name, description := change.Name, change.Description
 	if err := s.guard(); err != nil {
 		return Collection{}, err
 	}
-	current, _, err := s.access(ctx, viewer, id, manages)
+	current, role, err := s.access(ctx, viewer, id, manages)
 	if err != nil {
 		return Collection{}, err
+	}
+	if change.Visibility != nil {
+		if !ValidVisibility(*change.Visibility) {
+			return Collection{}, ErrInvalid
+		}
+		// A folder nobody owns is already everyone's; making it "limited"
+		// would leave it limited to nobody.
+		if role != RoleOwner {
+			return Collection{}, ErrForbidden
+		}
+		current.Visibility = *change.Visibility
 	}
 	if name != nil && strings.TrimSpace(*name) != "" {
 		current.Name = strings.TrimSpace(*name)
@@ -529,9 +586,11 @@ func (s *Store) Update(ctx context.Context, viewer, id string, change Changes) (
 	current.UpdatedAt = time.Now().UTC()
 
 	if _, err := s.db.ExecContext(ctx, `
-		UPDATE collections SET name = ?, description = ?, api_enabled = ?, updated_at = ?
+		UPDATE collections SET name = ?, description = ?, api_enabled = ?, visibility = ?,
+		                       updated_at = ?
 		WHERE collection_id = ?`,
-		current.Name, nullable(current.Description), current.API, current.UpdatedAt, id); err != nil {
+		current.Name, nullable(current.Description), current.API, current.Visibility,
+		current.UpdatedAt, id); err != nil {
 		return Collection{}, err
 	}
 	return current, nil
@@ -566,7 +625,7 @@ func (s *Store) AddItems(ctx context.Context, viewer, id string, items []Item) (
 	if err := s.guard(); err != nil {
 		return Collection{}, 0, err
 	}
-	current, _, err := s.access(ctx, viewer, id, anyRole)
+	current, _, err := s.access(ctx, viewer, id, files)
 	if err != nil {
 		return Collection{}, 0, err
 	}
@@ -617,7 +676,7 @@ func (s *Store) RemoveItem(ctx context.Context, viewer, id, kind, ref string) (C
 	if err := s.guard(); err != nil {
 		return Collection{}, err
 	}
-	if _, _, err := s.access(ctx, viewer, id, anyRole); err != nil {
+	if _, _, err := s.access(ctx, viewer, id, files); err != nil {
 		return Collection{}, err
 	}
 	if _, err := s.db.ExecContext(ctx, `

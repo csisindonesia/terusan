@@ -28,6 +28,7 @@ import {
   type ShelfPerson,
   type ShelfQuery,
   type ShelfRole,
+  type ShelfVisibility,
 } from "~/lib/api";
 
 export const WORKSPACE_STORAGE_KEY = "terusan.workspace";
@@ -85,6 +86,8 @@ export type Collection = {
   items: CollectionItem[];
   /** Whether its figures are served through its own API path. */
   api?: boolean;
+  /** Who may open it. Absent in a browser-kept shelf, which nobody else sees. */
+  visibility?: ShelfVisibility;
   /**
    * The reader's part in it, where the deployment has owners. Absent in a
    * browser-kept shelf, where everything is the reader's own.
@@ -98,7 +101,15 @@ export type CollectionMember = ShelfPerson & { added_at: string };
 
 /** Whether the reader may rename or delete it — not only file into it. */
 export function managesCollection(collection: Collection): boolean {
-  return collection.role !== "member";
+  return collection.role !== "member" && collection.role !== "viewer";
+}
+
+/**
+ * Whether the reader may add records and take them out. Everyone with a part
+ * in it may, except someone reading a collection only because it is public.
+ */
+export function filesInto(collection: Collection): boolean {
+  return collection.role !== "viewer";
 }
 
 /** A person as a list shows them: their name, or the address they sign in with. */
@@ -333,7 +344,7 @@ async function pull(): Promise<void> {
   emit();
 }
 
-function fromServerCollection(collection: ShelfCollection): Collection {
+export function fromServerCollection(collection: ShelfCollection): Collection {
   return {
     id: collection.id,
     name: collection.name,
@@ -350,6 +361,7 @@ function fromServerCollection(collection: ShelfCollection): Collection {
         added_at: item.added_at,
       })),
     api: collection.api ?? false,
+    visibility: collection.visibility ?? "limited",
     role: collection.role,
     owner: collection.owner,
     members: collection.members ?? [],
@@ -673,6 +685,23 @@ export async function removeMember(
     });
     return;
   }
+  replace(response.data);
+}
+
+/**
+ * Change who may open a collection. Waits on the server, as membership does:
+ * a folder shown as public that the server kept limited is a link sent to a
+ * colleague that then does not open.
+ */
+export async function setVisibility(
+  collectionId: string,
+  visibility: ShelfVisibility,
+): Promise<void> {
+  const refusal = readOnlyError();
+  if (refusal) throw refusal;
+  const response = await queue(() =>
+    api.updateCollection(collectionId, { visibility }),
+  );
   replace(response.data);
 }
 

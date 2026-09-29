@@ -16,8 +16,9 @@ import (
 // which series, and then hands the request to the handler the lake-wide route
 // uses. A filter or a format added there is here the next time this builds.
 //
-// Who may ask is whoever may open the collection — its owner and members, or
-// everyone for a folder from before there were owners — with a session or
+// Who may ask is whoever may open the collection — its owner and members,
+// anyone at all once the owner has made it public, or everyone for a folder
+// from before there were owners — with a session or
 // their own API token (`Authorization: Bearer trs_…`). There is no key per
 // collection: a key would be a second way in that outlives the member who
 // copied it, and a token already names a person who can be removed.
