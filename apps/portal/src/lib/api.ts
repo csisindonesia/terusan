@@ -189,6 +189,11 @@ export type Observation = {
    */
   commodity_id: string | null;
   commodity_name?: string;
+  /**
+   * The row of a table broken down by neither place nor commodity — an age
+   * group, a sector — as the publisher labels it. Null for every other series.
+   */
+  category: string | null;
   source_id: string;
   source_url?: string;
 };
@@ -400,6 +405,7 @@ export type ObservationQuery = {
   geo_name?: string[];
   geo_type?: string[];
   commodity?: string[];
+  category?: string[];
   status?: string[];
   /** Calendar years as a set — not the range they span. */
   year?: string[];
@@ -479,6 +485,8 @@ export type ObservationSeries = {
 export type ObservationFacets = {
   places: Facet[];
   commodities: Facet[];
+  /** In the publisher's order where it has one — age groups youngest first. */
+  categories: Facet[];
   years: Facet[];
   statuses: Facet[];
 };

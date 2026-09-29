@@ -18,7 +18,7 @@ import pytest
 from pydantic import SecretStr
 
 from terusan_pipelines.extract import BpsDataExtractor, Landed
-from terusan_pipelines.extract.bps import geo_key, period_of, region_code
+from terusan_pipelines.extract.bps import categories_of, geo_key, period_of, region_code
 from terusan_pipelines.sources import ScrapeContext
 from terusan_pipelines.sources.bps import indicators, webapi
 from terusan_pipelines.sources.bps.indicators import Indicators
@@ -202,8 +202,12 @@ def test_a_series_is_its_variable_and_breakdown(tmp_path: Path) -> None:
     assert urban["series_name"] == "Persentase Penduduk Miskin (P0) — Perkotaan"
 
 
-def test_rows_that_are_not_places_are_series_of_the_country(tmp_path: Path) -> None:
-    """`Wilayah` is BPS's word for town and village, not for a region."""
+def test_rows_that_are_not_places_are_categories_of_one_series(tmp_path: Path) -> None:
+    """`Wilayah` is BPS's word for town and village, not for a region.
+
+    The rows are one series of the country, told apart by category: split into
+    a series per row, a table of one year was a set of series of one figure.
+    """
     body = {
         "var": [{"val": 183, "label": "Jumlah Penduduk Miskin", "unit": "Tidak Ada Satuan"}],
         "labelvervar": "Wilayah",
@@ -216,11 +220,10 @@ def test_rows_that_are_not_places_are_series_of_the_country(tmp_path: Path) -> N
     rows = [r["columns"] for r in BpsDataExtractor().extract(landed(tmp_path, body))]
 
     assert {r["geo"] for r in rows} == {"IDN"}
-    assert [r["series_name"] for r in rows] == [
-        "Jumlah Penduduk Miskin — Kota",
-        "Jumlah Penduduk Miskin — Kota",
-        "Jumlah Penduduk Miskin — Desa",
-    ]
+    assert {r["indicator"] for r in rows} == {rows[0]["indicator"]}
+    assert {r["series_code"] for r in rows} == {"183.0"}
+    assert {r["series_name"] for r in rows} == {"Jumlah Penduduk Miskin"}
+    assert [r["category"] for r in rows] == ["Kota", "Kota", "Desa"]
     assert rows[0]["unit"] == ""
     # The annual figure beside a monthly one is marked, not dropped.
     assert [r["period_kind"] for r in rows] == ["", "summary", ""]
@@ -261,3 +264,26 @@ def test_a_regency_code_is_trusted_only_where_the_names_agree() -> None:
 )
 def test_periods(label: str, period: str) -> None:
     assert period_of("2026", label) == period
+
+
+def test_a_label_repeated_under_two_headings_names_its_heading() -> None:
+    """BPS lists passenger cars as a consumer good and as capital goods."""
+    rows = [
+        {"val": 1, "label": "TOTAL IMPOR BARANG KONSUMSI"},
+        {"val": 5, "label": "Mobil Penumpang"},
+        {"val": 21, "label": "TOTAL IMPOR BARANG MODAL"},
+        {"val": 23, "label": "Mobil Penumpang"},
+        {"val": 24, "label": "Alat Angkutan Untuk Industri"},
+    ]
+    assert categories_of(rows) == {
+        "1": "TOTAL IMPOR BARANG KONSUMSI",
+        "5": "Mobil Penumpang — TOTAL IMPOR BARANG KONSUMSI",
+        "21": "TOTAL IMPOR BARANG MODAL",
+        "23": "Mobil Penumpang — TOTAL IMPOR BARANG MODAL",
+        "24": "Alat Angkutan Untuk Industri",
+    }
+
+
+def test_a_label_repeated_under_one_heading_falls_back_to_the_row_id() -> None:
+    rows = [{"val": 1, "label": "Lainnya"}, {"val": 2, "label": "Lainnya"}]
+    assert categories_of(rows) == {"1": "Lainnya [1]", "2": "Lainnya [2]"}

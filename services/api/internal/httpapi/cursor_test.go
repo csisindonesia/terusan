@@ -18,8 +18,10 @@ func TestACursorRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decodeCursor: %v", err)
 	}
-	if len(values) != 3 || *values[0] != row.Period || *values[1] != geo ||
-		*values[2] != row.ObservationID {
+	// The category is null: a series of places has none, and the cursor
+	// carries the null rather than dropping the column.
+	if len(values) != 4 || *values[0] != row.Period || *values[1] != geo ||
+		values[2] != nil || *values[3] != row.ObservationID {
 		t.Fatalf("cursor carried %v", values)
 	}
 }
@@ -29,7 +31,7 @@ func TestACursorFromAnotherOrderIsRefused(t *testing.T) {
 	// under. Answering one from another sort would page through an order
 	// nobody asked for, skipping rows on the way.
 	issued := cursorFor(observationSorts["-period"], Observation{Period: "2026-09-21"})
-	if _, err := decodeCursor(issued, observationSorts["-place"]); err == nil {
+	if _, err := decodeCursor(issued, observationSorts["geo"]); err == nil {
 		t.Error("decodeCursor accepted a cursor from a different order")
 	}
 	if _, err := decodeCursor("not a cursor", observationSorts["period"]); err == nil {
@@ -65,23 +67,24 @@ func TestEverySortIsTotal(t *testing.T) {
 
 func TestTheKeysetStepsPastTheBoundaryRow(t *testing.T) {
 	keys := observationSorts["-period"]
-	period, geo, id := "2026-09-21", "ID-11", "obs_1"
+	period, geo, category, id := "2026-09-21", "ID-11", "35-39", "obs_1"
 
-	clause, args := keysetAfter(keys, []*string{&period, &geo, &id})
+	clause, args := keysetAfter(keys, []*string{&period, &geo, &category, &id})
 	// Newest first, so a later page holds earlier periods; within one period
 	// the places ascend.
 	for _, want := range []string{
 		"(o.period < ? OR o.period IS NULL)",
 		"o.period IS NOT DISTINCT FROM ? AND (o.geo_id > ?",
+		"o.geo_id IS NOT DISTINCT FROM ? AND (o.category > ?",
 		"o.observation_id > ?",
 	} {
 		if !strings.Contains(clause, want) {
 			t.Errorf("keyset %q is missing %q", clause, want)
 		}
 	}
-	// One branch per column: 1 + 2 + 3 bound values.
-	if len(args) != 6 {
-		t.Errorf("bound %d values, want 6: %v", len(args), args)
+	// One branch per column: 1 + 2 + 3 + 4 bound values.
+	if len(args) != 10 {
+		t.Errorf("bound %d values, want 10: %v", len(args), args)
 	}
 }
 
@@ -91,7 +94,7 @@ func TestNothingSortsAfterANull(t *testing.T) {
 	keys := observationSorts["-period"]
 	period, id := "2026-09-21", "obs_1"
 
-	clause, _ := keysetAfter(keys, []*string{&period, nil, &id})
+	clause, _ := keysetAfter(keys, []*string{&period, nil, nil, &id})
 	if strings.Contains(clause, "o.geo_id >") {
 		t.Errorf("keyset %q steps past a null", clause)
 	}
@@ -100,7 +103,7 @@ func TestNothingSortsAfterANull(t *testing.T) {
 	}
 
 	// The very last row of a sort: nothing follows it at all.
-	if clause, _ := keysetAfter(keys, []*string{nil, nil, nil}); clause != " AND false" {
+	if clause, _ := keysetAfter(keys, []*string{nil, nil, nil, nil}); clause != " AND false" {
 		t.Errorf("keyset after an all-null row = %q", clause)
 	}
 }

@@ -131,7 +131,7 @@ func holidayLake(t *testing.T) *Server {
 		}
 	}
 	statements := []string{
-		`COPY (FROM (VALUES ` + strings.Join(values, ", ") + `) AS t(indicator_id, geo_id, geo_name_raw, commodity_id,
+		`COPY (SELECT *, NULL::VARCHAR AS category FROM (VALUES ` + strings.Join(values, ", ") + `) AS t(indicator_id, geo_id, geo_name_raw, commodity_id,
 			commodity_name_raw, value, period_start, period, temporal_resolution))
 			TO '` + filepath.Join(root, "silver", "observations", "part-0.parquet") + `' (FORMAT parquet)`,
 		`COPY (SELECT *, NULL::VARCHAR AS name_en, NULL::VARCHAR AS name_printed, 'hijri' AS calendar,

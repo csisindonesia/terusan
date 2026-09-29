@@ -41,14 +41,19 @@ type Observation struct {
 	// the geography columns sees thirty-one identical rows.
 	CommodityID   *string `json:"commodity_id"`
 	CommodityName *string `json:"commodity_name,omitempty"`
-	SourceID      string  `json:"source_id"`
-	SourceURL     *string `json:"source_url,omitempty"`
+	// The row of a table broken down by neither place nor commodity — an age
+	// group, a sector — as the publisher labels it. Without it, BPS's table of
+	// Indonesian speakers is sixteen identical-looking figures for one year.
+	Category  *string `json:"category"`
+	SourceID  string  `json:"source_id"`
+	SourceURL *string `json:"source_url,omitempty"`
 }
 
 // The expressions behind the dimension column, which is a name and not an
 // identifier: ordering thirty-four provinces by `ID-11`, `ID-12` puts them in an
 // order nobody reading "Aceh, Bali, Banten" can predict.
 const (
+	categoryOrder       = "try_cast(regexp_extract(facet, '^[0-9]+') AS INTEGER) ASC NULLS LAST, facet ASC"
 	memberGeoExpr       = "coalesce(g.name, o.geo_name_raw)"
 	memberCommodityExpr = "coalesce(c.canonical_name, o.commodity_name_raw)"
 )
@@ -60,8 +65,10 @@ const (
 // alike on period and place can come back in either order, which returns one of
 // them twice and skips the other when the page is taken by cursor.
 var observationSorts = map[string][]observationSortKey{
-	"period":  {{"o.period", false}, {"o.geo_id", false}, {"o.observation_id", false}},
-	"-period": {{"o.period", true}, {"o.geo_id", false}, {"o.observation_id", false}},
+	// The category after the place, so a table of age groups reads by group
+	// within a year rather than in the order of its figures' hashes.
+	"period":  {{"o.period", false}, {"o.geo_id", false}, {"o.category", false}, {"o.observation_id", false}},
+	"-period": {{"o.period", true}, {"o.geo_id", false}, {"o.category", false}, {"o.observation_id", false}},
 	"value":   {{"o.value", false}, {"o.observation_id", false}},
 	"-value":  {{"o.value", true}, {"o.observation_id", false}},
 	"geo":     {{"o.geo_id", false}, {"o.period", false}, {"o.observation_id", false}},
@@ -145,6 +152,12 @@ func observationParams(r *http.Request) (observationFilter, error) {
 	// source printed is all that distinguishes them. `searchPattern` because
 	// those names carry spaces — `Cabai Merah Keriting`.
 	if f.Commodities, err = stringListParam(r, "commodity", searchPattern); err != nil {
+		return f, err
+	}
+	// As printed, like the commodity: categories have no registry. The
+	// search pattern because they carry spaces and punctuation — `75+`,
+	// `Tidak Mampu`.
+	if f.Categories, err = stringListParam(r, "category", searchPattern); err != nil {
 		return f, err
 	}
 	// Why a figure is absent, as Silver recorded it. A reader asking for the
@@ -300,7 +313,7 @@ func (s *Server) handleObservations(w http.ResponseWriter, r *http.Request) {
 		       o.temporal_resolution, CAST(o.value AS VARCHAR), o.unit, o.status,
 		       o.value_unambiguous, o.geo_id, coalesce(g.name, o.geo_name_raw), g.geo_type,
 		       o.commodity_id, coalesce(c.canonical_name, o.commodity_name_raw),
-		       o.source_id, o.source_url
+		       o.category, o.source_id, o.source_url
 		FROM %s%s ORDER BY %s LIMIT ? OFFSET ?`, from_, pageWhere, order)
 
 	rows, err := s.warehouse.DB().QueryContext(ctx, querySQL, append(pageArgs, limit+1, offset)...)
@@ -319,7 +332,7 @@ func (s *Server) handleObservations(w http.ResponseWriter, r *http.Request) {
 			&o.Resolution, &o.Value, &o.Unit, &o.Status,
 			&o.ValueUnambiguous, &o.GeoID, &o.GeoName, &o.GeoType,
 			&o.CommodityID, &o.CommodityName,
-			&o.SourceID, &o.SourceURL,
+			&o.Category, &o.SourceID, &o.SourceURL,
 		); err != nil {
 			internalError(w, s.log, "scan observation", err)
 			return
@@ -371,6 +384,7 @@ func (s *Server) handleObservations(w http.ResponseWriter, r *http.Request) {
 type ObservationFacets struct {
 	Places      []Facet `json:"places"`
 	Commodities []Facet `json:"commodities"`
+	Categories  []Facet `json:"categories"`
 	Years       []Facet `json:"years"`
 	Statuses    []Facet `json:"statuses"`
 }
@@ -389,6 +403,7 @@ func (s *Server) handleObservationFacets(w http.ResponseWriter, r *http.Request)
 	facets := ObservationFacets{
 		Places:      []Facet{},
 		Commodities: []Facet{},
+		Categories:  []Facet{},
 		Years:       []Facet{},
 		Statuses:    []Facet{},
 	}
@@ -417,6 +432,11 @@ func (s *Server) handleObservationFacets(w http.ResponseWriter, r *http.Request)
 		// leave a reader unable to pick their own.
 		{"coalesce(g.name, o.geo_name_raw)", &facets.Places, "n DESC, facet ASC", 1000},
 		{"coalesce(c.canonical_name, o.commodity_name_raw)", &facets.Commodities, "n DESC, facet ASC", 1000},
+		// By their leading number, then by name: age groups read 5-9, 10-14,
+		// 75+ rather than the 10-14, 15-19, 5-9 of plain text order, and a
+		// total such as `INDONESIA` follows them. Not by count, which for a
+		// cross-section is the same for every row and orders nothing.
+		{"o.category", &facets.Categories, categoryOrder, 1000},
 		// Years descending by value, not by count: a reader picking a year
 		// wants them in order.
 		{"CAST(year(o.period_start) AS VARCHAR)", &facets.Years, "facet DESC", 200},
@@ -480,6 +500,7 @@ type observationFilter struct {
 	GeoNames    []string
 	GeoTypes    []string
 	Commodities []string
+	Categories  []string
 	Statuses    []string
 	Years       []string
 	From        string
@@ -510,6 +531,7 @@ func observationFilters(f observationFilter) (string, []any) {
 	addIn("coalesce(g.name, o.geo_name_raw)", f.GeoNames)
 	addIn("g.geo_type", f.GeoTypes)
 	addIn("coalesce(c.canonical_name, o.commodity_name_raw)", f.Commodities)
+	addIn("o.category", f.Categories)
 	addIn("o.status", f.Statuses)
 	// The year a figure falls in, off the bounded start date rather than the
 	// label: the label's shape depends on the resolution — `2011`, `2012-01`,
@@ -532,9 +554,9 @@ func observationFilters(f observationFilter) (string, []any) {
 	if f.Search != "" {
 		clauses = append(clauses, "(coalesce(g.name, o.geo_name_raw) ILIKE ? "+
 			"OR o.geo_id ILIKE ? OR o.indicator_id ILIKE ? OR o.period ILIKE ? "+
-			"OR coalesce(c.canonical_name, o.commodity_name_raw) ILIKE ?)")
+			"OR coalesce(c.canonical_name, o.commodity_name_raw) ILIKE ? OR o.category ILIKE ?)")
 		pattern := "%" + f.Search + "%"
-		args = append(args, pattern, pattern, pattern, pattern, pattern)
+		args = append(args, pattern, pattern, pattern, pattern, pattern, pattern)
 	}
 
 	if len(clauses) == 0 {

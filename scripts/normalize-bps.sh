@@ -11,6 +11,13 @@
 # `normalize-each` rather than a mapping per series: Bronze is read once, and a
 # variable BPS adds is published the next run without anyone writing a line.
 #
+# **Categories.** A table whose rows are neither places nor commodities — age
+# groups, sectors, education levels — is one series per variable and
+# breakdown, with the row in `category`. It was once one series per row,
+# which left most of those with a single figure (see extract/bps.py). The series
+# the old keying wrote are not overwritten by this; `terusan silver prune
+# --source bps-indicators --dry-run` lists them for deletion.
+#
 # **Places.** Tables of provinces and cities resolve on `geo`, BPS's code
 # rewritten as the registry keys it (`11`, `11.06`, `IDN`), or BPS's name for
 # the place where its code cannot be trusted — the 150-city inflation table
@@ -87,7 +94,11 @@ if batch:
     print(",".join(batch))
 ')
 
-mapfile -t batches <<<"$BATCHES"
+# A read loop rather than `mapfile`, which macOS's bash 3.2 does not have.
+batches=()
+while IFS= read -r line; do
+  [[ -n "$line" ]] && batches+=("$line")
+done <<<"$BATCHES"
 echo "normalizing BPS in ${#batches[@]} batches of at most $BUDGET Bronze rows"
 
 # A batch with a failing series exits non-zero after normalizing the rest of
@@ -106,6 +117,7 @@ for ((i = 0; i < ${#batches[@]}; i++)); do
     --period-column period \
     --value-column value \
     --geo-column geo \
+    --category-column category \
     --unit-column unit \
     --name-column series_name \
     --code-column series_code \

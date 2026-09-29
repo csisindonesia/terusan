@@ -756,6 +756,42 @@ def test_naming_the_dimension_makes_those_same_rows_normalize(resolver):
     assert distinct == total == 4
 
 
+def test_a_category_is_part_of_the_observation_identity():
+    """Sixteen age groups in one year are sixteen observations, not one."""
+    young = observation_id("2805.2344", "2025", "IDN", None, "5-9")
+    old = observation_id("2805.2344", "2025", "IDN", None, "75+")
+
+    assert young != old
+    # Series without a category keep the ids they were given before the
+    # dimension existed, so re-normalizing them moves nothing.
+    assert observation_id("CPI", "2026-01", "ID-JB", None, None) == observation_id(
+        "CPI", "2026-01", "ID-JB", None
+    )
+
+
+def test_a_category_column_makes_a_table_of_groups_one_series(resolver):
+    """A table of one year broken down by age group is one series across the
+    groups, which the portal can show as the table it is."""
+    _land_and_extract(resolver, b"umur;2025\n5-9;96.46\n75+;71.30\n")
+    mapping = ColumnMapping(
+        indicator_id="speakers",
+        value_columns_are_periods=True,
+        geo="IDN",
+        category_column="umur",
+        number_format=NumberFormat.ANGLO,
+    )
+
+    result = SilverRunner(resolver).normalize(mapping, dataset="inflation")
+
+    assert result.observations == 2
+    with Warehouse(resolver) as warehouse:
+        warehouse.view("observations", Layer.SILVER, "observations")
+        rows = warehouse.query(
+            "SELECT category, value FROM observations ORDER BY category"
+        ).fetchall()
+    assert rows == [("5-9", Decimal("96.46")), ("75+", Decimal("71.30"))]
+
+
 def test_a_row_restated_identically_is_deduplicated(resolver):
     """A source that repeats a line is not a source that lost a dimension."""
     _land_and_extract(
@@ -1048,3 +1084,30 @@ def test_a_geo_column_wins_over_the_constant(geography):
     )
 
     assert [row["geo_id"] for row in rows] == ["ID-JB"]
+
+
+def test_pruning_deletes_the_series_bronze_no_longer_names(resolver):
+    """An extractor that changes how it composes identifiers leaves the old
+    series standing, since no normalization writes to them again."""
+    _land_and_extract(resolver, b"indicator;2025\nkept;1\n")
+    runner = SilverRunner(resolver)
+    for name in ("kept", "gone"):
+        runner.normalize(
+            ColumnMapping(indicator_id=name, value_columns_are_periods=True, geo="IDN", unit="x"),
+            dataset="inflation",
+        )
+    gone = indicator_code("bps", "gone")
+
+    assert runner.prune("bps", "indicator", dry_run=True) == [gone]
+    assert runner.prune("bps", "indicator") == [gone]
+    with Warehouse(resolver) as warehouse:
+        warehouse.view("observations", Layer.SILVER, "observations")
+        held = {
+            row[0] for row in warehouse.query("SELECT indicator_id FROM observations").fetchall()
+        }
+    assert held == {indicator_code("bps", "kept")}
+
+
+def test_pruning_against_an_empty_bronze_is_refused(resolver):
+    with pytest.raises(ValueError, match="extract before pruning"):
+        SilverRunner(resolver).prune("bps", "indicator")

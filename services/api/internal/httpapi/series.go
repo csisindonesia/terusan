@@ -52,7 +52,8 @@ type ObservationSeries struct {
 	// native, month, quarter or year. `native` means the figures are as
 	// published and nothing has been averaged.
 	Granularity string `json:"granularity"`
-	// geography, commodity, both or none — what the lines are split along.
+	// geography, commodity, both, category or none — what the lines are split
+	// along.
 	Dimension string `json:"dimension"`
 	// How many members there are in total, against however many lines are
 	// returned: a chart that draws the eight largest has to be able to say so.
@@ -108,7 +109,7 @@ func (s *Server) handleObservationSeries(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	switch dimension {
-	case "", "geography", "commodity", "both", "none":
+	case "", "geography", "commodity", "both", "category", "none":
 	default:
 		badRequest(w, "invalid parameter", "dimension: is not a dimension")
 		return
@@ -143,6 +144,8 @@ func (s *Server) handleObservationSeries(w http.ResponseWriter, r *http.Request)
 		member = memberBoth
 	case "commodity":
 		member = memberCommodityExpr
+	case "category":
+		member = "o.category"
 	case "none":
 		member = "''"
 	}
@@ -230,15 +233,16 @@ func (s *Server) seriesShape(
 	ctx context.Context, from, where string, args []any, points int, asked string,
 ) (seriesShape, error) {
 	var shape seriesShape
-	var places, commodities, pairs, periods int64
+	var places, commodities, pairs, categories, periods int64
 	var first, last sql.NullTime
 
 	// One query rather than five: each of them is a scan of the same rows.
 	err := s.warehouse.DB().QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT count(*), count(DISTINCT %s), count(DISTINCT %s), count(DISTINCT %s),
+		       count(DISTINCT o.category),
 		       count(DISTINCT o.period), min(o.period_start), max(o.period_start)
 		FROM %s%s`, memberGeoExpr, memberCommodityExpr, memberBoth, from, where), args...,
-	).Scan(&shape.rows, &places, &commodities, &pairs, &periods, &first, &last)
+	).Scan(&shape.rows, &places, &commodities, &pairs, &categories, &periods, &first, &last)
 	if err != nil {
 		return shape, err
 	}
@@ -249,6 +253,10 @@ func (s *Server) seriesShape(
 	shape.dimension = asked
 	if shape.dimension == "" {
 		switch {
+		// Before the place: a table of age groups is national, so its one
+		// place would otherwise claim it and draw every group as one line.
+		case categories > 1 && places <= 1 && commodities <= 1:
+			shape.dimension = "category"
 		case places > 1 && commodities > 1:
 			shape.dimension = "both"
 		case places > 1:
@@ -270,6 +278,8 @@ func (s *Server) seriesShape(
 		shape.members = commodities
 	case "geography":
 		shape.members = places
+	case "category":
+		shape.members = categories
 	}
 
 	shape.granularity = granularityFor(periods, first, last, points)

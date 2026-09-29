@@ -151,6 +151,7 @@ def _compare(resolver: StorageResolver, thresholds: Thresholds):
             CREATE TEMP TABLE cells AS
             SELECT indicator_id, source_id, geo_id,
                    coalesce(commodity_id, '') AS commodity_id,
+                   coalesce(category, '') AS category,
                    temporal_resolution AS resolution, period_start,
                    value::DOUBLE AS v,
                    CASE WHEN value <> 0 THEN round(
@@ -175,7 +176,7 @@ def _compare(resolver: StorageResolver, thresholds: Thresholds):
                        round(log10(a.v / b.v))::INT AS scale,
                        count(*) AS matches, count(DISTINCT a.m) AS distinct_values
                 FROM cells a JOIN cells b
-                  USING (geo_id, commodity_id, resolution, period_start, m)
+                  USING (geo_id, commodity_id, category, resolution, period_start, m)
                 WHERE a.source_id <> b.source_id AND sign(a.v) = sign(b.v)
                 GROUP BY ALL
                 HAVING count(*) >= {int(thresholds.min_matches)}
@@ -191,6 +192,7 @@ def _compare(resolver: StorageResolver, thresholds: Thresholds):
                 JOIN cells x ON x.indicator_id = p.a
                 JOIN cells y ON y.indicator_id = p.b
                  AND x.geo_id = y.geo_id AND x.commodity_id = y.commodity_id
+                 AND x.category = y.category
                  AND x.resolution = y.resolution AND x.period_start = y.period_start
                 GROUP BY ALL
             )
@@ -328,14 +330,15 @@ def covered(winner: pa.Table | None, rows: list[dict], min_coverage: float) -> b
     if winner is None or not rows:
         return False
 
-    def cell(geo, commodity, resolution, start) -> tuple:
-        return (geo, commodity or "", resolution, start)
+    def cell(geo, commodity, category, resolution, start) -> tuple:
+        return (geo, commodity or "", category or "", resolution, start)
 
     held = {
         cell(*values)
         for values in zip(
             winner.column("geo_id").to_pylist(),
             winner.column("commodity_id").to_pylist(),
+            _column_or_nulls(winner, "category"),
             winner.column("temporal_resolution").to_pylist(),
             winner.column("period_start").to_pylist(),
             strict=True,
@@ -345,6 +348,7 @@ def covered(winner: pa.Table | None, rows: list[dict], min_coverage: float) -> b
         cell(
             row.get("geo_id"),
             row.get("commodity_id"),
+            row.get("category"),
             row.get("temporal_resolution"),
             row.get("period_start"),
         )
@@ -354,3 +358,10 @@ def covered(winner: pa.Table | None, rows: list[dict], min_coverage: float) -> b
     if not cells:
         return False
     return len(cells & held) / len(cells) >= min_coverage
+
+
+def _column_or_nulls(table: pa.Table, name: str) -> list:
+    """A column's values, or nulls where the table predates the column."""
+    if name in table.column_names:
+        return table.column(name).to_pylist()
+    return [None] * table.num_rows

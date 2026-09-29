@@ -40,6 +40,7 @@ var cursorKey = map[string]func(Observation) *string{
 	"o.observation_id": func(o Observation) *string { return &o.ObservationID },
 	"o.period":         func(o Observation) *string { return &o.Period },
 	"o.geo_id":         func(o Observation) *string { return o.GeoID },
+	"o.category":       func(o Observation) *string { return o.Category },
 	memberGeoExpr:      func(o Observation) *string { return o.GeoName },
 	memberCommodityExpr: func(o Observation) *string {
 		return o.CommodityName

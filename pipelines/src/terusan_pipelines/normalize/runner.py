@@ -372,6 +372,72 @@ class SilverRunner:
         log.info("silver.duplicates_swept", deleted=len(doomed), standing=len(standing))
         return standing
 
+    def prune(self, source_id: str, by: str, *, dry_run: bool = False) -> list[str]:
+        """Delete this source's series that Bronze no longer names.
+
+        A series outlives the identifier that produced it. When an extractor
+        changes how it composes identifiers, a normalization writes the new
+        series and leaves every old one standing beside it, still listed and
+        still charted, because nothing ever writes to it again. BPS regrouping
+        its row-by-row series into one per table left twenty-seven thousand of
+        them.
+
+        Bronze at the current parser version is the reference: a series is
+        kept if some record there names it in `by`. Refuses to prune against a
+        Bronze that names nothing, which is an extraction not yet run rather
+        than a source with no series.
+
+        Returns the identifiers deleted, or that would be with `dry_run`.
+        """
+        # Distinct in the scan: BPS's Bronze is six million rows, which as
+        # Python dicts is more memory than the machine this runs on has.
+        bronze = Path(self._resolver.resolve(Layer.BRONZE, "records"))
+        values: list[tuple] = []
+        if any(bronze.rglob("*.parquet")):
+            with Warehouse(self._resolver) as warehouse:
+                values = warehouse.query(
+                    "SELECT DISTINCT trim(columns[?]) FROM read_parquet(?, union_by_name=true, "
+                    "hive_partitioning=true) WHERE parser_version = ? AND source_id = ?",
+                    [by, self._resolver.glob(Layer.BRONZE, "records"), PARSER_VERSION, source_id],
+                ).fetchall()
+        named = {self._identity(value, source_id)[1] for (value,) in values if value}
+        if not named:
+            raise ValueError(
+                f"no Bronze record of {source_id!r} at parser version {PARSER_VERSION} "
+                f"carries {by!r}; extract before pruning"
+            )
+
+        pattern = self._resolver.glob(Layer.SILVER, "observations")
+        with Warehouse(self._resolver) as warehouse:
+            held = {
+                row[0]
+                for row in warehouse.query(
+                    "SELECT DISTINCT indicator_id FROM read_parquet(?, union_by_name=true, "
+                    "hive_partitioning=false) WHERE source_id = ?",
+                    [pattern, source_id],
+                ).fetchall()
+            }
+        listed = {row["indicator_id"] for row in self._published_indicators(source_id)}
+        doomed = sorted((held | listed) - named)
+        if dry_run or not doomed:
+            return doomed
+
+        ObservationStore(self._resolver).remove(set(doomed))
+        kept = [
+            row for row in self._published_indicators(source_id) if row["indicator_id"] in named
+        ]
+        self._replace_partition(Layer.SILVER, "indicators", f"source_id={slugify(source_id)}")
+        if kept:
+            self._writer.write(
+                Layer.SILVER,
+                "indicators",
+                table_from_rows(kept, SILVER_INDICATORS),
+                partition_by=["source_id"],
+                run_id=slugify(source_id),
+            )
+        log.info("silver.pruned", source=source_id, deleted=len(doomed), kept=len(kept))
+        return doomed
+
     def _superseded(self) -> dict[str, dict]:
         """Standing deletions by series, read once per runner."""
         if self._superseded_cache is None:
@@ -1112,8 +1178,8 @@ def _reject_collapsed(
                 f"figures under one observation id — {first['value']} "
                 f"{first['unit'] or ''} and {row['value']} {row['unit'] or ''}, "
                 "both from the same retrieval. The rows differ along a dimension "
-                "the mapping does not name; pass --geo-column or "
-                "--commodity-column for the column they differ in."
+                "the mapping does not name; pass --geo-column, "
+                "--commodity-column or --category-column for the column they differ in."
             )
 
         result.stats.revised_rows += 1

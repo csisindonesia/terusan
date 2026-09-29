@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 
 import { AssistantChart } from "~/components/assistant-chart";
+import { BarChart } from "~/components/bar-chart";
 import { CandlestickChart } from "~/components/candlestick-chart";
 import { ChartCard } from "~/components/chart-card";
 import { ChoroplethMap } from "~/components/choropleth-map";
@@ -56,12 +57,15 @@ import {
 } from "~/lib/candles";
 import { summarise, gapsByStatus, type Figure } from "~/lib/analytics";
 import {
+  categoryOf,
   commodityOf,
+  compareCategories,
   dimensionLabel,
   dimensionNoun,
   dimensionOfMembers,
   geoOf,
   primaryAxis,
+  type Axis,
   type Dimension,
   type Series,
 } from "~/lib/series";
@@ -286,12 +290,21 @@ function columnsFor(
   //
   // A national series has no dimension column at all: a column of em-dashes
   // asks the reader to check, every row, whether they have missed something.
-  const memberColumn = (which: "geography" | "commodity"): ColumnDef<Observation> => ({
+  const memberOf = (which: Axis, row: Observation) =>
+    which === "geography"
+      ? geoOf(row)
+      : which === "commodity"
+        ? commodityOf(row)
+        : categoryOf(row);
+  const memberColumn = (which: Axis): ColumnDef<Observation> => ({
     id: which,
     // An accessor as well as a cell: without one the column is a display
     // column, and a display column offers no sort control.
-    accessorFn: (row) => (which === "geography" ? geoOf(row) : commodityOf(row)) ?? "",
+    accessorFn: (row) => memberOf(which, row) ?? "",
     header: dimensionLabel(which),
+    // The API has no order by category: its labels sort as text, which puts
+    // 10-14 before 5-9, and the rows already arrive in the table's order.
+    enableSorting: which !== "category",
     // Room for the longest member names that turn up — "Nusa Tenggara Timur",
     // "Rice — medium grade I" — and no more. Sized like the rest rather than
     // left to take the slack: on a national series this column holds the word
@@ -299,14 +312,13 @@ function columnsFor(
     meta: { width: "w-56" },
     cell: ({ row }) => (
       <StackedCell
-        primary={
-          (which === "geography" ? geoOf(row.original) : commodityOf(row.original)) ??
-          "—"
-        }
+        primary={memberOf(which, row.original) ?? "—"}
         secondary={
           which === "geography"
             ? (row.original.geo_id ?? "unresolved")
-            : (row.original.commodity_id ?? "unresolved")
+            : which === "commodity"
+              ? (row.original.commodity_id ?? "unresolved")
+              : undefined
         }
       />
     ),
@@ -562,6 +574,7 @@ function IndicatorDetail() {
   const dimension = dimensionOfMembers(
     available?.places.length ?? 0,
     available?.commodities.length ?? 0,
+    available?.categories?.length ?? 0,
   );
 
   // The narrowing controls work one axis at a time. `series` holds the primary
@@ -569,7 +582,11 @@ function IndicatorDetail() {
   // reader can ask for shallots without naming a province.
   const axis = primaryAxis(dimension);
   const axisOptions = optionsOf(
-    axis === "commodity" ? available?.commodities : available?.places,
+    axis === "commodity"
+      ? available?.commodities
+      : axis === "category"
+        ? available?.categories
+        : available?.places,
   );
   const commodityOptions =
     dimension === "both" ? optionsOf(available?.commodities) : [];
@@ -620,7 +637,9 @@ function IndicatorDetail() {
     // do not have.
     ...(axis === "commodity"
       ? { commodity: chosenSeries }
-      : { geo_name: chosenSeries }),
+      : axis === "category"
+        ? { category: chosenSeries }
+        : { geo_name: chosenSeries }),
     ...(dimension === "both" ? { commodity: chosenCommodities } : {}),
     status: chosenStatuses,
     year: chosenYears,
@@ -712,6 +731,32 @@ function IndicatorDetail() {
   const memberCount = drawn?.members ?? 0;
   const periods = periodsOf(drawn?.series ?? []);
   const lines = linesFrom(drawn?.series ?? [], periods, hidden, heading);
+
+  // A table of categories published for one period — BPS's age groups in the
+  // 2025 intercensal survey — has nothing to draw a line through: every line
+  // would be a single dot, and only eight of sixteen groups would get one.
+  // Drawn as the table it is instead, a bar per category.
+  const crossSection = dimension === "category" && periods.length === 1;
+  const section = useQuery({
+    queryKey: ["observations", "cross-section", seriesFilters],
+    enabled: crossSection,
+    queryFn: () => api.observations({ ...seriesFilters, limit: 1000 }),
+  });
+  const sectionRows = [...(section.data?.data ?? [])].sort((a, b) =>
+    compareCategories(categoryOf(a) ?? "", categoryOf(b) ?? ""),
+  );
+  const sectionBars = sectionRows
+    .filter((row) => row.value !== null)
+    .map((row) => ({ label: categoryOf(row) ?? "—", value: Number(row.value) }));
+  // The categories with no figure are named by their status rather than drawn
+  // as a bar of nothing, which would read as a measured zero.
+  const sectionGaps = sectionRows.filter((row) => row.value === null);
+  // Bars start at zero, so a table with a negative figure — growth by sector —
+  // keeps its dots rather than bars pointing the wrong way.
+  const barred =
+    crossSection &&
+    sectionBars.length > 0 &&
+    sectionBars.every((bar) => Number.isFinite(bar.value) && bar.value >= 0);
 
   // Analytics describe one series. Averaged across rice and chilli they would
   // describe nothing, so they follow the chart only when a single series is in
@@ -1032,9 +1077,11 @@ function IndicatorDetail() {
                     label={
                       dimension === "commodity"
                         ? "Commodities"
-                        : dimension === "both"
-                          ? "Series"
-                          : "Places"
+                        : dimension === "category"
+                          ? "Categories"
+                          : dimension === "both"
+                            ? "Series"
+                            : "Places"
                     }
                     // Counted from the figures, like the sentence above it.
                     // `meta.geographies` counts distinct `geo_id`, and
@@ -1045,9 +1092,11 @@ function IndicatorDetail() {
                     hint={
                       dimension === "commodity"
                         ? "This series varies by commodity, not by place"
-                        : dimension === "both"
-                          ? "This series varies by place and by commodity, so a series is one of each"
-                          : undefined
+                        : dimension === "category"
+                          ? "This series is a table of categories — age groups, sectors — for one place"
+                          : dimension === "both"
+                            ? "This series varies by place and by commodity, so a series is one of each"
+                            : undefined
                     }
                   />
                 )}
@@ -1254,8 +1303,40 @@ function IndicatorDetail() {
               {/* Drawn as the assistant draws a chart — its own card with the
                   title, span, source and logo — so a figure taken from here
                   and one taken from a reply look like the same publication. */}
-              {chart.isLoading || (priceSet && bars.isLoading) ? (
+              {chart.isLoading ||
+              (priceSet && bars.isLoading) ||
+              (crossSection && section.isLoading) ? (
                 <Skeleton className="h-[460px] w-full rounded-xl" />
+              ) : barred ? (
+                <ChartCard
+                  plain
+                  title={heading}
+                  span={periods[0]}
+                  reason={
+                    <>
+                      One period, broken down by {formatCount(sectionRows.length)}{" "}
+                      categories. Each bar is one published figure, in the order the
+                      table lists them.
+                    </>
+                  }
+                  sources={meta?.publisher ? [meta.publisher] : []}
+                  note={
+                    sectionGaps.length
+                      ? `No figure for ${sectionGaps
+                          .map(
+                            (row) =>
+                              `${categoryOf(row) ?? "—"} (${statusLabel(row.status).toLowerCase()})`,
+                          )
+                          .join(", ")}.`
+                      : undefined
+                  }
+                >
+                  <BarChart
+                    bars={sectionBars}
+                    unit={meta?.unit}
+                    format={(value) => formatDecimal(String(value))}
+                  />
+                </ChartCard>
               ) : candled ? (
                 // A price is four readings of each session, and a candle is
                 // the one form that shows all four. Same card as the line, so

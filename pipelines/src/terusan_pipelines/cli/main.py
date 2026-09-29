@@ -442,7 +442,8 @@ def warehouse_compact(
 
 @warehouse_app.command("migrate-observations")
 def warehouse_migrate_observations() -> None:
-    """Move Silver observations from one directory per series into hash buckets.
+    """Move Silver observations from one directory per series into hash buckets,
+    and give every bucket the columns the schema has gained since it was written.
 
     Resumable and safe to run beside the API: each bucket is written and renamed
     into place before the series' old directories are removed, so every series
@@ -450,7 +451,8 @@ def warehouse_migrate_observations() -> None:
     """
     from ..warehouse.observations import ObservationStore
 
-    typer.echo(json.dumps(ObservationStore(_resolver()).migrate_legacy(), indent=2))
+    store = ObservationStore(_resolver())
+    typer.echo(json.dumps({**store.migrate_legacy(), **store.conform()}, indent=2))
 
 
 @warehouse_app.command("query")
@@ -719,6 +721,17 @@ def silver_normalize(
             ),
         ),
     ] = None,
+    category_column: Annotated[
+        str | None,
+        typer.Option(
+            "--category-column",
+            help=(
+                "Column naming a row's category, for a table broken down by "
+                "something that is neither a place nor a commodity — an age "
+                "group, a sector. Kept as printed."
+            ),
+        ),
+    ] = None,
     unit: Annotated[str | None, typer.Option("--unit")] = None,
     unit_column: Annotated[
         str | None,
@@ -789,6 +802,7 @@ def silver_normalize(
         geo=geo,
         commodity_column=commodity_column,
         commodity=commodity,
+        category_column=category_column,
         unit=unit,
         unit_column=unit_column,
         number_format=number_format,
@@ -909,6 +923,17 @@ def silver_normalize_each(
                 "The commodity every row is about, where no column names it — "
                 "a price series for one instrument. Resolved through "
                 "reference/commodities/commodities.csv."
+            ),
+        ),
+    ] = None,
+    category_column: Annotated[
+        str | None,
+        typer.Option(
+            "--category-column",
+            help=(
+                "Column naming a row's category, for a table broken down by "
+                "something that is neither a place nor a commodity — an age "
+                "group, a sector. Kept as printed."
             ),
         ),
     ] = None,
@@ -1073,6 +1098,7 @@ def silver_normalize_each(
             geo=geo,
             commodity_column=commodity_column,
             commodity=commodity,
+            category_column=category_column,
             unit=unit,
             unit_column=unit_column,
             number_format=number_format,
@@ -1382,6 +1408,37 @@ def silver_dedupe(
             },
             indent=2,
             default=str,
+        )
+    )
+
+
+@silver_app.command("prune")
+def silver_prune(
+    source: Annotated[str, typer.Option("--source", help="The source whose series to prune.")],
+    by: Annotated[
+        str,
+        typer.Option("--by", help="Bronze column naming each record's indicator."),
+    ] = "indicator",
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Report what would be deleted; change nothing.")
+    ] = False,
+    show: Annotated[int, typer.Option("--show", help="How many deletions to list.")] = 20,
+) -> None:
+    """Delete a source's Silver series that its Bronze no longer names.
+
+    For after an extractor changes how it composes identifiers: the next
+    normalization writes the new series and cannot know the old ones were
+    theirs, so they stand beside them until removed here. Bronze at the current
+    parser version is the reference. Always `--dry-run` first.
+    """
+    try:
+        doomed = SilverRunner(_resolver()).prune(source, by, dry_run=dry_run)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        json.dumps(
+            {"dry_run": dry_run, "deleted": len(doomed), "examples": doomed[:show]}, indent=2
         )
     )
 

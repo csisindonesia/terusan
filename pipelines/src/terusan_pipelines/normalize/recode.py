@@ -253,6 +253,7 @@ def _rewrite_observations(runner: SilverRunner, series: list[_Series], slug_like
             str(row["period"]),
             row.get("geo_id") or row.get("geo_name_raw"),
             row.get("commodity_id") or row.get("commodity_name_raw"),
+            row.get("category"),
         )
 
     rewritten = table_from_rows(rows, SILVER_OBSERVATIONS)

@@ -15,6 +15,7 @@ from terusan_pipelines.normalize.schema import SILVER_OBSERVATIONS
 from terusan_pipelines.storage import Layer, StorageConfig, StorageResolver
 from terusan_pipelines.warehouse import table_from_rows
 from terusan_pipelines.warehouse.observations import (
+    BUCKET_FILE,
     BUCKETS,
     LAYOUT_FILE,
     ObservationStore,
@@ -140,3 +141,22 @@ def test_the_old_layout_moves_into_buckets_and_reads_the_same(resolver):
     assert len(before) == 6
     # Running it again finds nothing to move.
     assert ObservationStore(resolver).migrate_legacy()["series"] == 0
+
+
+def test_a_bucket_written_before_a_column_existed_is_conformed(resolver):
+    """The API names every column, and reads one bucket at a time when it can.
+
+    A bucket left without a column the schema gained would fail that query,
+    and nothing guarantees a series in it is ever written again.
+    """
+    store = ObservationStore(resolver)
+    store.replace("aaa", _series("aaa", ["2020"]))
+    bucket = Path(resolver.resolve(Layer.SILVER, "observations")) / bucket_name(bucket_of("aaa"))
+    path = bucket / BUCKET_FILE
+    pq.write_table(pq.read_table(path).drop_columns(["category"]), path)
+
+    assert store.conform() == {"buckets_conformed": 1}
+    assert "category" in pq.read_schema(path).names
+    assert _rows(resolver) == [("aaa", "2020", 1)]
+    # Nothing left to do the second time.
+    assert store.conform() == {"buckets_conformed": 0}

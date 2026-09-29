@@ -242,6 +242,32 @@ class ObservationStore:
         self._mark(root)
         return {"series": moved_series, "rows": moved_rows, "buckets": len(grouped)}
 
+    def conform(self) -> dict[str, int]:
+        """Rewrite every bucket that lacks a column the schema has gained.
+
+        A bucket gains a new column the next time a series in it is written,
+        which may be never for a source nobody re-runs. The API selects every
+        column by name and reads one bucket at a time when it can, so a bucket
+        left without the column would fail the query rather than read nulls.
+        """
+        from ..normalize.schema import SILVER_OBSERVATIONS
+
+        root = self._root()
+        wanted = set(SILVER_OBSERVATIONS.names)
+        rewritten = 0
+        for bucket in range(BUCKETS):
+            path = root / bucket_name(bucket) / BUCKET_FILE
+            if not path.exists() or wanted <= set(pq.read_schema(path).names):
+                continue
+            with self._locked(root, bucket):
+                held = self._read_bucket(root, bucket)
+                if held is not None:
+                    self._write_bucket(root, bucket, held)
+                    rewritten += 1
+        if rewritten:
+            self._mark(root)
+        return {"buckets_conformed": rewritten}
+
     def legacy(self, root: Path | None = None) -> bool:
         """Whether the table still holds series in the old per-series layout."""
         root = root or self._root()
@@ -296,6 +322,7 @@ class ObservationStore:
         directory = root / bucket_name(bucket)
         directory.mkdir(parents=True, exist_ok=True)
         target = directory / BUCKET_FILE
+        table = _conformed(table)
         # A dot-file, which the readers' `*.parquet` globs do not match, so a
         # half-written bucket is never read.
         temporary = directory / f".{BUCKET_FILE}.{uuid.uuid4().hex}.tmp"
@@ -311,6 +338,20 @@ class ObservationStore:
         finally:
             temporary.unlink(missing_ok=True)
         return target
+
+
+def _conformed(table: pa.Table) -> pa.Table:
+    """`table` with every Silver column present, nulls where it had none.
+
+    Only missing columns are added; nothing present is cast, so a file written
+    under an older type is left as it was rather than rewritten on a guess.
+    """
+    from ..normalize.schema import SILVER_OBSERVATIONS
+
+    for column in SILVER_OBSERVATIONS:
+        if column.name not in table.column_names:
+            table = table.append_column(column, pa.nulls(table.num_rows, column.type))
+    return table
 
 
 def _without(table: pa.Table | None, series: set[str]) -> pa.Table | None:

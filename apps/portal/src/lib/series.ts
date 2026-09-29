@@ -14,7 +14,7 @@ import type { Observation } from "~/lib/api";
  * says they are one quantity changing over time.
  */
 
-export type Dimension = "geography" | "commodity" | "both" | "none";
+export type Dimension = "geography" | "commodity" | "both" | "category" | "none";
 
 export type Series = {
   /** Stable key for selection and URLs. */
@@ -32,6 +32,11 @@ export function geoOf(row: Observation): string | null {
 /** The commodity a figure is about, as the registry or the source named it. */
 export function commodityOf(row: Observation): string | null {
   return row.commodity_name ?? row.commodity_id ?? null;
+}
+
+/** The row of a table broken down by something else — an age group, a sector. */
+export function categoryOf(row: Observation): string | null {
+  return row.category ?? null;
 }
 
 /**
@@ -52,9 +57,16 @@ export function commodityOf(row: Observation): string | null {
  * larger than any one request, and the members of whatever page arrived answer
  * a different question.
  */
-export function dimensionOfMembers(places: number, commodities: number): Dimension {
+export function dimensionOfMembers(
+  places: number,
+  commodities: number,
+  categories = 0,
+): Dimension {
   const byPlace = places > 1;
   const byCommodity = commodities > 1;
+  // Before the place: a table of age groups is national, and its one place
+  // would otherwise claim it and draw sixteen groups as one line.
+  if (categories > 1 && !byPlace && !byCommodity) return "category";
   if (byPlace && byCommodity) return "both";
   if (byPlace) return "geography";
   if (byCommodity) return "commodity";
@@ -77,21 +89,45 @@ export function dimensionOfMembers(places: number, commodities: number): Dimensi
  */
 export function primaryAxis(dimension: Dimension): Axis | null {
   if (dimension === "commodity") return "commodity";
+  if (dimension === "category") return "category";
   if (dimension === "geography" || dimension === "both") return "geography";
   return null;
 }
 
-export type Axis = "geography" | "commodity";
+export type Axis = "geography" | "commodity" | "category";
 
 /** What to head the dimension column with. */
 export function dimensionLabel(dimension: Dimension): string {
-  return dimension === "commodity" ? "Commodity" : "Place";
+  if (dimension === "commodity") return "Commodity";
+  if (dimension === "category") return "Category";
+  return "Place";
 }
 
 /** What to call the members in prose — "across 31 commodities". */
 export function dimensionNoun(dimension: Dimension, count: number): string {
   const plural = count !== 1;
   if (dimension === "commodity") return plural ? "commodities" : "commodity";
+  if (dimension === "category") return plural ? "categories" : "category";
   if (dimension === "both") return plural ? "series" : "series";
   return plural ? "places" : "place";
+}
+
+/**
+ * Categories in the order a table prints them, as near as their labels say.
+ *
+ * By leading number, then by name — the order the API gives the facet. Plain
+ * text order reads age groups 10-14, 15-19, 5-9, and Silver keeps no record of
+ * the row order the publisher used.
+ */
+export function compareCategories(a: string, b: string): number {
+  const lead = (label: string) => {
+    const match = /^\d+/.exec(label);
+    return match ? Number(match[0]) : null;
+  };
+  const left = lead(a);
+  const right = lead(b);
+  if (left !== null && right !== null && left !== right) return left - right;
+  if (left !== null && right === null) return -1;
+  if (left === null && right !== null) return 1;
+  return a.localeCompare(b);
 }

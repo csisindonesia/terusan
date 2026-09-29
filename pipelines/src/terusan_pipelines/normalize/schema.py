@@ -111,6 +111,12 @@ SILVER_OBSERVATIONS = pa.schema(
         pa.field("geo_name_raw", pa.string()),
         pa.field("commodity_id", pa.string()),
         pa.field("commodity_name_raw", pa.string()),
+        # The row of a table broken down by something that is neither a place
+        # nor a commodity — an age group, a sector, an education level — as
+        # the publisher labels it. Part of the observation's identity, like
+        # the place: BPS's table of Indonesian speakers by age group is one
+        # series across sixteen groups, not sixteen series of one figure each.
+        pa.field("category", pa.string()),
         pa.field("release_date", pa.date32()),
         pa.field("revision", pa.int32()),
         *SILVER_PROVENANCE_FIELDS,

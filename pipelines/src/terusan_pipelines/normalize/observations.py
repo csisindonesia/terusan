@@ -94,6 +94,11 @@ class ColumnMapping:
     #: figure carries a `commodity_id` rather than a label.
     commodity: str | None = None
 
+    #: The column naming a row's category, for a table broken down by
+    #: something other than place or commodity. Taken as printed: categories
+    #: have no registry, and an age group needs none to be told apart.
+    category_column: str | None = None
+
     unit_column: str | None = None
     unit: str | None = None
 
@@ -149,6 +154,7 @@ def observation_id(
     period: str,
     geo: str | None,
     commodity: str | None,
+    category: str | None = None,
 ) -> str:
     """A stable identifier for one observation.
 
@@ -162,8 +168,14 @@ def observation_id(
     is forty series and not one. Keying on the identifier alone would collapse
     them onto a single id and leave forty different figures claiming to be the
     same observation.
+
+    The category joins the key only where there is one, so every series
+    normalized before the dimension existed keeps the ids it was given.
     """
-    key = "|".join([indicator_id, period, geo or "", commodity or ""])
+    parts = [indicator_id, period, geo or "", commodity or ""]
+    if category:
+        parts.append(category)
+    key = "|".join(parts)
     return f"obs_{hashlib.sha256(key.encode()).hexdigest()[:20]}"
 
 
@@ -218,6 +230,11 @@ class ObservationNormalizer:
         mapping = self._mapping
         geo_id, geo_raw = self._resolve_geo(columns, outcome)
         commodity_id, commodity_raw = self._resolve_commodity(columns, outcome)
+        category = (
+            (columns.get(mapping.category_column) or "").strip() or None
+            if mapping.category_column
+            else None
+        )
 
         if mapping.is_wide:
             names = (
@@ -258,7 +275,9 @@ class ObservationNormalizer:
                 outcome.unparseable_values += 1
 
             outcome.observations += 1
-            yield self._row(record, period, parsed, geo_id, geo_raw, commodity_id, commodity_raw)
+            yield self._row(
+                record, period, parsed, geo_id, geo_raw, commodity_id, commodity_raw, category
+            )
 
     def _row(
         self,
@@ -269,6 +288,7 @@ class ObservationNormalizer:
         geo_raw: str | None,
         commodity_id: str | None,
         commodity_raw: str | None,
+        category: str | None,
     ) -> dict[str, Any]:
         mapping = self._mapping
         columns = _columns_of(record)
@@ -283,6 +303,7 @@ class ObservationNormalizer:
                 period.label,
                 geo_id or geo_raw,
                 commodity_id or commodity_raw,
+                category,
             ),
             "indicator_id": mapping.indicator_id,
             "period": period.label,
@@ -298,6 +319,7 @@ class ObservationNormalizer:
             "geo_name_raw": geo_raw,
             "commodity_id": commodity_id,
             "commodity_name_raw": commodity_raw,
+            "category": category,
             "release_date": _as_date(record.get("published_at")),
             "revision": None,
             "source_id": record.get("source_id") or "unknown",

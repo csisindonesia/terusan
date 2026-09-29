@@ -785,28 +785,29 @@ func (s *Server) seriesFigures(
 	}
 	rows, err := s.warehouse.DB().QueryContext(ctx, fmt.Sprintf(`
 		SELECT o.geo_id, %s AS place, %s AS commodity, any_value(o.commodity_name_raw) AS printed,
-		       count(*) AS n
+		       o.category, count(*) AS n
 		FROM %s WHERE o.indicator_id = ? AND o.value IS NOT NULL
-		GROUP BY 1, 2, 3 ORDER BY n DESC LIMIT 2000`,
+		GROUP BY 1, 2, 3, 5 ORDER BY n DESC LIMIT 2000`,
 		memberGeoExpr, memberCommodityExpr, from), indicator)
 	if err != nil {
 		return "", nil, err
 	}
 	type member struct {
-		geo, place, commodity, printed *string
-		n                              int64
-		score                          int
+		geo, place, commodity, printed, category *string
+		n                                        int64
+		score                                    int
 	}
 	var best *member
 	for rows.Next() {
 		var m member
-		if err := rows.Scan(&m.geo, &m.place, &m.commodity, &m.printed, &m.n); err != nil {
+		if err := rows.Scan(&m.geo, &m.place, &m.commodity, &m.printed, &m.category, &m.n); err != nil {
 			rows.Close()
 			return "", nil, err
 		}
 		for _, term := range terms {
 			if len([]rune(term)) >= 4 && (strings.Contains(lower(m.place), term) ||
-				strings.Contains(lower(m.commodity), term)) {
+				strings.Contains(lower(m.commodity), term) ||
+				strings.Contains(lower(m.category), term)) {
 				m.score += 4
 			}
 			// "Rice" over "Rice — low grade II" for the word rice.
@@ -821,7 +822,7 @@ func (s *Server) seriesFigures(
 			m.score++
 		}
 		// The one the reader confirmed, over anything the words suggest.
-		if want != "" && memberName(m.place, m.commodity, m.printed) == want {
+		if want != "" && withCategory(memberName(m.place, m.commodity, m.printed), m.category) == want {
 			m.score += 1000
 		}
 		// The first of equals has the most figures: the rows come that way.
@@ -846,10 +847,13 @@ func (s *Server) seriesFigures(
 		  AND o.geo_id IS NOT DISTINCT FROM ?
 		  AND %s IS NOT DISTINCT FROM ?
 		  AND %s IS NOT DISTINCT FROM ?
+		  AND o.category IS NOT DISTINCT FROM ?
 		GROUP BY 1 ORDER BY 1`,
 		bucketExpr(granularity), from, memberGeoExpr, memberCommodityExpr)
+	// The category too: averaging a period across a table's age groups draws
+	// a line no table printed.
 	figureRows, err := s.warehouse.DB().QueryContext(ctx, query,
-		indicator, best.geo, best.place, best.commodity)
+		indicator, best.geo, best.place, best.commodity, best.category)
 	if err != nil {
 		return "", nil, err
 	}
@@ -864,7 +868,20 @@ func (s *Server) seriesFigures(
 			figures[period] = *value
 		}
 	}
-	return memberName(best.place, best.commodity, best.printed), figures, figureRows.Err()
+	return withCategory(memberName(best.place, best.commodity, best.printed), best.category),
+		figures, figureRows.Err()
+}
+
+// withCategory names a member together with the category it is drawn for,
+// where the series has one: "Indonesia — 35-39".
+func withCategory(name string, category *string) string {
+	if category == nil || *category == "" {
+		return name
+	}
+	if name == "" {
+		return *category
+	}
+	return name + " — " + *category
 }
 
 // granularityOf is the bucket a series' own resolution is drawn in. A daily

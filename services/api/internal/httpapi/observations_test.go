@@ -107,7 +107,10 @@ func TestFreeTextFindsAPeriod(t *testing.T) {
 	if !strings.Contains(where, "o.period ILIKE ?") {
 		t.Errorf("where clause %q does not search the period label", where)
 	}
-	if len(args) != 5 {
+	if !strings.Contains(where, "o.category ILIKE ?") {
+		t.Errorf("where clause %q does not search the category", where)
+	}
+	if len(args) != 6 {
 		t.Errorf("bound %d patterns, want one per searched column: %v", len(args), args)
 	}
 }
@@ -127,5 +130,20 @@ func TestACollectionScopeReplacesTheIndicatorFilter(t *testing.T) {
 	}
 	if len(f.Indicators) != len(scope) || f.Indicators[0] != scope[0] {
 		t.Fatalf("Indicators = %d, want the %d in scope", len(f.Indicators), len(scope))
+	}
+}
+
+func TestACategoryNarrowsByTheLabelAsPrinted(t *testing.T) {
+	// Categories have no registry: `75+` and `Tidak Mampu` are all there is.
+	f, err := observationParams(observationRequest("category", "75+", "category", "Tidak Mampu"))
+	if err != nil {
+		t.Fatalf("observationParams: %v", err)
+	}
+	where, args := observationFilters(f)
+	if !strings.Contains(where, "o.category IN (?, ?)") {
+		t.Errorf("where clause %q does not narrow by category", where)
+	}
+	if len(args) != 2 {
+		t.Errorf("bound %d values, want 2: %v", len(args), args)
 	}
 }

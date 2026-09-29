@@ -27,6 +27,20 @@ gets an empty `region_code` (see `region_code`).
 **The place to resolve on** is `geo`: the code where the code can be trusted,
 and BPS's label where it cannot (see `geo_key`).
 
+**The series** is the variable and its breakdown (`2805.2344`: speakers of
+Indonesian by age group, the total). Where a table's rows are not places — age
+groups, sectors, education levels — the row is `category`, a dimension of the
+series rather than part of its name: a table of sixteen age groups is one
+series across sixteen categories. Split into one series per row, as it once
+was, most of them held a single figure, and a reader had no way to see the
+table they came from.
+
+That regrouping did not bump `PARSER_VERSION`. A bump re-reads the whole
+corpus, and for the news that means coding every article again, the doubtful
+ones by a paid model, to change nothing but BPS. BPS's Bronze is a partition of
+its own (`source_id=bps-indicators`), so it was rebuilt alone: the partition
+moved aside and the source extracted again.
+
 **The period** is the year plus the sub-period label: a month name makes a
 month (`2026-02`), `Semester 1 (Maret)` the month in its brackets — the survey
 month, which is what the figure describes — `Triwulan I` a quarter, and `Tahun`
@@ -108,23 +122,55 @@ def is_regional(labelvervar: Any) -> bool:
     return bool(_REGIONAL.search(str(labelvervar or "")))
 
 
-def series_key(var_id: str, turvar: str, vervar: str | None = None) -> str:
-    """BPS's own coordinates for one series: variable, breakdown and — for a
-    table whose rows are not places — the row."""
-    return ".".join(p for p in (var_id, turvar, vervar) if p is not None)
+def series_key(var_id: str, turvar: str) -> str:
+    """BPS's own coordinates for one series: the variable and its breakdown."""
+    return f"{var_id}.{turvar}"
 
 
 def indicator_id(series: str) -> str:
     return short_id(SOURCE_SLUG, series)
 
 
-def series_name(title: str, breakdown: str, category: str) -> str:
+def series_name(title: str, breakdown: str) -> str:
     parts = [title]
     if breakdown.lower() not in _NO_BREAKDOWN:
         parts.append(breakdown)
-    if category:
-        parts.append(category)
     return " — ".join(parts)
+
+
+def categories_of(rows: list[dict[str, Any]]) -> dict[str, str]:
+    """Each row's category, by `vervar`, unique within the table.
+
+    BPS flattens a hierarchy into one list, so a label can appear twice:
+    `Mobil Penumpang` is imported both as a consumer good and as capital
+    goods, each under its own heading. Once the row stopped being part of
+    the series' identity, the two collided on one observation. A repeated
+    label is qualified by the heading above it — the nearest row BPS bolds or
+    writes in capitals — and by BPS's row id where even that repeats.
+    """
+    labels = [(str(row.get("val")), clean(row.get("label"))) for row in rows]
+    seen: dict[str, int] = {}
+    for _, label in labels:
+        seen[label] = seen.get(label, 0) + 1
+
+    named: dict[str, str] = {}
+    heading = ""
+    for row, (vervar, label) in zip(rows, labels, strict=True):
+        raw = str(row.get("label") or "")
+        if "<b>" in raw.lower() or (label.isupper() and any(c.isalpha() for c in label)):
+            heading = label
+        name = label
+        if seen[label] > 1 and heading and heading != label:
+            name = f"{label} — {heading}"
+        named[vervar] = name
+
+    counts: dict[str, int] = {}
+    for name in named.values():
+        counts[name] = counts.get(name, 0) + 1
+    return {
+        vervar: (f"{name} [{vervar}]" if counts[name] > 1 else name)
+        for vervar, name in named.items()
+    }
 
 
 def region_code(vervar: str) -> str:
@@ -266,6 +312,8 @@ class BpsDataExtractor(Extractor):
         # normalization can leave it out, kept so nothing is lost.
         sub_annual = any(clean(p.get("label")).lower() not in _ANNUAL for p in periods)
 
+        categories = {} if rows_are_places else categories_of(rows)
+
         number_ = 0
         for row in rows:
             vervar = str(row.get("val"))
@@ -274,14 +322,14 @@ class BpsDataExtractor(Extractor):
                 geo, category = geo_key(vervar, row_label), ""
             else:
                 # A national table broken down by something other than place:
-                # age group, sector, urban and rural. The row is part of what
-                # the series is, and the place is the country.
-                geo, category = "IDN", row_label
+                # age group, sector, urban and rural. The row is the series'
+                # category, and the place is the country.
+                geo, category = "IDN", categories[vervar]
             for breakdown in breakdowns:
                 turvar = str(breakdown.get("val"))
                 breakdown_label = clean(breakdown.get("label"))
-                series = series_key(var_id, turvar, vervar if category else None)
-                name = series_name(title, breakdown_label, category)
+                series = series_key(var_id, turvar)
+                name = series_name(title, breakdown_label)
                 for year in years:
                     th = str(year.get("val"))
                     year_label = clean(year.get("label"))
