@@ -16,6 +16,7 @@ from .fred import FredExtractor, FredSeriesPageExtractor
 from .gdelt import GdeltExtractor
 from .hdx_mobility import MovementDistributionExtractor
 from .menpan import MenpanHolidaysExtractor
+from .ojk_sjk import OjkSjkExtractor
 from .pihps import PihpsPricesExtractor
 from .runner import (
     DEFAULT_EXTRACTORS,
@@ -53,6 +54,7 @@ __all__ = [
     "PARSER_VERSION",
     "PIPELINE_VERSION",
     "BnpbDatastoreExtractor",
+    "OjkSjkExtractor",
     "ConsumerSurveyExtractor",
     "CsvExtractor",
     "DjpkApbdExtractor",

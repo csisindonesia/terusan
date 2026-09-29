@@ -36,6 +36,7 @@ from .gdelt import GdeltExtractor
 from .hdx_mobility import MovementDistributionExtractor
 from .menpan import MenpanHolidaysExtractor
 from .news import NewsArticleExtractor, NewsScreenshotExtractor, NewsTallyExtractor
+from .ojk_sjk import OjkSjkExtractor
 from .pihps import PihpsPricesExtractor
 from .seki import SekiExtractor
 from .sina import SinaFuturesExtractor
@@ -131,6 +132,8 @@ DEFAULT_EXTRACTORS: tuple[Extractor, ...] = (
     # Before the generic JSON reader, which sees CKAN's envelope as one object
     # and turns a whole table of disaster figures into a single row.
     BnpbDatastoreExtractor(),
+    # Same reason: OJK's grid export wraps a page of facts in one object.
+    OjkSjkExtractor(),
     # Before the archive reader, which claims every `.zip` and finds no
     # workbook in this one — and before the generic CSV reader, which would
     # land every country UCDP reports on as rows of seventy unnamed numbers.

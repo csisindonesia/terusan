@@ -89,7 +89,7 @@ something today.
 | 2 | BPS Statistics Indonesia | Critical | `bps-webapi` | collecting (catalogues) |
 | 3 | PODES / Village Potential Statistics | Critical | `bps-podes` | registered, gated |
 | 4 | Bank Indonesia Statistics | Critical | `bi-seki`, `bi-sdds-real-sector`, `bi-consumer-survey`, `bi-retail-sales-survey`, `bi-pihps-food-prices` | collecting |
-| 5 | OJK Statistics | High | `ojk-banking-spi`, `ojk-fintech-p2p` | collecting |
+| 5 | OJK Statistics | High | `ojk-banking-spi` (to June 2025), `ojk-banking-sjk` (July 2025 on), `ojk-fintech-p2p` | collecting |
 | 6 | Satu Data Perdagangan | Critical | `kemendag-satudata`, `kemendag-sp2kp-prices` | collecting |
 | 7 | APBN KiTa / Fiscal Data | High | `kemenkeu-apbn-kita` | registered, gated |
 | 8 | DJPK Data Portal | Critical | `djpk-apbd` | collecting |

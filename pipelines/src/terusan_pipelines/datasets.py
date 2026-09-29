@@ -1106,6 +1106,66 @@ DATASETS: tuple[DatasetMeta, ...] = (
         tags=("elections", "candidates", "parties", "democracy", "governance"),
     ),
     DatasetMeta(
+        slug="ojk-banking-figures",
+        title="Indonesian banking statistics (OJK SJK)",
+        source="ojk-banking-sjk",
+        description=(
+            "The series the Statistik Perbankan Indonesia printed, summed each "
+            "month from OJK's SJK cubes: commercial bank deposits by type and "
+            "currency, credit by purpose, orientation and business size, "
+            "non-performing credit by grade, and rural bank deposits — per "
+            "province and for the country, in Rupiah."
+        ),
+        tags=("banking", "deposits", "credit", "npl", "msme", "finance", "provinces", "ojk"),
+    ),
+    DatasetMeta(
+        slug="ojk-commercial-bank-deposits",
+        title="Commercial bank deposits by province (OJK SJK)",
+        source="ojk-banking-sjk",
+        description=(
+            "Third-party funds held by commercial banks each month from 2023, "
+            "by bank group, KBMI tier, currency, deposit type, province and "
+            "regency, as OJK's SJK portal exports them. The rows behind SPI "
+            "tables 1.33.a and 1.34.a after the workbook stopped in June 2025."
+        ),
+        tags=("banking", "deposits", "dpk", "finance", "provinces", "ojk"),
+    ),
+    DatasetMeta(
+        slug="ojk-commercial-bank-credit",
+        title="Commercial bank credit by province (OJK SJK)",
+        source="ojk-banking-sjk",
+        description=(
+            "Commercial bank credit and financing each month from 2023, by "
+            "province, purpose, orientation, economic sector, business size and "
+            "credit quality, as OJK's SJK portal exports them. The rows behind "
+            "SPI tables 3.12.a, 3.13.a and 3.22.a, including non-performing "
+            "loans and MSME lending."
+        ),
+        tags=("banking", "credit", "npl", "msme", "finance", "provinces", "ojk"),
+    ),
+    DatasetMeta(
+        slug="ojk-commercial-bank-offices",
+        title="Commercial bank head offices (OJK SJK)",
+        source="ojk-banking-sjk",
+        description=(
+            "Commercial bank head offices each month by bank group and KBMI "
+            "tier, nationally. The SJK portal publishes no province breakdown "
+            "of offices, so SPI table 1.43.a continues only in part."
+        ),
+        tags=("banking", "offices", "finance", "ojk"),
+    ),
+    DatasetMeta(
+        slug="ojk-rural-bank-deposits",
+        title="Rural bank deposits by province (OJK SJK)",
+        source="ojk-banking-sjk",
+        description=(
+            "Savings and time deposits held by conventional rural banks (BPR) "
+            "each month by province, as OJK's SJK portal exports them. The "
+            "rows behind SPI table 2.8."
+        ),
+        tags=("banking", "bpr", "rural-banks", "deposits", "finance", "provinces", "ojk"),
+    ),
+    DatasetMeta(
         slug="osm-editions",
         title="OpenStreetMap Indonesia extract editions",
         source="osm-geofabrik",

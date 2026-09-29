@@ -407,6 +407,12 @@ adb-silver: ## Land ADB's Key Indicators for Indonesia, extract and normalize in
 	cd pipelines && uv run terusan warehouse extract statistics adb-kidb
 	@./scripts/normalize-adb.sh
 
+.PHONY: ojk-silver
+ojk-silver: ## Land OJK's banking statistics from the SJK portal, extract and normalize into Silver
+	cd pipelines && uv run terusan sources run ojk-banking-sjk
+	cd pipelines && uv run terusan warehouse extract statistics ojk-banking-sjk
+	@./scripts/normalize-ojk.sh
+
 .PHONY: dedupe
 dedupe: ## Delete Silver series another source publishes more completely (dry run: make dedupe DRY=1)
 	cd pipelines && uv run terusan silver dedupe $(if $(DRY),--dry-run,)

@@ -134,7 +134,11 @@ from typing import Any
 #: 23: The SKB 3 Menteri on national holidays and cuti bersama are read by
 #:     OCR into one record per holiday date. The generic PDF reader found no
 #:     text in the scans at all.
-PARSER_VERSION = "23"
+#: 24: OJK's SJK cubes are read a whole month at a time and summed into the
+#:     series the SPI printed, under `ojk-banking-figures`. The pages of ten
+#:     thousand rows the first run landed are skipped: a page is part of a
+#:     month, and its rows are in the whole-month artifact beside it.
+PARSER_VERSION = "24"
 
 
 class ExtractionError(Exception):
