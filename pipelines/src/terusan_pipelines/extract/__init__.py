@@ -15,6 +15,7 @@ from .documents import HtmlExtractor, PdfExtractor, TextExtractor, collapse
 from .fred import FredExtractor, FredSeriesPageExtractor
 from .gdelt import GdeltExtractor
 from .hdx_mobility import MovementDistributionExtractor
+from .kemkes_workforce import KemkesWorkforceExtractor
 from .menpan import MenpanHolidaysExtractor
 from .ojk_sjk import OjkSjkExtractor
 from .pihps import PihpsPricesExtractor
@@ -55,6 +56,7 @@ __all__ = [
     "PIPELINE_VERSION",
     "BnpbDatastoreExtractor",
     "OjkSjkExtractor",
+    "KemkesWorkforceExtractor",
     "ConsumerSurveyExtractor",
     "CsvExtractor",
     "DjpkApbdExtractor",

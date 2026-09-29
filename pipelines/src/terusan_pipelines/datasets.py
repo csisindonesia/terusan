@@ -1076,6 +1076,68 @@ DATASETS: tuple[DatasetMeta, ...] = (
         tags=("health", "facilities", "indicators", "public-health", "kemenkes"),
     ),
     DatasetMeta(
+        slug="kemkes-sdmk-figures",
+        title="Indonesian health workforce planning (Kemenkes SATUSEHAT)",
+        source="kemkes-sdmk-planning",
+        description=(
+            "The health ministry's workforce planning dashboard as series: "
+            "health workers registered in SISDMK by profession and profession "
+            "family; workers needed to fill facilities with no one of "
+            "a priority profession, and the shortfall against minimum staffing "
+            "standards; and the supply-demand projection of need, existing "
+            "workers and gap per profession to 2032 — per province and for the "
+            "country."
+        ),
+        tags=("health", "workforce", "doctors", "nurses", "planning", "provinces", "kemenkes"),
+    ),
+    DatasetMeta(
+        slug="kemkes-sdmk-distribution",
+        title="Health workers by regency (SISDMK)",
+        source="kemkes-sdmk-planning",
+        description=(
+            "The SISDMK register's headcount of health workers per regency, "
+            "profession and employment type, for every family of professions "
+            "the planning dashboard offers — doctors, health workers and "
+            "support staff — one monthly snapshot per run."
+        ),
+        tags=("health", "workforce", "regencies", "civil-service", "kemenkes"),
+    ),
+    DatasetMeta(
+        slug="kemkes-sdmk-vacancies",
+        title="Health facility vacancies by province (SATUSEHAT)",
+        source="kemkes-sdmk-planning",
+        description=(
+            "The dashboard's vacancy tables: hospitals, public health labs, "
+            "puskesmas and pustu with no worker of a priority profession, the "
+            "shortfall against minimum staffing standards, and the per-hospital "
+            "listing of the seven priority specialists by employment status."
+        ),
+        tags=("health", "workforce", "vacancies", "hospitals", "puskesmas", "kemenkes"),
+    ),
+    DatasetMeta(
+        slug="kemkes-sdmk-demand",
+        title="Health workforce supply and demand projection (SATUSEHAT)",
+        source="kemkes-sdmk-planning",
+        description=(
+            "Projected need, existing workers and gap per province, for each "
+            "health profession from 2023 to 2032 and each medical specialty for "
+            "the year the dashboard shows."
+        ),
+        tags=("health", "workforce", "projections", "doctors", "specialists", "kemenkes"),
+    ),
+    DatasetMeta(
+        slug="kemkes-sdmk-workload",
+        title="Health workforce workload analysis (SATUSEHAT)",
+        source="kemkes-sdmk-planning",
+        description=(
+            "Need by workload analysis (ABK), existing civil servants and gap per "
+            "province and career grade, for regional government and for central "
+            "ministries and agencies. The dashboard does not say which year the "
+            "need was computed for."
+        ),
+        tags=("health", "workforce", "civil-service", "workload", "kemenkes"),
+    ),
+    DatasetMeta(
         slug="kemnaker-portal",
         title="Satu Data Ketenagakerjaan portal",
         source="kemnaker-satudata",

@@ -34,6 +34,7 @@ from .documents import HtmlExtractor, PdfExtractor, TextExtractor
 from .fred import FredExtractor, FredSeriesPageExtractor
 from .gdelt import GdeltExtractor
 from .hdx_mobility import MovementDistributionExtractor
+from .kemkes_workforce import KemkesWorkforceExtractor
 from .menpan import MenpanHolidaysExtractor
 from .news import NewsArticleExtractor, NewsScreenshotExtractor, NewsTallyExtractor
 from .ojk_sjk import OjkSjkExtractor
@@ -134,6 +135,9 @@ DEFAULT_EXTRACTORS: tuple[Extractor, ...] = (
     BnpbDatastoreExtractor(),
     # Same reason: OJK's grid export wraps a page of facts in one object.
     OjkSjkExtractor(),
+    # And SATUSEHAT's workforce register is a DataTables envelope; its pages
+    # are HTML the generic reader would take as prose, headers and all.
+    KemkesWorkforceExtractor(),
     # Before the archive reader, which claims every `.zip` and finds no
     # workbook in this one — and before the generic CSV reader, which would
     # land every country UCDP reports on as rows of seventy unnamed numbers.

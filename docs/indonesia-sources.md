@@ -76,7 +76,9 @@ the paperwork.
   publicly.
 - **`data.kemkes.go.id` and `satudata.kkp.go.id` do not resolve.** Health data
   is reachable through SATUSEHAT's data room instead; fisheries is not reachable
-  at all.
+  at all. The room's workforce planning dashboard is an iframe onto
+  `dreams.kemkes.go.id`, a separate application, which `kemkes-sdmk-planning`
+  reads directly.
 
 ## Row by row
 
@@ -115,7 +117,7 @@ something today.
 | 28 | MAGMA Indonesia | High | `esdm-magma` | registered, gated |
 | 29 | KLHK Environmental Data / Geoportal | Critical | `klhk-environment` | collecting |
 | 30 | Geoportal KLHK | High | `klhk-geoportal` | registered, gated |
-| 31 | SATUSEHAT Data / Kemenkes Data | High | `kemkes-health-data` | collecting |
+| 31 | SATUSEHAT Data / Kemenkes Data | High | `kemkes-health-data`, `kemkes-sdmk-planning` (workforce planning) | collecting |
 | 32 | Satu Data Kesehatan / Kemenkes | High | `kemkes-health-data` | collecting |
 | 33 | Referensi Data Pendidikan | Critical | `kemdikbud-referensi` | collecting |
 | 34 | Rapor Pendidikan / Education Statistics | Medium | `kemdikbud-rapor-pendidikan` | registered, gated |
