@@ -35,10 +35,19 @@
 #
 # **A slice at a time.** The whole history is six million Bronze rows, and
 # `normalize-each` holds what it reads in memory — which on an 8 GB machine is
-# how the first attempt ended. So the variables are read in batches
-# (BPS_NORMALIZE_BATCH, 150 by default), each with `--include var_id=…`, which
-# filters in the scan. A batch adds its series' names to the indicators table
-# rather than replacing it.
+# how the first attempt ended. So the variables are read in batches, each with
+# `--include var_id=…`, which filters in the scan. A batch adds its series'
+# names to the indicators table rather than replacing it.
+#
+# Batches are packed by Bronze rows (BPS_NORMALIZE_ROWS, 200,000 by default),
+# not by a count of variables. Variables differ in size by four orders of
+# magnitude — a regency table of every month holds 130,000 rows, a national
+# yearly figure a dozen — so a batch of 75 variables was 5,000 rows or over a
+# million depending on where in the catalogue it fell. On the NAS the large
+# ones were stopped by earlyoom, which sends SIGTERM rather than letting the
+# kernel's OOM killer in, and a process stopped that way writes no summary to
+# the run journal: three batches' series were simply absent. A variable larger
+# than the budget gets a batch of its own.
 #
 # Idempotent: normalization rebuilds each indicator from scratch.
 
@@ -46,38 +55,53 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-BATCH="${BPS_NORMALIZE_BATCH:-150}"
+BUDGET="${BPS_NORMALIZE_ROWS:-200000}"
 
-# Every variable Bronze holds, read in the scan so nothing else is loaded.
-# Without its progress bar: on a slow machine DuckDB draws one on stdout,
-# and the bar's characters become variable ids.
-VARS=$(uv --project pipelines run python -c '
+# Every variable Bronze holds at the current parser version, with its size,
+# packed into batches in the scan so nothing else is loaded. One line per
+# batch, the variable ids comma-separated. Without its progress bar: on a slow
+# machine DuckDB draws one on stdout, and the bar's characters become ids.
+BATCHES=$(BUDGET="$BUDGET" uv --project pipelines run python -c '
+import os
 import duckdb
 duckdb.sql("SET enable_progress_bar = false")
+from terusan_pipelines.extract.base import PARSER_VERSION
 from terusan_pipelines.storage import Layer, StorageConfig, StorageResolver
 pattern = StorageResolver(StorageConfig()).glob(Layer.BRONZE, "records")
 rows = duckdb.sql(
-    "SELECT DISTINCT CAST(columns[$$var_id$$] AS INTEGER) v FROM read_parquet($p, "
+    "SELECT CAST(columns[$$var_id$$] AS INTEGER) v, count(*) n FROM read_parquet($p, "
     "union_by_name=true, hive_partitioning=true) "
-    "WHERE source_id = $$bps-indicators$$ AND columns[$$var_id$$] IS NOT NULL ORDER BY 1",
-    params={"p": pattern},
+    "WHERE source_id = $$bps-indicators$$ AND parser_version = $version "
+    "AND columns[$$var_id$$] IS NOT NULL GROUP BY 1 ORDER BY 1",
+    params={"p": pattern, "version": PARSER_VERSION},
 ).fetchall()
-print(" ".join(str(r[0]) for r in rows))
+budget = int(os.environ["BUDGET"])
+batch, size = [], 0
+for var_id, count in rows:
+    if batch and size + count > budget:
+        print(",".join(batch))
+        batch, size = [], 0
+    batch.append(str(var_id))
+    size += count
+if batch:
+    print(",".join(batch))
 ')
 
-read -r -a ids <<<"$VARS"
-echo "normalizing ${#ids[@]} BPS variables, $BATCH at a time"
+mapfile -t batches <<<"$BATCHES"
+echo "normalizing BPS in ${#batches[@]} batches of at most $BUDGET Bronze rows"
 
 # A batch with a failing series exits non-zero after normalizing the rest of
 # its series; the other batches still run, and the script fails at the end.
+# A batch that was stopped outright — exit 143 for SIGTERM, 137 for SIGKILL —
+# is named, because it left nothing in the journal to say which it was.
 failed=0
-for ((i = 0; i < ${#ids[@]}; i += BATCH)); do
-  batch=$(IFS=,; echo "${ids[*]:i:BATCH}")
+for ((i = 0; i < ${#batches[@]}; i++)); do
+  status=0
   uv --project pipelines run terusan silver normalize-each \
     --by indicator \
     --dataset bps-indicators \
     --source bps-indicators \
-    --include "var_id=$batch" \
+    --include "var_id=${batches[i]}" \
     --exclude period_kind=summary \
     --period-column period \
     --value-column value \
@@ -86,7 +110,13 @@ for ((i = 0; i < ${#ids[@]}; i += BATCH)); do
     --name-column series_name \
     --code-column series_code \
     --number-format en \
-    "$@" || failed=$((failed + 1))
+    "$@" || status=$?
+  if ((status)); then
+    failed=$((failed + 1))
+    if ((status >= 128)); then
+      echo "batch $((i + 1)) was stopped by signal $((status - 128)): var_id=${batches[i]}" >&2
+    fi
+  fi
 done
 
 if ((failed)); then
