@@ -22,25 +22,35 @@
 
 import { useSyncExternalStore } from "react";
 
-import { api, type ShelfCollection, type ShelfQuery } from "~/lib/api";
+import {
+  api,
+  type ShelfCollection,
+  type ShelfPerson,
+  type ShelfQuery,
+  type ShelfRole,
+} from "~/lib/api";
 
 export const WORKSPACE_STORAGE_KEY = "terusan.workspace";
 
 /** Bumped when a stored shape stops being readable by this code. */
 const VERSION = 1;
 
-/** The kinds of record a collection can hold — one per catalogue the portal has. */
+/**
+ * The kinds of record the portal can offer to file. Pages still describe what
+ * they show in these terms, but a collection holds only the first: it is a
+ * set of series, whose figures it opens, combines and serves under its own
+ * API, and a document has no figures to serve.
+ */
 export type ItemKind =
   "indicator" | "dataset" | "document" | "regulation" | "commodity" | "topic";
 
-export const ITEM_KINDS: ItemKind[] = [
-  "indicator",
-  "dataset",
-  "document",
-  "regulation",
-  "commodity",
-  "topic",
-];
+/** What a collection holds. */
+export const ITEM_KINDS: ItemKind[] = ["indicator"];
+
+/** Whether a record can go in a collection. */
+export function collectable(item: { kind: ItemKind }): boolean {
+  return ITEM_KINDS.includes(item.kind);
+}
 
 /** What to call a kind in a heading, singular and plural. */
 export const ITEM_KIND_LABELS: Record<ItemKind, { one: string; many: string }> = {
@@ -73,7 +83,28 @@ export type Collection = {
   created_at: string;
   updated_at: string;
   items: CollectionItem[];
+  /** Whether its figures are served through its own API path. */
+  api?: boolean;
+  /**
+   * The reader's part in it, where the deployment has owners. Absent in a
+   * browser-kept shelf, where everything is the reader's own.
+   */
+  role?: ShelfRole;
+  owner?: ShelfPerson;
+  members?: CollectionMember[];
 };
+
+export type CollectionMember = ShelfPerson & { added_at: string };
+
+/** Whether the reader may rename or delete it — not only file into it. */
+export function managesCollection(collection: Collection): boolean {
+  return collection.role !== "member";
+}
+
+/** A person as a list shows them: their name, or the address they sign in with. */
+export function personLabel(person: ShelfPerson | undefined): string {
+  return person?.name || person?.email || "a deleted account";
+}
 
 /**
  * The page a saved query reopens.
@@ -133,6 +164,8 @@ export type ShelfStatus = {
   /** `loading` until the API has been asked which it is. */
   mode: "loading" | "server" | "local";
   writable: boolean;
+  /** Whether folders have owners and members, which needs accounts. */
+  members: boolean;
   /** What the last write or sync said when it failed. */
   error?: string;
 };
@@ -150,7 +183,11 @@ const EMPTY: Workspace = Object.freeze({
   queries: [],
 }) as Workspace;
 
-const LOADING: ShelfStatus = Object.freeze({ mode: "loading", writable: false });
+const LOADING: ShelfStatus = Object.freeze({
+  mode: "loading",
+  writable: false,
+  members: false,
+});
 
 let cache: Workspace | null = null;
 let status: ShelfStatus = LOADING;
@@ -312,6 +349,10 @@ function fromServerCollection(collection: ShelfCollection): Collection {
         note: item.note || undefined,
         added_at: item.added_at,
       })),
+    api: collection.api ?? false,
+    role: collection.role,
+    owner: collection.owner,
+    members: collection.members ?? [],
   };
 }
 
@@ -342,7 +383,11 @@ async function startOnce(): Promise<void> {
   try {
     const capabilities = await api.capabilities();
     if (capabilities.data.collections) {
-      status = { mode: "server", writable: capabilities.data.collections_write };
+      status = {
+        mode: "server",
+        writable: capabilities.data.collections_write,
+        members: capabilities.data.collection_members ?? false,
+      };
       await pull();
       return;
     }
@@ -350,7 +395,7 @@ async function startOnce(): Promise<void> {
     // Fall through to the browser.
   }
 
-  status = { mode: "local", writable: true };
+  status = { mode: "local", writable: true, members: false };
   cache = readLocal();
   emit();
 }
@@ -447,6 +492,10 @@ export function createCollection(name: string, description?: string): Collection
     created_at: stamp,
     updated_at: stamp,
     items: [],
+    // Drawn as the reader's until the server's copy, with their name on it,
+    // arrives on the next read.
+    role: status.members ? "owner" : status.mode === "server" ? "shared" : undefined,
+    members: [],
   };
   if (refused()) return collection;
 
@@ -465,7 +514,7 @@ export function createCollection(name: string, description?: string): Collection
 
 export function updateCollection(
   id: string,
-  patch: { name?: string; description?: string },
+  patch: { name?: string; description?: string; api?: boolean },
 ): void {
   if (refused()) return;
   const current = snapshot();
@@ -482,6 +531,7 @@ export function updateCollection(
               patch.description === undefined
                 ? collection.description
                 : patch.description.trim() || undefined,
+            api: patch.api ?? collection.api,
             updated_at: now(),
           }
         : collection,
@@ -519,6 +569,7 @@ export function addToCollection(collectionId: string, items: NewItem[]): number 
 
   const held = new Set(target.items.map((item) => `${item.kind}:${item.id}`));
   const fresh = items
+    .filter(collectable)
     .filter((item) => !held.has(`${item.kind}:${item.id}`))
     .map((item) => ({ ...item, added_at: now() }));
   if (!fresh.length) return 0;
@@ -557,6 +608,80 @@ export function removeFromCollection(
     ),
   });
   push(() => api.removeCollectionItem(collectionId, kind, id));
+}
+
+/**
+ * Run a change after everything already queued, and hand back its answer.
+ *
+ * Membership is not drawn ahead of the server the way filing is: adding
+ * someone by address can fail for reasons only the server knows — no account
+ * has that address — and a name that appears and then vanishes is worse than
+ * a button that waits a moment.
+ */
+function queue<T>(run: () => Promise<T>): Promise<T> {
+  const result = pending.then(run);
+  pending = result.catch(() => {});
+  return result;
+}
+
+function replace(served: ShelfCollection): void {
+  const next = fromServerCollection(served);
+  const current = snapshot();
+  apply({
+    ...current,
+    collections: current.collections.map((collection) =>
+      collection.id === next.id ? next : collection,
+    ),
+  });
+}
+
+function readOnlyError(): Error | undefined {
+  if (status.mode !== "server")
+    return new Error("this deployment keeps no shared shelf");
+  if (!status.writable) return new Error("this shelf is read-only");
+  return undefined;
+}
+
+/** Let an account into a collection, by the address they sign in with. */
+export async function addMember(collectionId: string, email: string): Promise<void> {
+  const refusal = readOnlyError();
+  if (refusal) throw refusal;
+  const response = await queue(() =>
+    api.addCollectionMember(collectionId, email.trim()),
+  );
+  replace(response.data);
+}
+
+/**
+ * Take someone out of a collection. The reader taking themselves out is
+ * leaving, and the folder then goes from their shelf.
+ */
+export async function removeMember(
+  collectionId: string,
+  userId: string,
+): Promise<void> {
+  const refusal = readOnlyError();
+  if (refusal) throw refusal;
+  const response = await queue(() => api.removeCollectionMember(collectionId, userId));
+  if ("left" in response.data) {
+    const current = snapshot();
+    apply({
+      ...current,
+      collections: current.collections.filter(
+        (collection) => collection.id !== collectionId,
+      ),
+    });
+    return;
+  }
+  replace(response.data);
+}
+
+/** Make a folder from before there were owners the reader's, and private. */
+export async function claimCollection(collectionId: string): Promise<void> {
+  const refusal = readOnlyError();
+  if (refusal) throw refusal;
+  const response = await queue(() => api.claimCollection(collectionId));
+  replace(response.data);
 }
 
 /** Which collections already hold a record — what the "add" menu ticks. */

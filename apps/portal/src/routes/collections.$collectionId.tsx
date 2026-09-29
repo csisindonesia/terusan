@@ -11,6 +11,8 @@ import {
 } from "@tabler/icons-react";
 import { useState } from "react";
 
+import { CollectionApi } from "~/components/collection-api";
+import { CollectionMembers } from "~/components/collection-members";
 import { PageHeader } from "~/components/page-header";
 import { StickyHeader } from "~/components/sticky-header";
 import { Badge } from "~/components/ui/badge";
@@ -32,6 +34,7 @@ import {
   deleteCollection,
   describeSearch,
   itemsOfKind,
+  managesCollection,
   removeFromCollection,
   saveQuery,
   updateCollection,
@@ -87,7 +90,8 @@ function CollectionDetail() {
         <p className="rounded-lg border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
           {shelf.mode === "server" ? (
             <>
-              No collection with this identifier. It may have been deleted, or the link
+              No collection with this identifier that you are in. It may have been
+              deleted, it may be private to someone who has not added you, or the link
               may name a shelf on another deployment.
             </>
           ) : (
@@ -114,6 +118,8 @@ function CollectionDetail() {
     commodity: commodities.length ? commodities.map((item) => item.id) : undefined,
   };
   const hasFigures = indicators.length > 0 || commodities.length > 0;
+  // A member files and removes records; renaming and deleting are the owner's.
+  const manages = managesCollection(collection);
 
   function exportManifest() {
     if (!collection) return;
@@ -148,6 +154,8 @@ function CollectionDetail() {
               description={collection.description}
               actions={
                 <>
+                  <CollectionMembers collection={collection} />
+
                   <Button
                     variant="outline"
                     size="sm"
@@ -202,10 +210,12 @@ function CollectionDetail() {
                         }
                       />
                       <DropdownMenuContent align="end" className="w-52">
-                        <DropdownMenuItem onClick={() => setEditing((on) => !on)}>
-                          <IconPencil />
-                          Rename
-                        </DropdownMenuItem>
+                        {manages ? (
+                          <DropdownMenuItem onClick={() => setEditing((on) => !on)}>
+                            <IconPencil />
+                            Rename
+                          </DropdownMenuItem>
+                        ) : null}
                         <DropdownMenuItem
                           disabled={!hasFigures}
                           onClick={() =>
@@ -228,16 +238,18 @@ function CollectionDetail() {
                           <IconDownload />
                           Export list (CSV)
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onClick={() => {
-                            deleteCollection(collection.id);
-                            void navigate({ to: "/collections" });
-                          }}
-                        >
-                          <IconTrash />
-                          Delete collection
-                        </DropdownMenuItem>
+                        {manages ? (
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onClick={() => {
+                              deleteCollection(collection.id);
+                              void navigate({ to: "/collections" });
+                            }}
+                          >
+                            <IconTrash />
+                            Delete collection
+                          </DropdownMenuItem>
+                        ) : null}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   )}
@@ -293,13 +305,15 @@ function CollectionDetail() {
 
       {collection.items.length === 0 ? (
         <p className="rounded-lg border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
-          Nothing filed here yet. Find records in{" "}
-          <Link to="/search" className="underline underline-offset-4">
-            search
+          No indicators here yet. Find series in{" "}
+          <Link to="/indicators" className="underline underline-offset-4">
+            indicators
           </Link>{" "}
-          and use the collect button on a row.
+          and use Add to collection in a row's menu.
         </p>
       ) : null}
+
+      <CollectionApi collection={collection} />
 
       {ITEM_KINDS.map((kind) => {
         const items = itemsOfKind(collection, kind);

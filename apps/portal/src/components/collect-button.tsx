@@ -14,10 +14,13 @@ import { Input } from "~/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import {
   addToCollection,
+  collectable,
   createCollection,
   holdersOf,
+  personLabel,
   removeFromCollection,
   useWorkspace,
+  type Collection,
   type NewItem,
 } from "~/lib/workspace";
 import { cn } from "~/lib/utils";
@@ -31,12 +34,15 @@ import { cn } from "~/lib/utils";
  * place for the same reason — the first record is usually what makes someone
  * want a folder at all.
  *
+ * Collections hold indicators only, so anything else in `items` is left out,
+ * and with nothing left the button is not drawn at all.
+ *
  * A tick means every record here is already in that collection. With several
  * selected they need not agree, so a partial one is drawn hollow and clicking
  * it files the rest rather than removing what is filed.
  */
 export function CollectButton({
-  items,
+  items: offered,
   size = "sm",
   variant = "outline",
   label,
@@ -54,6 +60,7 @@ export function CollectButton({
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
 
+  const items = offered.filter(collectable);
   const disabled = items.length === 0;
   const text = label ?? (items.length > 1 ? `Collect ${items.length}` : "Collect");
 
@@ -83,6 +90,11 @@ export function CollectButton({
     setCreating(false);
   }
 
+  // A selection of documents, say, had something to be collected into before
+  // collections were indicators-only; now it has nothing, and a button that
+  // can only ever be disabled is noise.
+  if (offered.length > 0 && disabled) return null;
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
@@ -103,8 +115,8 @@ export function CollectButton({
         <div className="grid gap-0.5">
           {workspace.collections.length === 0 ? (
             <p className="px-2 py-3 text-sm text-muted-foreground">
-              No collections yet. A collection is a folder of records you keep in this
-              browser.
+              No collections yet. A collection is a set of indicators whose figures you
+              open, combine or serve through its own API.
             </p>
           ) : null}
 
@@ -131,6 +143,7 @@ export function CollectButton({
                     {all ? <IconCheck className="size-3" /> : null}
                   </span>
                   <span className="truncate">{collection.name}</span>
+                  <OwnerTag collection={collection} />
                   <span className="ml-auto shrink-0 text-xs text-muted-foreground">
                     {/* What is in the folder, or — where a selection is partly
                         filed — how much of the selection is. */}
@@ -178,10 +191,11 @@ export function CollectButton({
  * button would be one more control on every row, and the three dots are where
  * a reader already looks for what can be done with one.
  */
-export function CollectSubmenu({ items }: { items: NewItem[] }) {
+export function CollectSubmenu({ items: offered }: { items: NewItem[] }) {
   const workspace = useWorkspace();
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
+  const items = offered.filter(collectable);
 
   function create(event: React.FormEvent) {
     event.preventDefault();
@@ -192,6 +206,8 @@ export function CollectSubmenu({ items }: { items: NewItem[] }) {
     setName("");
     setCreating(false);
   }
+
+  if (!items.length) return null;
 
   return (
     <DropdownMenuSub>
@@ -217,6 +233,7 @@ export function CollectSubmenu({ items }: { items: NewItem[] }) {
                 }}
               >
                 <span className="truncate">{collection.name}</span>
+                <OwnerTag collection={collection} className="ml-auto" />
               </DropdownMenuCheckboxItem>
             );
           })}
@@ -250,5 +267,31 @@ export function CollectSubmenu({ items }: { items: NewItem[] }) {
         )}
       </DropdownMenuSubContent>
     </DropdownMenuSub>
+  );
+}
+
+/**
+ * Whose folder it is, where it is not the reader's: filing into a colleague's
+ * collection is sending them something, and the menu should say so before the
+ * click rather than after.
+ */
+function OwnerTag({
+  collection,
+  className,
+}: {
+  collection: Collection;
+  className?: string;
+}) {
+  if (collection.role !== "member") return null;
+  return (
+    <span
+      className={cn(
+        "max-w-24 shrink-0 truncate text-xs text-muted-foreground",
+        className,
+      )}
+      title={`${personLabel(collection.owner)}'s collection`}
+    >
+      {personLabel(collection.owner)}
+    </span>
   );
 }

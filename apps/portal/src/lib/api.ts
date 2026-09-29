@@ -782,6 +782,12 @@ export type Capabilities = {
   /** Whether that shelf accepts changes. */
   collections_write: boolean;
   /**
+   * Whether a collection has an owner and members. Needs accounts; without
+   * them every folder is shared by the whole deployment. Absent from an API
+   * older than members.
+   */
+  collection_members?: boolean;
+  /**
    * Whether this deployment has accounts at all. False on one started without
    * an application database, and the portal then shows no login because there
    * is nothing to log in to.
@@ -920,6 +926,21 @@ export type ShelfItem = {
   added_at: string;
 };
 
+/** An account as a collection shows it. */
+export type ShelfPerson = {
+  id: string;
+  /** Absent for an account deleted since it was added. */
+  email?: string;
+  name?: string;
+};
+
+/**
+ * The viewer's part in a collection: `owner` does everything, `member` files
+ * and removes records, `shared` is a folder from before there were owners
+ * that everyone may change.
+ */
+export type ShelfRole = "owner" | "member" | "shared";
+
 export type ShelfCollection = {
   id: string;
   name: string;
@@ -927,6 +948,15 @@ export type ShelfCollection = {
   created_at: string;
   updated_at: string;
   items: ShelfItem[];
+  /**
+   * Whether its figures are served under `/v1/collections/{id}/…` to its
+   * owner and members. Absent from an API older than the setting.
+   */
+  api?: boolean;
+  /** Absent from an API older than members. */
+  role?: ShelfRole;
+  owner?: ShelfPerson;
+  members?: (ShelfPerson & { added_at: string })[];
 };
 
 export type ShelfQuery = {
@@ -1412,7 +1442,10 @@ export const api = {
     description?: string;
     items?: { kind: string; id: string; label: string; note?: string }[];
   }) => send<ShelfCollection>("POST", "/v1/collections", body),
-  updateCollection: (id: string, body: { name?: string; description?: string }) =>
+  updateCollection: (
+    id: string,
+    body: { name?: string; description?: string; api?: boolean },
+  ) =>
     send<ShelfCollection>("PATCH", `/v1/collections/${encodeURIComponent(id)}`, body),
   deleteCollection: (id: string) =>
     send<{ deleted: string }>("DELETE", `/v1/collections/${encodeURIComponent(id)}`),
@@ -1431,6 +1464,21 @@ export const api = {
       `/v1/collections/${encodeURIComponent(id)}/items/${encodeURIComponent(
         kind,
       )}/${encodeURIComponent(ref)}`,
+    ),
+
+  /** Make a folder from before there were owners the caller's, and private. */
+  claimCollection: (id: string) =>
+    send<ShelfCollection>("POST", `/v1/collections/${encodeURIComponent(id)}/claim`),
+  /** Let an account in, by the address it signs in with. Owner only. */
+  addCollectionMember: (id: string, email: string) =>
+    send<ShelfCollection>("POST", `/v1/collections/${encodeURIComponent(id)}/members`, {
+      email,
+    }),
+  /** The owner removing someone, or a member leaving. */
+  removeCollectionMember: (id: string, user: string) =>
+    send<ShelfCollection | { left: string }>(
+      "DELETE",
+      `/v1/collections/${encodeURIComponent(id)}/members/${encodeURIComponent(user)}`,
     ),
 
   savedQueries: () => request<ShelfQuery[]>("/v1/queries"),

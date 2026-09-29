@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -108,5 +109,23 @@ func TestFreeTextFindsAPeriod(t *testing.T) {
 	}
 	if len(args) != 5 {
 		t.Errorf("bound %d patterns, want one per searched column: %v", len(args), args)
+	}
+}
+
+// A collection's route carries its series in the context, past the fifty a
+// query string may name.
+func TestACollectionScopeReplacesTheIndicatorFilter(t *testing.T) {
+	scope := make([]string, 120)
+	for i := range scope {
+		scope[i] = "s" + strings.Repeat("0", 3) + string(rune('a'+i%26)) + string(rune('a'+i/26))
+	}
+	r := observationRequest("indicator", "ignored1")
+	r = r.WithContext(context.WithValue(r.Context(), scopeKey{}, scope))
+	f, err := observationParams(r)
+	if err != nil {
+		t.Fatalf("observationParams: %v", err)
+	}
+	if len(f.Indicators) != len(scope) || f.Indicators[0] != scope[0] {
+		t.Fatalf("Indicators = %d, want the %d in scope", len(f.Indicators), len(scope))
 	}
 }

@@ -219,6 +219,17 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("DELETE /v1/collections/{id}", s.handleDeleteCollection)
 	mux.HandleFunc("POST /v1/collections/{id}/items", s.handleAddItems)
 	mux.HandleFunc("DELETE /v1/collections/{id}/items/{kind}/{ref}", s.handleRemoveItem)
+	// Who else is in a folder. The owner adds and removes; a member may
+	// remove only themselves.
+	mux.HandleFunc("POST /v1/collections/{id}/claim", s.handleClaimCollection)
+	mux.HandleFunc("POST /v1/collections/{id}/members", s.handleAddMember)
+	mux.HandleFunc("DELETE /v1/collections/{id}/members/{user}", s.handleRemoveMember)
+	// A collection's figures, once its owner turns the API on: the lake
+	// routes' parameters, narrowed to its series (see collection_api.go).
+	mux.HandleFunc("GET /v1/collections/{id}/indicators", s.handleCollectionIndicators)
+	mux.HandleFunc("GET /v1/collections/{id}/observations", s.scoped(s.handleObservations))
+	mux.HandleFunc("GET /v1/collections/{id}/observations/series", s.scoped(s.handleObservationSeries))
+	mux.HandleFunc("GET /v1/collections/{id}/observations/facets", s.scoped(s.handleObservationFacets))
 
 	// Who is asking. Identity, not authority: every route answers the same way
 	// to everyone who gets past AUTH_REQUIRED, which is on unless the

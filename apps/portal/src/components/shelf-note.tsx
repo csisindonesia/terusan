@@ -23,9 +23,11 @@ export function ShelfNote({ className }: { className?: string }) {
         {shelf.mode === "server" ? (
           <>
             <IconCloud className="size-3.5" />
-            {shelf.writable
-              ? "Kept by the API — these links open anywhere."
-              : "Served read-only by the API; changes are refused."}
+            {!shelf.writable
+              ? "Served read-only by the API; changes are refused."
+              : shelf.members
+                ? "Kept by the API — a link opens for you and the members you add."
+                : "Kept by the API — these links open anywhere."}
           </>
         ) : (
           <>

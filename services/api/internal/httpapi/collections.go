@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/csis/terusan/services/api/internal/auth"
 	"github.com/csis/terusan/services/api/internal/collections"
 )
 
@@ -29,21 +30,18 @@ import (
 // folder is the point of a folder, and a URL only works if the server knows
 // what is in it.
 //
-// There is no authentication in front of this (program.md §34), so one
-// deployment is one shelf and whoever can reach the API can edit it. That is
-// stated in `/v1/capabilities` rather than implied, and a deployment where it
-// would be wrong is started without COLLECTIONS_WRITE.
+// Who may see and change a folder is the store's rule (internal/collections):
+// the owner and the members they add, or everyone for a folder made before
+// there were owners. Every handler here passes the viewer through rather than
+// deciding for itself, so the rule lives in one place. A deployment whose
+// shelf should not change at all is still started without COLLECTIONS_WRITE.
 
-// What a collection may hold. Closed rather than free text, because each kind
-// is a catalogue this API already answers for, and an item of a kind nothing
-// can resolve is a row that renders as a dead link forever.
+// What a collection may hold: indicators, and only those, because what a
+// collection is for is its figures — opened together, combined, and served
+// under its own API. A map rather than a comparison so the refusal reads the
+// same wherever a kind arrives.
 var itemKinds = map[string]bool{
-	"indicator":  true,
-	"dataset":    true,
-	"document":   true,
-	"regulation": true,
-	"commodity":  true,
-	"topic":      true,
+	collections.ItemKind: true,
 }
 
 // What a saved query may reopen, mirroring the portal's routes.
@@ -100,21 +98,98 @@ func (s *Server) shelfError(w http.ResponseWriter, context string, err error) {
 		notFound(w, "no such collection", "")
 	case errors.Is(err, collections.ErrReadOnly):
 		writeError(w, http.StatusForbidden, CodeForbidden, "this shelf is read-only", "")
+	case errors.Is(err, collections.ErrForbidden):
+		writeError(w, http.StatusForbidden, CodeForbidden, err.Error(),
+			"only the owner renames, deletes or changes who is in a collection")
+	case errors.Is(err, collections.ErrInvalid):
+		badRequest(w, "invalid request", "the owner is already in the collection")
 	default:
 		internalError(w, s.log, context, err)
 	}
+}
+
+// person is an account as a collection shows it: enough to recognise someone
+// by, and nothing an admin page would add.
+type person struct {
+	ID    string `json:"id"`
+	Email string `json:"email,omitempty"`
+	Name  string `json:"name,omitempty"`
+}
+
+type memberView struct {
+	person
+	AddedAt time.Time `json:"added_at"`
+}
+
+// collectionView is a collection as one viewer sees it: what it holds, who is
+// in it, and what they may do there.
+type collectionView struct {
+	collections.Collection
+	// owner, member or shared — see collections.RoleOwner.
+	Role    string       `json:"role"`
+	Owner   *person      `json:"owner,omitempty"`
+	Members []memberView `json:"members"`
+}
+
+// people resolves account ids once per response, however many folders name
+// the same person.
+type people struct {
+	s    *Server
+	r    *http.Request
+	seen map[string]person
+}
+
+func (s *Server) people(r *http.Request) *people {
+	return &people{s: s, r: r, seen: map[string]person{}}
+}
+
+func (p *people) of(id string) person {
+	if found, ok := p.seen[id]; ok {
+		return found
+	}
+	found := person{ID: id}
+	if p.s.auth != nil {
+		// An account deleted since it was added still shows, by id, rather
+		// than vanishing from the list and leaving a member nobody can see.
+		if user, err := p.s.auth.UserByID(p.r.Context(), id); err == nil {
+			found.Email, found.Name = user.Email, user.Name
+		}
+	}
+	p.seen[id] = found
+	return found
+}
+
+func (p *people) view(c collections.Collection) collectionView {
+	view := collectionView{
+		Collection: c,
+		Role:       c.RoleOf(p.s.viewer(p.r)),
+		Members:    []memberView{},
+	}
+	if c.OwnerID != "" {
+		owner := p.of(c.OwnerID)
+		view.Owner = &owner
+	}
+	for _, m := range c.Members {
+		view.Members = append(view.Members, memberView{person: p.of(m.UserID), AddedAt: m.AddedAt})
+	}
+	return view
 }
 
 func (s *Server) handleCollections(w http.ResponseWriter, r *http.Request) {
 	if !s.collectionsReady(w, false) {
 		return
 	}
-	list, err := s.shelf.List(r.Context())
+	list, err := s.shelf.List(r.Context(), s.viewer(r))
 	if err != nil {
 		s.shelfError(w, "list collections", err)
 		return
 	}
-	writeData(w, list, &Meta{Total: int64(len(list))})
+	people := s.people(r)
+	views := make([]collectionView, 0, len(list))
+	for _, c := range list {
+		views = append(views, people.view(c))
+	}
+	writeData(w, views, &Meta{Total: int64(len(views))})
 }
 
 func (s *Server) handleCollection(w http.ResponseWriter, r *http.Request) {
@@ -126,12 +201,12 @@ func (s *Server) handleCollection(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid parameter", "id: is not a well-formed collection id")
 		return
 	}
-	found, err := s.shelf.Get(r.Context(), id)
+	found, err := s.shelf.Get(r.Context(), s.viewer(r), id)
 	if err != nil {
 		s.shelfError(w, "get collection", err)
 		return
 	}
-	writeData(w, found, nil)
+	writeData(w, s.people(r).view(found), nil)
 }
 
 // collectionBody is what a caller may send when making or changing a folder.
@@ -143,7 +218,9 @@ type collectionBody struct {
 	ID          string  `json:"id"`
 	Name        *string `json:"name"`
 	Description *string `json:"description"`
-	Items       []struct {
+	// Whether the collection's figures are served under its own path.
+	API   *bool `json:"api"`
+	Items []struct {
 		Kind  string `json:"kind"`
 		ID    string `json:"id"`
 		Label string `json:"label"`
@@ -199,6 +276,7 @@ func (s *Server) handleCreateCollection(w http.ResponseWriter, r *http.Request) 
 		CreatedAt:   now,
 		UpdatedAt:   now,
 		Items:       items,
+		OwnerID:     s.viewer(r),
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "already exists") {
@@ -209,7 +287,7 @@ func (s *Server) handleCreateCollection(w http.ResponseWriter, r *http.Request) 
 		s.shelfError(w, "create collection", err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, Response[collections.Collection]{Data: created})
+	writeJSON(w, http.StatusCreated, Response[collectionView]{Data: s.people(r).view(created)})
 }
 
 func (s *Server) handleUpdateCollection(w http.ResponseWriter, r *http.Request) {
@@ -234,12 +312,14 @@ func (s *Server) handleUpdateCollection(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	updated, err := s.shelf.Update(r.Context(), id, body.Name, body.Description)
+	updated, err := s.shelf.Update(r.Context(), s.viewer(r), id, collections.Changes{
+		Name: body.Name, Description: body.Description, API: body.API,
+	})
 	if err != nil {
 		s.shelfError(w, "update collection", err)
 		return
 	}
-	writeData(w, updated, nil)
+	writeData(w, s.people(r).view(updated), nil)
 }
 
 func (s *Server) handleDeleteCollection(w http.ResponseWriter, r *http.Request) {
@@ -251,7 +331,7 @@ func (s *Server) handleDeleteCollection(w http.ResponseWriter, r *http.Request) 
 		badRequest(w, "invalid parameter", "id: is not a well-formed collection id")
 		return
 	}
-	if err := s.shelf.Delete(r.Context(), id); err != nil {
+	if err := s.shelf.Delete(r.Context(), s.viewer(r), id); err != nil {
 		s.shelfError(w, "delete collection", err)
 		return
 	}
@@ -281,15 +361,15 @@ func (s *Server) handleAddItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updated, added, err := s.shelf.AddItems(r.Context(), id, items)
+	updated, added, err := s.shelf.AddItems(r.Context(), s.viewer(r), id, items)
 	if err != nil {
 		s.shelfError(w, "add items", err)
 		return
 	}
 	// The count says what happened: filing a record the folder already holds
 	// is a thing readers do, and it is not an error.
-	writeJSON(w, http.StatusOK, Response[collections.Collection]{
-		Data: updated,
+	writeJSON(w, http.StatusOK, Response[collectionView]{
+		Data: s.people(r).view(updated),
 		Meta: &Meta{Total: int64(added)},
 	})
 }
@@ -306,7 +386,7 @@ func (s *Server) handleRemoveItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !itemKinds[kind] {
-		badRequest(w, "invalid parameter", "kind: "+kind+" is not a kind a collection holds")
+		badRequest(w, "invalid parameter", "kind: a collection holds indicators only")
 		return
 	}
 	if ref == "" {
@@ -314,19 +394,129 @@ func (s *Server) handleRemoveItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updated, err := s.shelf.RemoveItem(r.Context(), id, kind, ref)
+	updated, err := s.shelf.RemoveItem(r.Context(), s.viewer(r), id, kind, ref)
 	if err != nil {
 		s.shelfError(w, "remove item", err)
 		return
 	}
-	writeData(w, updated, nil)
+	writeData(w, s.people(r).view(updated), nil)
 }
 
-// readItems validates the items a body carries.
+// ---- members --------------------------------------------------------------
+
+// handleClaimCollection makes a folder from before there were owners the
+// caller's, which is what has to happen before it can have members.
+func (s *Server) handleClaimCollection(w http.ResponseWriter, r *http.Request) {
+	if !s.collectionsReady(w, true) {
+		return
+	}
+	id := r.PathValue("id")
+	if !shelfIDPattern.MatchString(id) {
+		badRequest(w, "invalid parameter", "id: is not a well-formed collection id")
+		return
+	}
+	claimed, err := s.shelf.Claim(r.Context(), s.viewer(r), id)
+	if err != nil {
+		if errors.Is(err, collections.ErrForbidden) {
+			writeError(w, http.StatusForbidden, CodeForbidden,
+				"this collection already has an owner", "")
+			return
+		}
+		s.shelfError(w, "claim collection", err)
+		return
+	}
+	writeData(w, s.people(r).view(claimed), nil)
+}
+
+// handleAddMember lets another account into a collection, by the address
+// they sign in with.
 //
-// A commodity is identified by the name its source printed — "Minyak Goreng
-// Kemasan Bermerk 1" — so items are not held to `identifierPattern`; what they
-// are held to is a length and a kind this API can resolve.
+// By address rather than from a list of accounts: a list would be a staff
+// directory handed to every reader, and the owner already knows who they
+// mean to add.
+func (s *Server) handleAddMember(w http.ResponseWriter, r *http.Request) {
+	if !s.collectionsReady(w, true) {
+		return
+	}
+	if s.auth == nil {
+		writeError(w, http.StatusNotFound, CodeNotFound,
+			"this deployment has no accounts to add", "set APP_DB where the API runs")
+		return
+	}
+	id := r.PathValue("id")
+	if !shelfIDPattern.MatchString(id) {
+		badRequest(w, "invalid parameter", "id: is not a well-formed collection id")
+		return
+	}
+	var body struct {
+		Email string `json:"email"`
+	}
+	if !decodeBody(w, r, &body, 4<<10) {
+		return
+	}
+	email := strings.TrimSpace(body.Email)
+	if email == "" {
+		badRequest(w, "invalid body", "email: whom to add")
+		return
+	}
+
+	// The viewer's own access first, so a stranger to the folder learns
+	// nothing about which addresses have accounts.
+	if _, err := s.shelf.Get(r.Context(), s.viewer(r), id); err != nil {
+		s.shelfError(w, "add member", err)
+		return
+	}
+	user, err := s.auth.UserByEmail(r.Context(), email)
+	if errors.Is(err, auth.ErrNotFound) || (err == nil && (user.Disabled || user.Status != auth.StatusActive)) {
+		notFound(w, "no active account with that email",
+			"they need an account on this deployment first; an admin can create one")
+		return
+	}
+	if err != nil {
+		internalError(w, s.log, "add member", err)
+		return
+	}
+
+	updated, err := s.shelf.AddMember(r.Context(), s.viewer(r), id, user.ID)
+	if err != nil {
+		s.shelfError(w, "add member", err)
+		return
+	}
+	writeData(w, s.people(r).view(updated), nil)
+}
+
+// handleRemoveMember takes an account out: the owner removing anyone, or a
+// member leaving.
+func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
+	if !s.collectionsReady(w, true) {
+		return
+	}
+	id := r.PathValue("id")
+	user := r.PathValue("user")
+	if !shelfIDPattern.MatchString(id) {
+		badRequest(w, "invalid parameter", "id: is not a well-formed collection id")
+		return
+	}
+	if user == "" {
+		badRequest(w, "invalid parameter", "user: is empty")
+		return
+	}
+	updated, err := s.shelf.RemoveMember(r.Context(), s.viewer(r), id, user)
+	if err != nil {
+		s.shelfError(w, "remove member", err)
+		return
+	}
+	// Leaving answers with what the caller can no longer see, so it says
+	// only that it happened.
+	if updated.RoleOf(s.viewer(r)) == "" {
+		writeData(w, map[string]string{"left": id}, nil)
+		return
+	}
+	writeData(w, s.people(r).view(updated), nil)
+}
+
+// readItems validates the items a body carries. A kind left out is an
+// indicator, since that is the only kind there is.
 func (s *Server) readItems(body collectionBody) ([]collections.Item, error) {
 	if len(body.Items) > maxItemsPerCollection {
 		return nil, errors.New("items: a collection holds at most 1000 records")
@@ -334,12 +524,15 @@ func (s *Server) readItems(body collectionBody) ([]collections.Item, error) {
 	now := time.Now().UTC()
 	items := make([]collections.Item, 0, len(body.Items))
 	for _, raw := range body.Items {
+		if raw.Kind == "" {
+			raw.Kind = collections.ItemKind
+		}
 		if !itemKinds[raw.Kind] {
-			return nil, errors.New("items: " + raw.Kind + " is not a kind a collection holds")
+			return nil, errors.New("items: a collection holds indicators only, not " + raw.Kind)
 		}
 		id := strings.TrimSpace(raw.ID)
-		if id == "" || len(id) > 300 {
-			return nil, errors.New("items: an item needs an identifier")
+		if !identifierPattern.MatchString(id) {
+			return nil, errors.New("items: " + id + " is not a well-formed indicator_id")
 		}
 		label := strings.TrimSpace(raw.Label)
 		if label == "" {
@@ -592,7 +785,7 @@ func (s *Server) handleImportShelf(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	added, queries, err := s.shelf.Import(r.Context(), shelf)
+	added, queries, err := s.shelf.Import(r.Context(), s.viewer(r), shelf)
 	if err != nil {
 		s.shelfError(w, "import shelf", err)
 		return
@@ -621,8 +814,8 @@ func decodeBody(w http.ResponseWriter, r *http.Request, into any, limit int64) b
 }
 
 // newShelfID is what a caller gets when it does not bring its own id. Short
-// because it lands in a URL a person copies, and a folder is not a thing
-// anyone guesses their way to — there is nothing private on this shelf.
+// because it lands in a URL a person copies. Guessing one gets a stranger
+// nothing: a folder they have no part in answers 404.
 func newShelfID() string {
 	return strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
 }

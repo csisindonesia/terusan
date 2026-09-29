@@ -54,11 +54,12 @@ import {
   deleteCollection,
   exportWorkspace,
   importWorkspace,
+  managesCollection,
+  personLabel,
   updateCollection,
   useShelf,
   useWorkspace,
   type Collection,
-  type ItemKind,
 } from "~/lib/workspace";
 
 /**
@@ -67,9 +68,9 @@ import {
  * A research portal's unit of work is rarely one record. "The eight series I
  * need for the fuel-subsidy note" is a real thing a reader holds in their
  * head, and holding it in the portal instead is what turns a catalogue into
- * somewhere work happens. A collection is that folder: a named set of
- * references — series, datasets, documents, regulations, commodities, topics —
- * mixed freely, because the question is the unit, not the kind.
+ * somewhere work happens. A collection is that folder: a named set of series,
+ * which can be opened together, combined, and — once its owner turns it on —
+ * read by other programs through the collection's own API.
  *
  * References rather than copies, so a folder opened next month shows the
  * warehouse as it is then. And in this browser rather than on the server,
@@ -86,20 +87,18 @@ function Collections() {
   const shelf = useShelf();
   const collections = workspace.collections;
   const [query, setQuery] = useState("");
-  const [kind, setKind] = useState<ItemKind | "all">("all");
   const [sort, setSort] = useState<Sort>("updated");
 
   const shown = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const matching = collections.filter(
       (collection) =>
-        (kind === "all" || collection.items.some((item) => item.kind === kind)) &&
-        (!needle ||
-          collection.name.toLowerCase().includes(needle) ||
-          collection.description?.toLowerCase().includes(needle)),
+        !needle ||
+        collection.name.toLowerCase().includes(needle) ||
+        collection.description?.toLowerCase().includes(needle),
     );
     return [...matching].sort(SORTS[sort].compare);
-  }, [collections, query, kind, sort]);
+  }, [collections, query, sort]);
 
   return (
     <div className="space-y-5">
@@ -152,14 +151,7 @@ function Collections() {
         </div>
       ) : (
         <>
-          <Toolbar
-            query={query}
-            onQuery={setQuery}
-            kind={kind}
-            onKind={setKind}
-            sort={sort}
-            onSort={setSort}
-          />
+          <Toolbar query={query} onQuery={setQuery} sort={sort} onSort={setSort} />
           {shown.length ? (
             <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {shown.map((collection) => (
@@ -172,12 +164,9 @@ function Collections() {
               <button
                 type="button"
                 className="underline underline-offset-4 hover:text-foreground"
-                onClick={() => {
-                  setQuery("");
-                  setKind("all");
-                }}
+                onClick={() => setQuery("")}
               >
-                Clear filters
+                Clear search
               </button>
             </div>
           )}
@@ -201,32 +190,20 @@ const SORTS: Record<
   size: { label: "Most items", compare: (a, b) => b.items.length - a.items.length },
 };
 
-const KIND_OPTIONS = [
-  { value: "all", label: "All kinds" },
-  ...ITEM_KINDS.map((kind) => ({ value: kind, label: ITEM_KIND_LABELS[kind].many })),
-];
-
 const SORT_OPTIONS = (Object.keys(SORTS) as Sort[]).map((value) => ({
   value,
   label: SORTS[value].label,
 }));
 
-/**
- * Finding a folder once there are more than a screenful. The kind filter keeps
- * a folder holding *any* record of that kind, since folders mix kinds freely.
- */
+/** Finding a folder once there are more than a screenful. */
 function Toolbar({
   query,
   onQuery,
-  kind,
-  onKind,
   sort,
   onSort,
 }: {
   query: string;
   onQuery: (value: string) => void;
-  kind: ItemKind | "all";
-  onKind: (value: ItemKind | "all") => void;
   sort: Sort;
   onSort: (value: Sort) => void;
 }) {
@@ -244,23 +221,6 @@ function Toolbar({
           aria-label="Search collections"
         />
       </InputGroup>
-
-      <Select
-        items={KIND_OPTIONS}
-        value={kind}
-        onValueChange={(value) => onKind((value ?? "all") as ItemKind | "all")}
-      >
-        <SelectTrigger aria-label="Filter by kind" className="min-w-36">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {KIND_OPTIONS.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
 
       <Select
         items={SORT_OPTIONS}
@@ -310,30 +270,38 @@ function CollectionCard({ collection }: { collection: Collection }) {
             {collection.description}
           </CardDescription>
         ) : null}
-        <CardAction>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button variant="ghost" size="icon-sm" aria-label="Collection actions">
-                  <IconDots className="size-4" />
-                </Button>
-              }
-            />
-            <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuItem onClick={() => setEditing(true)}>
-                <IconPencil />
-                Rename
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                variant="destructive"
-                onClick={() => deleteCollection(collection.id)}
-              >
-                <IconTrash />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </CardAction>
+        {/* A member's folder belongs to someone else, and its menu would offer
+            two things they cannot do. */}
+        {managesCollection(collection) ? (
+          <CardAction>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Collection actions"
+                  >
+                    <IconDots className="size-4" />
+                  </Button>
+                }
+              />
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuItem onClick={() => setEditing(true)}>
+                  <IconPencil />
+                  Rename
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={() => deleteCollection(collection.id)}
+                >
+                  <IconTrash />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </CardAction>
+        ) : null}
       </CardHeader>
 
       <CardContent className="space-y-3">
@@ -360,10 +328,20 @@ function CollectionCard({ collection }: { collection: Collection }) {
           {formatRelative(collection.updated_at)
             ? ` · updated ${formatRelative(collection.updated_at)}`
             : null}
+          {sharing(collection)}
         </p>
       </CardContent>
     </Card>
   );
+}
+
+/** Who else is in it, where that is anyone, as the tail of the card's line. */
+function sharing(collection: Collection): string | null {
+  if (collection.role === "member") return ` · from ${personLabel(collection.owner)}`;
+  const others = collection.members?.length ?? 0;
+  if (collection.role === "owner" && others)
+    return ` · shared with ${others} ${others === 1 ? "person" : "people"}`;
+  return null;
 }
 
 function EditForm({

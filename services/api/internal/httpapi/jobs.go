@@ -39,11 +39,13 @@ type Capabilities struct {
 	// what decides whether a folder has a URL other people can open or lives
 	// in one browser.
 	Collections bool `json:"collections"`
-	// Whether that shelf accepts changes. False on a deployment serving a
-	// curated shelf read-only — a session says who is reading but does not yet
-	// scope what they may change (program.md §34), so "who may edit" is a
-	// deployment setting rather than a permission.
+	// Whether that shelf accepts changes at all. False on a deployment serving
+	// a curated shelf read-only; who may change which folder is the folder's
+	// own business (see CollectionMembers).
 	CollectionsWrite bool `json:"collections_write"`
+	// Whether a collection has an owner and members, which needs accounts.
+	// Without them every folder is shared by the whole deployment.
+	CollectionMembers bool `json:"collection_members"`
 	// Whether this deployment has accounts at all, which is what tells the
 	// portal to show a login page rather than going straight in.
 	Auth bool `json:"auth"`
@@ -64,15 +66,16 @@ type Capabilities struct {
 
 func (s *Server) handleCapabilities(w http.ResponseWriter, _ *http.Request) {
 	writeData(w, Capabilities{
-		RunPipelines:     s.runner.Enabled(),
-		Collections:      s.shelf != nil,
-		CollectionsWrite: s.shelf.Writable(),
-		Auth:             s.auth != nil,
-		AuthRequired:     s.auth != nil && s.cfg.Auth.Required,
-		Registration:     s.auth != nil && s.cfg.Auth.Registration,
-		Suggestions:      s.suggestions != nil,
-		Assistant:        s.cfg.Assistant.Enabled(),
-		AssistantHistory: s.cfg.Assistant.Enabled() && s.chats != nil,
+		RunPipelines:      s.runner.Enabled(),
+		Collections:       s.shelf != nil,
+		CollectionsWrite:  s.shelf.Writable(),
+		CollectionMembers: s.shelf != nil && s.auth != nil,
+		Auth:              s.auth != nil,
+		AuthRequired:      s.auth != nil && s.cfg.Auth.Required,
+		Registration:      s.auth != nil && s.cfg.Auth.Registration,
+		Suggestions:       s.suggestions != nil,
+		Assistant:         s.cfg.Assistant.Enabled(),
+		AssistantHistory:  s.cfg.Assistant.Enabled() && s.chats != nil,
 	}, nil)
 }
 

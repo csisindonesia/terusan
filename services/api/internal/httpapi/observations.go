@@ -121,6 +121,12 @@ func observationParams(r *http.Request) (observationFilter, error) {
 	if f.Indicators, err = stringListParam(r, "indicator", identifierPattern); err != nil {
 		return f, err
 	}
+	// Under a collection's route, the series are the collection's, already
+	// narrowed by `indicator` and not held to MaxFilterValues: a collection
+	// may file more series than one query string may name.
+	if scope, ok := indicatorScope(r.Context()); ok {
+		f.Indicators = scope
+	}
 	if f.Geos, err = stringListParam(r, "geo", identifierPattern); err != nil {
 		return f, err
 	}
