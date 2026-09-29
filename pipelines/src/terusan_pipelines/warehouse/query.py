@@ -13,8 +13,12 @@ from pathlib import Path
 from typing import Any
 
 import duckdb
+import structlog
 
 from ..storage import Backend, Layer, StorageConfig, StorageResolver
+from .observations import LAYOUT_FILE
+
+log = structlog.get_logger(__name__)
 
 
 def configure(connection: duckdb.DuckDBPyConnection, config: StorageConfig) -> None:
@@ -69,7 +73,18 @@ class Warehouse:
         several layers in one statement without naming intermediate views.
         """
         pattern = self._resolver.glob(layer, dataset, *partition)
-        return f"read_parquet('{pattern}', union_by_name=true, hive_partitioning=true)"
+        # A bucketed dataset carries its key as a column in every file, and a
+        # lake half-way through the migration to buckets holds `bucket=` and
+        # `indicator_id=` directories side by side. DuckDB refuses a glob whose
+        # paths hold two sets of partition keys, so such a dataset is read
+        # without them — which is how `observations.py` says it must be read.
+        hive = "false" if self._bucketed(layer, dataset) else "true"
+        return f"read_parquet('{pattern}', union_by_name=true, hive_partitioning={hive})"
+
+    def _bucketed(self, layer: Layer, dataset: str) -> bool:
+        if self._resolver.config.is_object_storage:
+            return False
+        return (Path(self._resolver.resolve(layer)) / dataset / LAYOUT_FILE).is_file()
 
     def view(self, name: str, layer: Layer, dataset: str, *partition: str) -> None:
         """Register a dataset as a named view on this connection."""
@@ -109,7 +124,14 @@ class Warehouse:
         """
         registered = []
         for name, (layer, dataset) in self.datasets().items():
-            self.view(name, layer, dataset)
+            try:
+                self.view(name, layer, dataset)
+            except duckdb.Error as exc:
+                # One unreadable dataset — a half-copied backup in `temporary/`,
+                # a file from a crashed write — must not make every other table
+                # in the lake unqueryable. It is left unregistered and said so.
+                log.warning("warehouse.view_skipped", view=name, error=str(exc)[:300])
+                continue
             registered.append(name)
         return registered
 

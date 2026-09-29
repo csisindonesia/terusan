@@ -571,6 +571,35 @@ def test_bumping_the_parser_version_forces_re_extraction(resolver):
         assert bumped.documents_unchanged == 0
 
 
+def test_a_large_extraction_is_written_as_it_goes_and_loses_nothing(resolver):
+    """Held to the end, BPS's six million rows took 5.6 GB of the NAS's 7.5.
+
+    Flushed along the way, every part needs a name of its own: under one run
+    id the second flush would overwrite the first.
+    """
+    meta = SourceMeta(
+        slug="bps",
+        name="Badan Pusat Statistik",
+        category=Category.STATISTICS,
+        source_type=SourceType.GOVERNMENT_API,
+        collection_method=CollectionMethod.API,
+    )
+    landing = Landing(resolver)
+    for n in range(3):
+        csv = "bulan;nilai\n" + "".join(f"2026-0{m};{n}{m}\n" for m in range(1, 4))
+        landing.land(meta, Artifact(content=csv.encode(), filename=f"t{n}.csv", dataset="t"))
+
+    result = ExtractionRunner(resolver).run(run_id="run", flush_rows=2)
+
+    assert result.documents_extracted == 3
+    with Warehouse(resolver) as warehouse:
+        rows = warehouse.query(
+            "SELECT count(*) FROM read_parquet(?, union_by_name=true)",
+            [resolver.glob(Layer.BRONZE, "records")],
+        ).fetchone()[0]
+    assert rows == result.rows_written == 9
+
+
 # ---- dimension scope ------------------------------------------------------
 
 

@@ -166,6 +166,16 @@ DEFAULT_EXTRACTORS: tuple[Extractor, ...] = (
 #: Bronze table name to Arrow schema.
 TARGET_SCHEMAS = {"documents": BRONZE_DOCUMENTS, "records": BRONZE_RECORDS}
 
+#: How many rows a target holds in memory before they are written.
+#:
+#: BPS's catalogue is six million rows, and held to the end of the walk as
+#: Python dicts it took 5.6 GB of the NAS's 7.5 — the API beside it stopped
+#: answering and the tunnel returned 502. Written every quarter million
+#: instead, a run peaks at a few hundred megabytes and a stopped one keeps
+#: the documents it finished: each document's rows are written together, so
+#: the next run skips exactly those.
+FLUSH_ROWS = 250_000
+
 
 @dataclass(slots=True)
 class ExtractionResult:
@@ -231,6 +241,7 @@ class ExtractionRunner:
         dry_run: bool = False,
         limit: int | None = None,
         reprocess: bool = False,
+        flush_rows: int = FLUSH_ROWS,
     ) -> ExtractionResult:
         """Extract a RAW subtree into Bronze.
 
@@ -242,14 +253,16 @@ class ExtractionRunner:
         `reprocess` forces re-extraction — what to use after improving a parser,
         alongside bumping `PARSER_VERSION`.
 
-        Rows are collected per target table and written once at the end, so a
-        run over ten thousand small documents produces two Parquet files rather
-        than ten thousand (program.md §47).
+        Rows are collected per target table and written once a target holds
+        `flush_rows` of them, and at the end, so a run over ten thousand small
+        documents produces a few Parquet files rather than ten thousand
+        (program.md §47) without holding a large source in memory whole.
         """
         result = ExtractionResult(started_at=datetime.now(UTC))
         raw_root = self._resolver.resolve(Layer.RAW)
         batches: dict[str, list[dict]] = {name: [] for name in TARGET_SCHEMAS}
         already = set() if reprocess else self._already_extracted()
+        flushes = 0
 
         for landed in walk_raw(self._resolver, *segments):
             result.documents_seen += 1
@@ -282,6 +295,19 @@ class ExtractionRunner:
             batches[extractor.target].extend(rows)
             result.documents_extracted += 1
             result.rows_written += len(rows)
+
+            # After the whole document, never part-way through one: a run
+            # stopped later still has each written document complete.
+            if not dry_run and len(batches[extractor.target]) >= flush_rows:
+                flushes += 1
+                result.files_written += self._write(
+                    extractor.target,
+                    batches[extractor.target],
+                    # A run id names every part it writes, so each flush
+                    # needs its own or it would overwrite the one before.
+                    f"{run_id}-{flushes}" if run_id else None,
+                )
+                batches[extractor.target] = []
 
             if limit is not None and result.documents_extracted >= limit:
                 break

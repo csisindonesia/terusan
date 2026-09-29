@@ -281,3 +281,36 @@ def test_warehouse_spills_to_local_disk_not_the_lake(resolver):
         temp = wh.query("SELECT current_setting('temp_directory')").fetchone()[0]
         assert str(resolver.config.scratch_dir) in temp
         assert resolver.config.root not in temp
+
+
+def _parquet(path: Path, **columns: list) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    pq.write_table(pa.table(columns), path / "part.parquet")
+
+
+def test_a_lake_half_way_to_buckets_is_still_queryable(resolver):
+    """`bucket=` and `indicator_id=` side by side is what a migration leaves
+    while it runs, and DuckDB refuses the glob if it reads either as a key."""
+    root = Path(resolver.resolve(Layer.SILVER)) / "observations"
+    _parquet(root / "bucket=000", indicator_id=["a"], value=["1"])
+    _parquet(root / "indicator_id=b", indicator_id=["b"], value=["2"])
+    (root / "_layout.json").write_text("{}")
+
+    with Warehouse(resolver) as wh:
+        assert "silver_observations" in wh.register_all()
+        rows = wh.query("SELECT indicator_id FROM silver_observations ORDER BY 1").fetchall()
+
+    assert rows == [("a",), ("b",)]
+
+
+def test_one_unreadable_dataset_does_not_hide_the_rest(resolver):
+    root = Path(resolver.resolve(Layer.TEMPORARY)) / "broken"
+    _parquet(root / "bucket=000", value=["1"])
+    _parquet(root / "indicator_id=b", value=["2"])
+    _parquet(Path(resolver.resolve(Layer.SILVER)) / "indicators", indicator_id=["a"])
+
+    with Warehouse(resolver) as wh:
+        registered = wh.register_all()
+
+    assert "silver_indicators" in registered
+    assert "temporary_broken" not in registered
