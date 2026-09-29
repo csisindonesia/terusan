@@ -14,7 +14,8 @@ import type { Observation } from "~/lib/api";
  * says they are one quantity changing over time.
  */
 
-export type Dimension = "geography" | "commodity" | "both" | "category" | "none";
+export type Dimension =
+  "geography" | "commodity" | "both" | "geography-category" | "category" | "none";
 
 export type Series = {
   /** Stable key for selection and URLs. */
@@ -68,6 +69,10 @@ export function dimensionOfMembers(
   // would otherwise claim it and draw sixteen groups as one line.
   if (categories > 1 && !byPlace && !byCommodity) return "category";
   if (byPlace && byCommodity) return "both";
+  // A table published for every province — OJK's deposits by type. Split by
+  // place alone, every row of the table read as the same figure: four values
+  // for Aceh in July 2026 and nothing on the page to say which was which.
+  if (byPlace && categories > 1) return "geography-category";
   if (byPlace) return "geography";
   if (byCommodity) return "commodity";
 
@@ -90,7 +95,22 @@ export function dimensionOfMembers(
 export function primaryAxis(dimension: Dimension): Axis | null {
   if (dimension === "commodity") return "commodity";
   if (dimension === "category") return "category";
-  if (dimension === "geography" || dimension === "both") return "geography";
+  if (
+    dimension === "geography" ||
+    dimension === "both" ||
+    dimension === "geography-category"
+  )
+    return "geography";
+  return null;
+}
+
+/**
+ * The axis that gets a control of its own beside the place, where a figure
+ * needs both to be identified: the commodity of a price, the row of a table.
+ */
+export function secondaryAxis(dimension: Dimension): "commodity" | "category" | null {
+  if (dimension === "both") return "commodity";
+  if (dimension === "geography-category") return "category";
   return null;
 }
 
@@ -108,7 +128,7 @@ export function dimensionNoun(dimension: Dimension, count: number): string {
   const plural = count !== 1;
   if (dimension === "commodity") return plural ? "commodities" : "commodity";
   if (dimension === "category") return plural ? "categories" : "category";
-  if (dimension === "both") return plural ? "series" : "series";
+  if (dimension === "both" || dimension === "geography-category") return "series";
   return plural ? "places" : "place";
 }
 

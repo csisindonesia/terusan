@@ -66,6 +66,7 @@ import {
   dimensionOfMembers,
   geoOf,
   primaryAxis,
+  secondaryAxis,
   type Axis,
   type Dimension,
   type Series,
@@ -112,6 +113,10 @@ const searchSchema = z.object({
   // parameter rather than a second pass over `series`, so the two narrow
   // independently: shallots in every province, or every food in one.
   commodity: listParam,
+  // The rows of a table the reader has narrowed to, where the table is
+  // published for every place and `series` is therefore the place: giro
+  // deposits in every province, or every kind in one.
+  category: listParam,
   // Years the reader has narrowed to. Multi-select rather than a range: the
   // question here is usually "these two years" rather than "everything since",
   // and the observations page already offers a range for the other case.
@@ -330,7 +335,9 @@ function columnsFor(
       ? []
       : dimension === "both"
         ? [memberColumn("geography"), memberColumn("commodity")]
-        : [memberColumn(dimension)];
+        : dimension === "geography-category"
+          ? [memberColumn("geography"), memberColumn("category")]
+          : [memberColumn(dimension)];
 
   // Which of a price's four readings a row is, where the table lists more
   // than one series.
@@ -499,6 +506,9 @@ const EXPORT_COLUMNS = [
   { key: "geo_name" as const, header: "geo_name" },
   { key: "commodity_id" as const, header: "commodity_id" },
   { key: "commodity_name" as const, header: "commodity_name" },
+  // Without it, a table published for every province exports as several
+  // figures per place and period with nothing to tell them apart.
+  { key: "category" as const, header: "category" },
   { key: "value" as const, header: "value" },
   { key: "unit" as const, header: "unit" },
   { key: "status" as const, header: "status" },
@@ -589,13 +599,22 @@ function IndicatorDetail() {
         ? available?.categories
         : available?.places,
   );
-  const commodityOptions =
-    dimension === "both" ? optionsOf(available?.commodities) : [];
+  const secondary = secondaryAxis(dimension);
+  // The URL parameter the second control writes. Only read where there is a
+  // second axis; the fallback is there so the type is a key either way.
+  const secondaryParam = secondary ?? "commodity";
+  const secondaryOptions = optionsOf(
+    secondary === "commodity"
+      ? available?.commodities
+      : secondary === "category"
+        ? available?.categories
+        : undefined,
+  );
   const statuses = (available?.statuses ?? []).map((facet) => facet.value);
   const years = optionsOf(available?.years);
 
   const chosenSeries = asTextList(search.series);
-  const chosenCommodities = asTextList(search.commodity);
+  const chosenSecondary = asTextList(search[secondaryParam]);
   const chosenStatuses = asTextList(search.status);
   const chosenYears = asTextList(search.year);
   // A price is four series, and the table lists whichever of the four the
@@ -641,7 +660,7 @@ function IndicatorDetail() {
       : axis === "category"
         ? { category: chosenSeries }
         : { geo_name: chosenSeries }),
-    ...(dimension === "both" ? { commodity: chosenCommodities } : {}),
+    ...(secondary ? { [secondary]: chosenSecondary } : {}),
     status: chosenStatuses,
     year: chosenYears,
     period_start: from,
@@ -843,7 +862,7 @@ function IndicatorDetail() {
   const narrowedBy =
     chosenStatuses.length +
     chosenSeries.length +
-    chosenCommodities.length +
+    chosenSecondary.length +
     chosenYears.length +
     chosenPrices.length +
     hidden.length +
@@ -1080,7 +1099,7 @@ function IndicatorDetail() {
                         ? "Commodities"
                         : dimension === "category"
                           ? "Categories"
-                          : dimension === "both"
+                          : dimension === "both" || dimension === "geography-category"
                             ? "Series"
                             : "Places"
                     }
@@ -1097,7 +1116,9 @@ function IndicatorDetail() {
                           ? "This series is a table of categories — age groups, sectors — for one place"
                           : dimension === "both"
                             ? "This series varies by place and by commodity, so a series is one of each"
-                            : undefined
+                            : dimension === "geography-category"
+                              ? "This series is a table published for each place, so a series is one row of it in one place"
+                              : undefined
                     }
                   />
                 )}
@@ -1665,34 +1686,36 @@ function IndicatorDetail() {
                     {/* The other axis, where there is one. Thirty-one foods
                     priced in every province: without this the only way to ask
                     for shallots is to pick them out of a list of every
-                    province-and-commodity pairing there is. */}
-                    {commodityOptions.length > 1 ? (
+                    province-and-commodity pairing there is. The same holds for
+                    a table published for every province, whose rows get this
+                    control instead. */}
+                    {secondaryOptions.length > 1 ? (
                       <FilterChip
-                        label="Commodity"
-                        value={summariseChip(chosenCommodities)}
+                        label={dimensionLabel(secondaryParam)}
+                        value={summariseChip(chosenSecondary)}
                         onClear={() =>
                           navigate({
                             search: (prev) => ({
                               ...prev,
-                              commodity: undefined,
+                              [secondaryParam]: undefined,
                               page: 0,
                             }),
                           })
                         }
                       >
                         <ChoiceList
-                          options={commodityOptions.map((entry) => ({
+                          options={secondaryOptions.map((entry) => ({
                             value: entry.key,
                             label: entry.label,
                             hint: `${formatCount(entry.count)}`,
                           }))}
-                          selected={chosenCommodities}
-                          searchPlaceholder="Search commodity"
+                          selected={chosenSecondary}
+                          searchPlaceholder={`Search ${dimensionLabel(secondaryParam).toLowerCase()}`}
                           onToggle={(value) =>
                             navigate({
                               search: (prev) => ({
                                 ...prev,
-                                commodity: toggle(chosenCommodities, value),
+                                [secondaryParam]: toggle(chosenSecondary, value),
                                 page: 0,
                               }),
                             })
@@ -1701,7 +1724,7 @@ function IndicatorDetail() {
                             navigate({
                               search: (prev) => ({
                                 ...prev,
-                                commodity: undefined,
+                                [secondaryParam]: undefined,
                                 page: 0,
                               }),
                             })
@@ -1787,7 +1810,7 @@ function IndicatorDetail() {
 
                     {chosenStatuses.length ||
                     chosenSeries.length ||
-                    chosenCommodities.length ||
+                    chosenSecondary.length ||
                     chosenYears.length ||
                     chosenPrices.length ||
                     hidden.length ||

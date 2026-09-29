@@ -61,3 +61,23 @@ func TestEveryBucketWritesACanonicalPeriodLabel(t *testing.T) {
 		}
 	}
 }
+
+func TestATablePublishedForEveryPlaceIsSplitByBoth(t *testing.T) {
+	// OJK's deposits by type, in 34 provinces: a line per province alone would
+	// average giro, savings, time deposits and their total into one figure.
+	for _, c := range []struct {
+		name                            string
+		places, commodities, categories int64
+		want                            string
+	}{
+		{"a table for every province", 34, 0, 3, "geography-category"},
+		{"a national table of age groups", 1, 0, 16, "category"},
+		{"food prices by province and commodity", 34, 31, 0, "both"},
+		{"a series by province", 34, 0, 0, "geography"},
+		{"a national series", 1, 0, 0, "geography"},
+	} {
+		if got := seriesDimension(c.places, c.commodities, c.categories); got != c.want {
+			t.Errorf("%s: dimension = %q, want %q", c.name, got, c.want)
+		}
+	}
+}

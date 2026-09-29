@@ -52,8 +52,8 @@ type ObservationSeries struct {
 	// native, month, quarter or year. `native` means the figures are as
 	// published and nothing has been averaged.
 	Granularity string `json:"granularity"`
-	// geography, commodity, both, category or none — what the lines are split
-	// along.
+	// geography, commodity, both, geography-category, category or none — what
+	// the lines are split along.
 	Dimension string `json:"dimension"`
 	// How many members there are in total, against however many lines are
 	// returned: a chart that draws the eight largest has to be able to say so.
@@ -67,6 +67,10 @@ type ObservationSeries struct {
 const (
 	memberBoth = "coalesce(" + memberGeoExpr + ", '—') || ' · ' || coalesce(" +
 		memberCommodityExpr + ", '—')"
+	// A place and a row of the table published for it: OJK's deposits by type
+	// in every province. The em dash is the series' total, which carries no
+	// category.
+	memberGeoCategory = "coalesce(" + memberGeoExpr + ", '—') || ' · ' || coalesce(o.category, '—')"
 )
 
 // defaultPoints is how many points a line is worth drawing with.
@@ -109,7 +113,7 @@ func (s *Server) handleObservationSeries(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	switch dimension {
-	case "", "geography", "commodity", "both", "category", "none":
+	case "", "geography", "commodity", "both", "geography-category", "category", "none":
 	default:
 		badRequest(w, "invalid parameter", "dimension: is not a dimension")
 		return
@@ -142,6 +146,8 @@ func (s *Server) handleObservationSeries(w http.ResponseWriter, r *http.Request)
 	switch shape.dimension {
 	case "both":
 		member = memberBoth
+	case "geography-category":
+		member = memberGeoCategory
 	case "commodity":
 		member = memberCommodityExpr
 	case "category":
@@ -233,47 +239,30 @@ func (s *Server) seriesShape(
 	ctx context.Context, from, where string, args []any, points int, asked string,
 ) (seriesShape, error) {
 	var shape seriesShape
-	var places, commodities, pairs, categories, periods int64
+	var places, commodities, pairs, categories, placeCategories, periods int64
 	var first, last sql.NullTime
 
-	// One query rather than five: each of them is a scan of the same rows.
+	// One query rather than six: each of them is a scan of the same rows.
 	err := s.warehouse.DB().QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT count(*), count(DISTINCT %s), count(DISTINCT %s), count(DISTINCT %s),
-		       count(DISTINCT o.category),
+		       count(DISTINCT o.category), count(DISTINCT %s),
 		       count(DISTINCT o.period), min(o.period_start), max(o.period_start)
-		FROM %s%s`, memberGeoExpr, memberCommodityExpr, memberBoth, from, where), args...,
-	).Scan(&shape.rows, &places, &commodities, &pairs, &categories, &periods, &first, &last)
+		FROM %s%s`, memberGeoExpr, memberCommodityExpr, memberBoth, memberGeoCategory, from, where), args...,
+	).Scan(&shape.rows, &places, &commodities, &pairs, &categories, &placeCategories,
+		&periods, &first, &last)
 	if err != nil {
 		return shape, err
 	}
 
-	// The same judgement the portal makes from the facet counts, in the same
-	// order: a series that varies along neither still keeps the one column that
-	// says what its figures are about.
 	shape.dimension = asked
 	if shape.dimension == "" {
-		switch {
-		// Before the place: a table of age groups is national, so its one
-		// place would otherwise claim it and draw every group as one line.
-		case categories > 1 && places <= 1 && commodities <= 1:
-			shape.dimension = "category"
-		case places > 1 && commodities > 1:
-			shape.dimension = "both"
-		case places > 1:
-			shape.dimension = "geography"
-		case commodities > 1:
-			shape.dimension = "commodity"
-		case places == 1:
-			shape.dimension = "geography"
-		case commodities == 1:
-			shape.dimension = "commodity"
-		default:
-			shape.dimension = "none"
-		}
+		shape.dimension = seriesDimension(places, commodities, categories)
 	}
 	switch shape.dimension {
 	case "both":
 		shape.members = pairs
+	case "geography-category":
+		shape.members = placeCategories
 	case "commodity":
 		shape.members = commodities
 	case "geography":
@@ -284,6 +273,35 @@ func (s *Server) seriesShape(
 
 	shape.granularity = granularityFor(periods, first, last, points)
 	return shape, nil
+}
+
+// seriesDimension is the same judgement the portal makes from the facet counts,
+// in the same order: a series that varies along neither still keeps the one
+// column that says what its figures are about.
+func seriesDimension(places, commodities, categories int64) string {
+	switch {
+	// Before the place: a table of age groups is national, so its one place
+	// would otherwise claim it and draw every group as one line.
+	case categories > 1 && places <= 1 && commodities <= 1:
+		return "category"
+	case places > 1 && commodities > 1:
+		return "both"
+	// A table published for every province. Split by place alone, each line
+	// averaged the rows of the table together — giro, savings, time deposits
+	// and their total — into a figure nobody published.
+	case places > 1 && categories > 1:
+		return "geography-category"
+	case places > 1:
+		return "geography"
+	case commodities > 1:
+		return "commodity"
+	case places == 1:
+		return "geography"
+	case commodities == 1:
+		return "commodity"
+	default:
+		return "none"
+	}
 }
 
 // granularityFor picks the coarsest bucket the span does not need, which is the
