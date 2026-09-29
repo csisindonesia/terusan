@@ -20,20 +20,26 @@
  * Timor-Leste, Papua New Guinea — stay on the page: a province is read against
  * where it is, and a border drawn against nothing looks like a coastline.
  *
- * Identity is never shade alone. Every province names itself and its figure on
- * hover and to a screen reader, and the largest are ranked in text beneath.
+ * Identity is never shade alone. Every province carries its figure in a
+ * callout — a label beside it, tied to it by a leader line — so the whole map
+ * reads without hovering; hover and screen readers add the province's name,
+ * and the largest are ranked in text beneath.
  */
 
 import "leaflet/dist/leaflet.css";
 
 import type * as Leaflet from "leaflet";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
+import { Checkbox } from "~/components/ui/checkbox";
 
 import {
   PROVINCE_PROJECTION,
   PROVINCE_SHAPES,
   type ProvinceShape,
 } from "~/lib/indonesia-provinces";
+import { type Callout, interiorPoint, placeCallouts, type Ring } from "~/lib/callouts";
 import { cn } from "~/lib/utils";
 import { SERIES_DARK_SLOTS, SERIES_LIGHT_SLOTS } from "~/lib/viz";
 
@@ -80,9 +86,8 @@ function shade(value: number, max: number): string {
   return along(FLOOR + (100 - FLOOR) * Math.min(value / max, 1));
 }
 
-/** The outline's SVG path, unprojected back to latitude and longitude. */
-function ringsOf(shape: ProvinceShape): Leaflet.LatLngTuple[][] {
-  const { west, north, scale } = PROVINCE_PROJECTION;
+/** The outline's SVG path, as rings in the generated frame's coordinates. */
+function frameRings(shape: ProvinceShape): Ring[] {
   return shape.d
     .split("M")
     .filter(Boolean)
@@ -92,9 +97,44 @@ function ringsOf(shape: ProvinceShape): Leaflet.LatLngTuple[][] {
         .split("L")
         .map((point) => {
           const [x = 0, y = 0] = point.split(" ").map(Number);
-          return [north - y / scale, x / scale + west] as Leaflet.LatLngTuple;
+          return { x, y };
         }),
     );
+}
+
+function unproject({ x, y }: { x: number; y: number }): Leaflet.LatLngTuple {
+  const { west, north, scale } = PROVINCE_PROJECTION;
+  return [north - y / scale, x / scale + west];
+}
+
+/** The outline, unprojected back to latitude and longitude. */
+function ringsOf(shape: ProvinceShape): Leaflet.LatLngTuple[][] {
+  return frameRings(shape).map((ring) => ring.map(unproject));
+}
+
+/** Where each province's leader line starts, found once per page load. */
+let anchors: Map<string, Leaflet.LatLngTuple> | undefined;
+function anchorsOf(): Map<string, Leaflet.LatLngTuple> {
+  anchors ??= new Map(
+    PROVINCE_SHAPES.map((shape) => [
+      shape.geo_id,
+      unproject(interiorPoint(frameRings(shape))),
+    ]),
+  );
+  return anchors;
+}
+
+/** Callout text size; the width is measured, the height is the line box. */
+const LABEL_FONT = "500 10px";
+const LABEL_HEIGHT = 16;
+const LABEL_PAD = 8;
+
+let measurer: CanvasRenderingContext2D | null | undefined;
+function textWidth(text: string, family: string): number {
+  measurer ??= document.createElement("canvas").getContext("2d");
+  if (!measurer) return text.length * 6;
+  measurer.font = `${LABEL_FONT} ${family}`;
+  return measurer.measureText(text).width;
 }
 
 function isDark() {
@@ -117,6 +157,12 @@ export function ChoroplethMap({
   const container = useRef<HTMLDivElement>(null);
   const layers = useRef(new Map<string, Leaflet.Polygon>());
   const [ready, setReady] = useState(false);
+  const mapRef = useRef<Leaflet.Map | null>(null);
+  // Leaflet's own container holds the callouts, above the provinces and
+  // below its controls and tooltips, so the zoom buttons stay reachable.
+  const [overlay, setOverlay] = useState<HTMLDivElement | null>(null);
+  const [labelled, setLabelled] = useState(true);
+  const [callouts, setCallouts] = useState<Callout[]>([]);
 
   const { byGeo, max, ranked } = useMemo(() => {
     const byGeo = new Map(figures.map((figure) => [figure.geo_id, figure.value]));
@@ -135,6 +181,61 @@ export function ChoroplethMap({
   const shownValue = shown ? byGeo.get(shown.geo_id) : undefined;
   const suffix = unit ? ` ${unit}` : "";
 
+  const place = useCallback(() => {
+    const map = mapRef.current;
+    if (!map || !labelled) {
+      setCallouts([]);
+      return;
+    }
+    const size = map.getSize();
+    const family = getComputedStyle(map.getContainer()).fontFamily;
+    const placed = anchorsOf();
+    const items = PROVINCE_SHAPES.flatMap((shape) => {
+      const value = byGeo.get(shape.geo_id);
+      const at = placed.get(shape.geo_id);
+      if (value === undefined || !at) return [];
+      const anchor = map.latLngToContainerPoint(at);
+      // A province panned or zoomed out of the frame is not labelled at its
+      // edge, where it would read as belonging to whatever is there.
+      if (anchor.x < 0 || anchor.y < 0 || anchor.x > size.x || anchor.y > size.y) {
+        return [];
+      }
+      const text = format(value);
+      return [
+        {
+          id: shape.geo_id,
+          anchor: { x: anchor.x, y: anchor.y },
+          width: Math.ceil(textWidth(text, family)) + LABEL_PAD,
+          height: LABEL_HEIGHT,
+        },
+      ];
+    });
+    const frame = map.getContainer().getBoundingClientRect();
+    const controls = [...map.getContainer().querySelectorAll(".leaflet-control")].map(
+      (control) => {
+        const box = control.getBoundingClientRect();
+        return {
+          x: box.left - frame.left,
+          y: box.top - frame.top,
+          width: box.width,
+          height: box.height,
+        };
+      },
+    );
+    setCallouts(placeCallouts(items, { width: size.x, height: size.y }, controls));
+  }, [byGeo, format, labelled]);
+
+  // Rerun on every move: the placement is in screen pixels.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map) return;
+    place();
+    map.on("move zoom resize", place);
+    return () => {
+      map.off("move zoom resize", place);
+    };
+  }, [ready, place]);
+
   // Leaflet touches `window` on import, so it is loaded only in the browser.
   useEffect(() => {
     let map: Leaflet.Map | undefined;
@@ -150,6 +251,12 @@ export function ChoroplethMap({
         attributionControl: true,
         zoomSnap: 0.25,
       });
+      mapRef.current = map;
+      const pane = document.createElement("div");
+      pane.className = "pointer-events-none absolute inset-0 z-[450]";
+      pane.setAttribute("aria-hidden", "true");
+      map.getContainer().append(pane);
+      setOverlay(pane);
       map.fitBounds(BOUNDS, { padding: [8, 8] });
       // A map made while its box has no size (a hidden tab, a card still
       // laying out) fits to nothing and draws every province as an empty
@@ -226,6 +333,9 @@ export function ChoroplethMap({
       observer?.disconnect();
       resize?.disconnect();
       map?.remove();
+      mapRef.current = null;
+      setOverlay(null);
+      setReady(false);
       layers.current.clear();
     };
   }, [hatch]);
@@ -282,7 +392,9 @@ export function ChoroplethMap({
           </>
         ) : (
           <span className="text-muted-foreground">
-            Hover a province for its figure.
+            {labelled
+              ? "Hover a province for its name."
+              : "Hover a province for its figure."}
           </span>
         )}
       </p>
@@ -298,8 +410,74 @@ export function ChoroplethMap({
         role="group"
         aria-label="Map of Indonesia's provinces, shaded by figure"
       />
+      {overlay && callouts.length
+        ? createPortal(
+            <>
+              <svg className="absolute inset-0 size-full overflow-visible">
+                {callouts.map((callout) => {
+                  const on = callout.id === active;
+                  const long =
+                    Math.hypot(
+                      callout.tail.x - callout.anchor.x,
+                      callout.tail.y - callout.anchor.y,
+                    ) > 3;
+                  return (
+                    <g
+                      key={callout.id}
+                      className={on ? "text-foreground" : "text-foreground/60"}
+                    >
+                      {long ? (
+                        <line
+                          x1={callout.anchor.x}
+                          y1={callout.anchor.y}
+                          x2={callout.tail.x}
+                          y2={callout.tail.y}
+                          stroke="currentColor"
+                          strokeWidth={on ? 1.2 : 0.8}
+                        />
+                      ) : null}
+                      <circle
+                        cx={callout.anchor.x}
+                        cy={callout.anchor.y}
+                        r={on ? 2.2 : 1.6}
+                        fill="currentColor"
+                        stroke="var(--card)"
+                        strokeWidth={0.8}
+                      />
+                    </g>
+                  );
+                })}
+              </svg>
+              {callouts.map((callout) => (
+                <span
+                  key={callout.id}
+                  className={cn(
+                    "absolute flex items-center justify-center rounded-[4px] border bg-card/95 text-[10px] leading-none font-medium text-card-foreground tabular-nums shadow-xs",
+                    callout.id === active ? "z-10 border-foreground" : "border-border",
+                  )}
+                  style={{
+                    left: callout.center.x - callout.width / 2,
+                    top: callout.center.y - callout.height / 2,
+                    width: callout.width,
+                    height: callout.height,
+                  }}
+                >
+                  {format(byGeo.get(callout.id)!)}
+                </span>
+              ))}
+            </>,
+            overlay,
+          )
+        : null}
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-muted-foreground">
+        <label className="flex cursor-pointer items-center gap-1.5">
+          <Checkbox
+            checked={labelled}
+            onCheckedChange={(checked) => setLabelled(checked === true)}
+          />
+          Figures on the map
+        </label>
         <div className="flex items-center gap-2">
           <span className="tabular-nums">0</span>
           <span
