@@ -110,7 +110,11 @@ export function UserFormDialog({
   });
 
   const title =
-    mode === "create" ? "Add user" : mode === "approve" ? "Approve request" : "Edit user";
+    mode === "create"
+      ? "Add user"
+      : mode === "approve"
+        ? "Approve request"
+        : "Edit user";
   const description =
     mode === "create"
       ? "The account is active at once. Leave the password empty to have one generated, shown to you once."
@@ -180,7 +184,10 @@ export function UserFormDialog({
                 <Select
                   value={role}
                   onValueChange={(value) => setRole(String(value))}
-                  items={ROLES.map((entry) => ({ value: entry.value, label: entry.label }))}
+                  items={ROLES.map((entry) => ({
+                    value: entry.value,
+                    label: entry.label,
+                  }))}
                 >
                   <SelectTrigger id="user-role" className="w-full">
                     <SelectValue />
@@ -210,7 +217,9 @@ export function UserFormDialog({
             </div>
             <FieldDescription>
               {ROLES.find((entry) => entry.value === role)?.description}
-              {guest ? " Sign-in, sessions and API tokens all stop at the end of that day." : null}
+              {guest
+                ? " Sign-in, sessions and API tokens all stop at the end of that day."
+                : null}
             </FieldDescription>
 
             {mode === "create" ? (
@@ -298,7 +307,11 @@ export function SecretDialog({
               if (secret) void copyToClipboard(secret).then(setCopied);
             }}
           >
-            {copied ? <IconCheck className="size-4" /> : <IconCopy className="size-4" />}
+            {copied ? (
+              <IconCheck className="size-4" />
+            ) : (
+              <IconCopy className="size-4" />
+            )}
             {copied ? "Copied" : "Copy"}
           </Button>
         </div>

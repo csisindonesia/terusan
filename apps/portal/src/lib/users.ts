@@ -20,7 +20,8 @@ export const ROLES = [
   {
     value: "admin",
     label: "Admin",
-    description: "Everything a researcher can do, plus creating and approving accounts.",
+    description:
+      "Everything a researcher can do, plus creating and approving accounts.",
   },
 ] as const;
 
@@ -58,7 +59,9 @@ export function displayName(user: User): string {
 
 /** The last time the account was seen, whichever of the two is later. */
 export function lastSeen(user: User): string | undefined {
-  const candidates = [user.last_active_at, user.last_login_at].filter(Boolean) as string[];
+  const candidates = [user.last_active_at, user.last_login_at].filter(
+    Boolean,
+  ) as string[];
   return candidates.sort().at(-1);
 }
 

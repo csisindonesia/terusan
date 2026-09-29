@@ -134,9 +134,7 @@ function OrganizationPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  render={
-                    <Link to="/datasets" search={{ organization: [name] }} />
-                  }
+                  render={<Link to="/datasets" search={{ organization: [name] }} />}
                 >
                   <IconDatabase className="size-4" />
                   Datasets
@@ -162,15 +160,25 @@ function OrganizationPage() {
         <aside className={`lg:sticky lg:self-start ${BELOW_STICKY_HEADER}`}>
           <h2 className="font-heading text-sm font-semibold tracking-tight">About</h2>
           <dl className="mt-3 space-y-3">
-            <Fact label="Country" value={organization?.countries.join(", ") || undefined} />
-            <Fact label="Licence" value={organization?.licenses.join("; ") || undefined} />
+            <Fact
+              label="Country"
+              value={organization?.countries.join(", ") || undefined}
+            />
+            <Fact
+              label="Licence"
+              value={organization?.licenses.join("; ") || undefined}
+            />
             <Fact
               label="Sources"
-              value={organization ? formatCount(organization.sources.length) : undefined}
+              value={
+                organization ? formatCount(organization.sources.length) : undefined
+              }
             />
             <Fact
               label="Datasets"
-              value={organization ? formatCount(organization.datasets.length) : undefined}
+              value={
+                organization ? formatCount(organization.datasets.length) : undefined
+              }
             />
             <Fact
               label="Series"
@@ -190,7 +198,11 @@ function OrganizationPage() {
             />
             <Fact
               label="Last updated"
-              value={organization?.last_updated ? formatDate(organization.last_updated) : undefined}
+              value={
+                organization?.last_updated
+                  ? formatDate(organization.last_updated)
+                  : undefined
+              }
               hint={formatRelative(organization?.last_updated)}
             />
           </dl>
@@ -206,7 +218,9 @@ function OrganizationPage() {
                 <li key={source.source_id} className="space-y-1 py-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium">{source.name}</span>
-                    <code className="text-xs text-muted-foreground">{source.source_id}</code>
+                    <code className="text-xs text-muted-foreground">
+                      {source.source_id}
+                    </code>
                     <Badge variant={source.active ? "secondary" : "outline"}>
                       {source.active ? "Scheduled" : "Paused"}
                     </Badge>
@@ -267,13 +281,23 @@ function hostOf(url: string): string {
   }
 }
 
-function Fact({ label, value, hint }: { label: string; value?: string; hint?: string }) {
+function Fact({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value?: string;
+  hint?: string;
+}) {
   return (
     <div>
       <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
       <dd className="mt-0.5 text-sm">
         {value ?? <span className="text-muted-foreground">—</span>}
-        {hint ? <span className="ml-1.5 text-xs text-muted-foreground">{hint}</span> : null}
+        {hint ? (
+          <span className="ml-1.5 text-xs text-muted-foreground">{hint}</span>
+        ) : null}
       </dd>
     </div>
   );

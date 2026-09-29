@@ -30,7 +30,10 @@ export function organizationOf(source: Pick<Source, "organization" | "name">): s
   return source.organization?.trim() || source.name;
 }
 
-export function organizationsFrom(sources: Source[], datasets: Dataset[]): Organization[] {
+export function organizationsFrom(
+  sources: Source[],
+  datasets: Dataset[],
+): Organization[] {
   const byName = new Map<string, Organization>();
   const sourceOrg = new Map<string, string>();
 
@@ -74,13 +77,22 @@ export function organizationsFrom(sources: Source[], datasets: Dataset[]): Organ
     organization.datasets.push(dataset);
     organization.series += dataset.series ?? dataset.indicators.length;
     organization.observations += dataset.observations;
-    if (dataset.period_start && (!organization.period_start || dataset.period_start < organization.period_start)) {
+    if (
+      dataset.period_start &&
+      (!organization.period_start || dataset.period_start < organization.period_start)
+    ) {
       organization.period_start = dataset.period_start;
     }
-    if (dataset.period_end && (!organization.period_end || dataset.period_end > organization.period_end)) {
+    if (
+      dataset.period_end &&
+      (!organization.period_end || dataset.period_end > organization.period_end)
+    ) {
       organization.period_end = dataset.period_end;
     }
-    if (dataset.last_updated && (!organization.last_updated || dataset.last_updated > organization.last_updated)) {
+    if (
+      dataset.last_updated &&
+      (!organization.last_updated || dataset.last_updated > organization.last_updated)
+    ) {
       organization.last_updated = dataset.last_updated;
     }
   }

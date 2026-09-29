@@ -49,23 +49,25 @@ export function RowActions({
   bare?: boolean;
   label?: string;
 }) {
-  const standard: RowAction[] = bare ? [] : [
-    ...(unavailable ?? []).map((action) => ({
-      ...action,
-      onSelect: editable ? action.onSelect : undefined,
-    })),
-    {
-      label: "Edit",
-      icon: IconPencil,
-      hint: editable ? undefined : "The serving layer is read-only",
-    },
-    {
-      label: "Delete",
-      icon: IconTrash,
-      destructive: true,
-      hint: editable ? undefined : "The serving layer is read-only",
-    },
-  ];
+  const standard: RowAction[] = bare
+    ? []
+    : [
+        ...(unavailable ?? []).map((action) => ({
+          ...action,
+          onSelect: editable ? action.onSelect : undefined,
+        })),
+        {
+          label: "Edit",
+          icon: IconPencil,
+          hint: editable ? undefined : "The serving layer is read-only",
+        },
+        {
+          label: "Delete",
+          icon: IconTrash,
+          destructive: true,
+          hint: editable ? undefined : "The serving layer is read-only",
+        },
+      ];
 
   return (
     <DropdownMenu>

@@ -71,7 +71,8 @@ const accessColumns: ColumnDef<AccessEvent>[] = [
     accessorKey: "kind",
     header: "Activity",
     cell: ({ row }) => {
-      const Icon = KIND_ICONS[row.original.kind as keyof typeof KIND_ICONS] ?? IconDeviceDesktop;
+      const Icon =
+        KIND_ICONS[row.original.kind as keyof typeof KIND_ICONS] ?? IconDeviceDesktop;
       return (
         <span className="inline-flex items-center gap-1.5 text-sm">
           <Icon className="size-4 text-muted-foreground" />
@@ -91,7 +92,9 @@ const accessColumns: ColumnDef<AccessEvent>[] = [
     id: "location",
     header: "Location",
     cell: ({ row }) => (
-      <span className={isPrivateAddress(row.original.ip) ? "text-muted-foreground" : ""}>
+      <span
+        className={isPrivateAddress(row.original.ip) ? "text-muted-foreground" : ""}
+      >
         {formatLocation(row.original)}
       </span>
     ),
@@ -137,7 +140,9 @@ function UserPage() {
         <PageHeader title="User" actions={back} />
         <Alert>
           <IconShieldLock />
-          <AlertDescription>Only an administrator can see other accounts.</AlertDescription>
+          <AlertDescription>
+            Only an administrator can see other accounts.
+          </AlertDescription>
         </Alert>
       </div>
     );
@@ -197,7 +202,8 @@ function UserPage() {
         <CardHeader>
           <CardTitle>Details</CardTitle>
           <CardDescription>
-            What this account is and what it may do. Change it from the three dots above.
+            What this account is and what it may do. Change it from the three dots
+            above.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -280,7 +286,15 @@ function RoleValue({ user }: { user: User }) {
 function StatusValue({ user }: { user: User }) {
   const state = userState(user);
   return (
-    <Badge variant={state === "active" ? "secondary" : state === "pending" ? "outline" : "destructive"}>
+    <Badge
+      variant={
+        state === "active"
+          ? "secondary"
+          : state === "pending"
+            ? "outline"
+            : "destructive"
+      }
+    >
       {STATE_LABELS[state]}
     </Badge>
   );

@@ -15,7 +15,11 @@ import { errorMessage } from "~/components/user-dialogs";
 import { Alert, AlertDescription } from "~/components/ui/alert";
 import { Button } from "~/components/ui/button";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "~/components/ui/field";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "~/components/ui/input-group";
 import { api } from "~/lib/api";
 import { capabilitiesQuery } from "~/lib/session";
 
@@ -51,7 +55,10 @@ function Register() {
   const mismatch = confirm.length > 0 && password !== confirm;
   const short = password.length > 0 && password.length < MIN_PASSWORD;
   const ready =
-    name.trim() && email.trim() && password.length >= MIN_PASSWORD && password === confirm;
+    name.trim() &&
+    email.trim() &&
+    password.length >= MIN_PASSWORD &&
+    password === confirm;
 
   const register = useMutation({
     mutationFn: () =>

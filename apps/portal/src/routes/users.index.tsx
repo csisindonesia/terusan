@@ -88,7 +88,11 @@ function StateBadge({ state }: { state: UserState }) {
   return (
     <Badge
       variant={state === "pending" ? "outline" : "destructive"}
-      className={state === "pending" ? "border-amber-500/50 text-amber-700 dark:text-amber-400" : ""}
+      className={
+        state === "pending"
+          ? "border-amber-500/50 text-amber-700 dark:text-amber-400"
+          : ""
+      }
     >
       {STATE_LABELS[state]}
     </Badge>
@@ -146,7 +150,12 @@ function columns(selfId?: string): ColumnDef<User>[] {
             </span>
           );
         }
-        return <StackedCell primary={formatRelative(seen) ?? formatDate(seen)} secondary={formatDate(seen)} />;
+        return (
+          <StackedCell
+            primary={formatRelative(seen) ?? formatDate(seen)}
+            secondary={formatDate(seen)}
+          />
+        );
       },
     },
     {
@@ -184,18 +193,23 @@ function Users() {
     retry: false,
   });
   const [adding, setAdding] = useState(false);
-  const [created, setCreated] = useState<{ email: string; password: string } | null>(null);
+  const [created, setCreated] = useState<{ email: string; password: string } | null>(
+    null,
+  );
   const [selected, setSelected] = useState<User[]>([]);
 
   if (!sessionLoading && !isAdmin) {
     return (
       <div className="space-y-5">
-        <PageHeader title="Users" description="Everyone who can sign in to this portal." />
+        <PageHeader
+          title="Users"
+          description="Everyone who can sign in to this portal."
+        />
         <Alert>
           <IconShieldLock />
           <AlertDescription>
-            Only an administrator can manage accounts. Ask one if you need access changed
-            for yourself or a colleague.
+            Only an administrator can manage accounts. Ask one if you need access
+            changed for yourself or a colleague.
           </AlertDescription>
         </Alert>
       </div>
@@ -277,12 +291,19 @@ function Users() {
                   onClear={() => clear("role")}
                 >
                   <ChoiceList
-                    options={ROLES.map((entry) => ({ value: entry.value, label: entry.label }))}
+                    options={ROLES.map((entry) => ({
+                      value: entry.value,
+                      label: entry.label,
+                    }))}
                     selected={roles}
                     searchPlaceholder="Search roles"
                     onToggle={(value) =>
                       navigate({
-                        search: (prev) => ({ ...prev, role: toggle(roles, value), page: 0 }),
+                        search: (prev) => ({
+                          ...prev,
+                          role: toggle(roles, value),
+                          page: 0,
+                        }),
                       })
                     }
                     onClear={() => clear("role")}
@@ -290,19 +311,27 @@ function Users() {
                 </FilterChip>
                 <FilterChip
                   label="Status"
-                  value={summarise(states.map((value) => STATE_LABELS[value as UserState] ?? value))}
+                  value={summarise(
+                    states.map((value) => STATE_LABELS[value as UserState] ?? value),
+                  )}
                   onClear={() => clear("state")}
                 >
                   <ChoiceList
-                    options={(Object.keys(STATE_LABELS) as UserState[]).map((value) => ({
-                      value,
-                      label: STATE_LABELS[value],
-                    }))}
+                    options={(Object.keys(STATE_LABELS) as UserState[]).map(
+                      (value) => ({
+                        value,
+                        label: STATE_LABELS[value],
+                      }),
+                    )}
                     selected={states}
                     searchPlaceholder="Search statuses"
                     onToggle={(value) =>
                       navigate({
-                        search: (prev) => ({ ...prev, state: toggle(states, value), page: 0 }),
+                        search: (prev) => ({
+                          ...prev,
+                          state: toggle(states, value),
+                          page: 0,
+                        }),
                       })
                     }
                     onClear={() => clear("state")}
@@ -324,7 +353,9 @@ function Users() {
               <SearchInput
                 value={asText(search.q)}
                 placeholder="Search names, emails and departments"
-                onSearch={(q) => navigate({ search: (prev) => ({ ...prev, q, page: 0 }) })}
+                onSearch={(q) =>
+                  navigate({ search: (prev) => ({ ...prev, q, page: 0 }) })
+                }
               />
             }
           />
@@ -336,8 +367,8 @@ function Users() {
           <IconUserPlus />
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
             <span>
-              {formatCount(pending)} {pending === 1 ? "person is" : "people are"} waiting for
-              approval.
+              {formatCount(pending)} {pending === 1 ? "person is" : "people are"}{" "}
+              waiting for approval.
             </span>
             <Button
               variant="outline"
@@ -366,7 +397,11 @@ function Users() {
         getRowId={(row) => row.id}
         onSelectionChange={setSelected}
         renderSelectionActions={(chosen) => (
-          <Button variant="outline" size="sm" onClick={() => exportRows(chosen, "selection")}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => exportRows(chosen, "selection")}
+          >
             <IconDownload className="size-4" />
             Export {formatCount(chosen.length)}
           </Button>
@@ -384,7 +419,9 @@ function Users() {
               {formatCount(page * PAGE_SIZE + 1)}–
               {formatCount(Math.min((page + 1) * PAGE_SIZE, rows.length))} of{" "}
               {formatCount(rows.length)} user{rows.length === 1 ? "" : "s"}
-              {rows.length !== all.length ? ` (${formatCount(all.length)} total)` : null}
+              {rows.length !== all.length
+                ? ` (${formatCount(all.length)} total)`
+                : null}
               {selected.length ? ` · ${formatCount(selected.length)} selected` : null}
             </>
           ) : null

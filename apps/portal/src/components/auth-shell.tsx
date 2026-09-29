@@ -12,7 +12,13 @@ import preview from "~/assets/portal-preview.png";
  * name, the one-line claim and a picture of the thing itself answer that
  * before anyone types an address.
  */
-export function AuthShell({ children, footer }: { children: ReactNode; footer?: ReactNode }) {
+export function AuthShell({
+  children,
+  footer,
+}: {
+  children: ReactNode;
+  footer?: ReactNode;
+}) {
   return (
     <div className="flex min-h-svh flex-col bg-muted/30 p-3 lg:flex-row lg:p-4">
       <div className="flex flex-1 items-center justify-center px-4 py-10 sm:px-8">

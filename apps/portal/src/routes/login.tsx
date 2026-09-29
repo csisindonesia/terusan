@@ -89,7 +89,10 @@ function Login() {
         <p className="text-sm text-muted-foreground">
           No account?{" "}
           {registration ? (
-            <Link to="/register" className="font-medium text-primary underline-offset-4 hover:underline">
+            <Link
+              to="/register"
+              className="font-medium text-primary underline-offset-4 hover:underline"
+            >
               Request access
             </Link>
           ) : (
@@ -103,169 +106,168 @@ function Login() {
         </p>
       }
     >
-          <div className="space-y-1.5">
-            <h1 className="font-heading text-3xl font-semibold tracking-tight">
-              Log in to your account
-            </h1>
-            <p className="text-sm text-muted-foreground">Please enter your details</p>
-          </div>
+      <div className="space-y-1.5">
+        <h1 className="font-heading text-3xl font-semibold tracking-tight">
+          Log in to your account
+        </h1>
+        <p className="text-sm text-muted-foreground">Please enter your details</p>
+      </div>
 
-          {/* The form is what this page is for, so it is drawn first and
+      {/* The form is what this page is for, so it is drawn first and
               replaced only once the API has actually said otherwise. Waiting
               for the capability check would show a skeleton where the email
               field goes on every single load, including the fast ones. */}
-          {isUnreachable ? (
-            <Alert variant="destructive">
-              <IconAlertTriangle />
-              <AlertDescription>
-                The API is not answering, so nobody can be signed in. Start it with{" "}
-                <code className="font-mono">make dev-api</code>, or check{" "}
-                <code className="font-mono">VITE_API_URL</code>.
-              </AlertDescription>
-            </Alert>
-          ) : !isLoading && !hasAuth ? (
-            <Alert>
-              <IconKey />
-              <AlertDescription>
-                {/* A deployment without an application database has no accounts
+      {isUnreachable ? (
+        <Alert variant="destructive">
+          <IconAlertTriangle />
+          <AlertDescription>
+            The API is not answering, so nobody can be signed in. Start it with{" "}
+            <code className="font-mono">make dev-api</code>, or check{" "}
+            <code className="font-mono">VITE_API_URL</code>.
+          </AlertDescription>
+        </Alert>
+      ) : !isLoading && !hasAuth ? (
+        <Alert>
+          <IconKey />
+          <AlertDescription>
+            {/* A deployment without an application database has no accounts
                     at all. Saying so beats a form that refuses every password. */}
-                This deployment keeps no accounts, so there is nothing to log in to. Set{" "}
-                <code className="font-mono">APP_DB</code> where the API runs, then
-                create one with <code className="font-mono">authctl create</code>.{" "}
-                <Link to="/" className="underline underline-offset-4">
-                  Go to the portal
-                </Link>
-                .
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <form
-              className="space-y-6"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!email.trim() || !password) return;
-                login.mutate();
-              }}
-            >
-              <FieldGroup>
-                <Field>
-                  <FieldLabel htmlFor="email">Email</FieldLabel>
-                  <InputGroup className="h-11">
-                    <InputGroupAddon>
-                      <IconMail className="size-4 text-muted-foreground" />
-                    </InputGroupAddon>
-                    <InputGroupInput
-                      id="email"
-                      type="email"
-                      name="email"
-                      autoComplete="username"
-                      autoFocus
-                      required
-                      placeholder="Enter your email"
-                      value={email}
-                      onChange={(event) => setEmail(event.target.value)}
-                    />
-                  </InputGroup>
-                </Field>
+            This deployment keeps no accounts, so there is nothing to log in to. Set{" "}
+            <code className="font-mono">APP_DB</code> where the API runs, then create
+            one with <code className="font-mono">authctl create</code>.{" "}
+            <Link to="/" className="underline underline-offset-4">
+              Go to the portal
+            </Link>
+            .
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <form
+          className="space-y-6"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!email.trim() || !password) return;
+            login.mutate();
+          }}
+        >
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="email">Email</FieldLabel>
+              <InputGroup className="h-11">
+                <InputGroupAddon>
+                  <IconMail className="size-4 text-muted-foreground" />
+                </InputGroupAddon>
+                <InputGroupInput
+                  id="email"
+                  type="email"
+                  name="email"
+                  autoComplete="username"
+                  autoFocus
+                  required
+                  placeholder="Enter your email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                />
+              </InputGroup>
+            </Field>
 
-                <Field>
-                  <FieldLabel htmlFor="password">Password</FieldLabel>
-                  <InputGroup className="h-11">
-                    <InputGroupAddon>
-                      <IconLock className="size-4 text-muted-foreground" />
-                    </InputGroupAddon>
-                    <InputGroupInput
-                      id="password"
-                      type={showPassword ? "text" : "password"}
-                      name="password"
-                      autoComplete="current-password"
-                      required
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                    />
-                    <InputGroupAddon align="inline-end">
-                      {/* A button rather than a checkbox, and labelled for a
+            <Field>
+              <FieldLabel htmlFor="password">Password</FieldLabel>
+              <InputGroup className="h-11">
+                <InputGroupAddon>
+                  <IconLock className="size-4 text-muted-foreground" />
+                </InputGroupAddon>
+                <InputGroupInput
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  name="password"
+                  autoComplete="current-password"
+                  required
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                />
+                <InputGroupAddon align="inline-end">
+                  {/* A button rather than a checkbox, and labelled for a
                           screen reader as what it does now — "Show password"
                           while it is hidden — with the state on the control
                           itself so an assistive reader is not left guessing
                           which way round it is. */}
-                      <InputGroupButton
-                        size="icon-xs"
-                        aria-label={showPassword ? "Hide password" : "Show password"}
-                        aria-pressed={showPassword}
-                        title={showPassword ? "Hide password" : "Show password"}
-                        onClick={() => setShowPassword((shown) => !shown)}
-                      >
-                        {showPassword ? (
-                          <IconEyeOff className="text-muted-foreground" />
-                        ) : (
-                          <IconEye className="text-muted-foreground" />
-                        )}
-                      </InputGroupButton>
-                    </InputGroupAddon>
-                  </InputGroup>
-                </Field>
-              </FieldGroup>
+                  <InputGroupButton
+                    size="icon-xs"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
+                    title={showPassword ? "Hide password" : "Show password"}
+                    onClick={() => setShowPassword((shown) => !shown)}
+                  >
+                    {showPassword ? (
+                      <IconEyeOff className="text-muted-foreground" />
+                    ) : (
+                      <IconEye className="text-muted-foreground" />
+                    )}
+                  </InputGroupButton>
+                </InputGroupAddon>
+              </InputGroup>
+            </Field>
+          </FieldGroup>
 
-              {login.isError ? (
-                <Alert variant="destructive">
-                  <IconAlertTriangle />
-                  <AlertDescription>{loginError(login.error)}</AlertDescription>
-                </Alert>
-              ) : null}
+          {login.isError ? (
+            <Alert variant="destructive">
+              <IconAlertTriangle />
+              <AlertDescription>{loginError(login.error)}</AlertDescription>
+            </Alert>
+          ) : null}
 
-              <div className="flex items-center justify-between gap-3">
-                <label className="flex items-center gap-2 text-sm">
-                  <Checkbox
-                    checked={remember}
-                    onCheckedChange={(checked) => setRemember(checked === true)}
-                  />
-                  {/* Thirty days is the API's own default for a remembered
+          <div className="flex items-center justify-between gap-3">
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={remember}
+                onCheckedChange={(checked) => setRemember(checked === true)}
+              />
+              {/* Thirty days is the API's own default for a remembered
                       session, so the label is a fact rather than a promise the
                       server does not keep. */}
-                  Remember for 30 days
-                </label>
-                <Link
-                  to="/help"
-                  className="text-sm font-medium text-primary underline-offset-4 hover:underline"
-                >
-                  Forgot password
-                </Link>
-              </div>
+              Remember for 30 days
+            </label>
+            <Link
+              to="/help"
+              className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+            >
+              Forgot password
+            </Link>
+          </div>
 
-              <Button
-                type="submit"
-                size="lg"
-                className="h-11 w-full"
-                disabled={login.isPending || !email.trim() || !password}
-              >
-                {login.isPending ? "Logging in…" : "Log in"}
-              </Button>
+          <Button
+            type="submit"
+            size="lg"
+            className="h-11 w-full"
+            disabled={login.isPending || !email.trim() || !password}
+          >
+            {login.isPending ? "Logging in…" : "Log in"}
+          </Button>
 
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                <span className="h-px flex-1 bg-border" />
-                OR
-                <span className="h-px flex-1 bg-border" />
-              </div>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="h-px flex-1 bg-border" />
+            OR
+            <span className="h-px flex-1 bg-border" />
+          </div>
 
-              {/* Listed and disabled, like the unbuilt pages in the sidebar:
+          {/* Listed and disabled, like the unbuilt pages in the sidebar:
                   showing the shape of the thing is honest, wiring a button to
                   nothing is not. */}
-              <Button
-                type="button"
-                variant="outline"
-                size="lg"
-                className="h-11 w-full"
-                disabled
-                title="No identity provider is configured for this deployment"
-              >
-                <IconKey className="size-4" />
-                Log in with single sign-on
-              </Button>
-            </form>
-          )}
-
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            className="h-11 w-full"
+            disabled
+            title="No identity provider is configured for this deployment"
+          >
+            <IconKey className="size-4" />
+            Log in with single sign-on
+          </Button>
+        </form>
+      )}
     </AuthShell>
   );
 }

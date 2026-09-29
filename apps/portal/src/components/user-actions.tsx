@@ -83,7 +83,8 @@ export function UserActions({
     actions.push({
       label: "View details",
       icon: IconEye,
-      onSelect: () => void navigate({ to: "/users/$userId", params: { userId: user.id } }),
+      onSelect: () =>
+        void navigate({ to: "/users/$userId", params: { userId: user.id } }),
     });
   }
   if (pending) {
@@ -94,7 +95,9 @@ export function UserActions({
         icon: IconTrash,
         destructive: true,
         onSelect: () => {
-          if (window.confirm(`Reject the request from ${user.email}? It will be deleted.`)) {
+          if (
+            window.confirm(`Reject the request from ${user.email}? It will be deleted.`)
+          ) {
             act.mutate("reject");
           }
         },
@@ -154,7 +157,11 @@ export function UserActions({
         open={form !== null}
         onOpenChange={(open) => (open ? null : setForm(null))}
       />
-      <SecretDialog email={user.email} secret={secret} onClose={() => setSecret(null)} />
+      <SecretDialog
+        email={user.email}
+        secret={secret}
+        onClose={() => setSecret(null)}
+      />
     </>
   );
 }

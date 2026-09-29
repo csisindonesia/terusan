@@ -120,12 +120,7 @@ function CommodityPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  render={
-                    <Link
-                      to="/observations"
-                      search={{ commodity: [name] }}
-                    />
-                  }
+                  render={<Link to="/observations" search={{ commodity: [name] }} />}
                 >
                   <IconChartArea className="size-4" />
                   View figures
@@ -164,7 +159,11 @@ function CommodityPage() {
               label="Registry ID"
               value={commodity ? (commodity.commodity_id ?? "Unregistered") : undefined}
             />
-            <Fact label="Category" value={commodity?.category} hint={commodity?.subcategory} />
+            <Fact
+              label="Category"
+              value={commodity?.category}
+              hint={commodity?.subcategory}
+            />
             <Fact label="HS code" value={commodity?.hs_code} />
             <Fact
               label="Units"
@@ -198,7 +197,9 @@ function CommodityPage() {
             />
             <Fact
               label="Sources"
-              value={commodity?.sources.length ? commodity.sources.join(", ") : undefined}
+              value={
+                commodity?.sources.length ? commodity.sources.join(", ") : undefined
+              }
             />
             <Fact
               label="Last updated"
@@ -222,7 +223,9 @@ function CommodityPage() {
                 ? `The ${formatCount(lines.length)} largest of ${formatCount(drawn.members)} lines.`
                 : undefined
             }
-            sources={selected?.publisher ? [selected.publisher] : (commodity?.sources ?? [])}
+            sources={
+              selected?.publisher ? [selected.publisher] : (commodity?.sources ?? [])
+            }
             link={
               selectedId ? (
                 <Link
@@ -335,7 +338,9 @@ function CommodityPage() {
 
 /** Every bucket any line has a point for, so the lines share one axis. */
 function periodsOf(series: SeriesLine[]): string[] {
-  return [...new Set(series.flatMap((line) => line.points.map((p) => p.period)))].sort();
+  return [
+    ...new Set(series.flatMap((line) => line.points.map((p) => p.period))),
+  ].sort();
 }
 
 function linesFrom(
@@ -364,7 +369,10 @@ function linesFrom(
   });
 }
 
-function granularityNote(granularity: string | undefined, rows: number): string | undefined {
+function granularityNote(
+  granularity: string | undefined,
+  rows: number,
+): string | undefined {
   const bucket = { month: "Monthly", quarter: "Quarterly", year: "Annual" }[
     granularity ?? ""
   ];
@@ -372,13 +380,23 @@ function granularityNote(granularity: string | undefined, rows: number): string 
   return `${bucket} means of ${formatCount(rows)} figures — the series is longer than a chart can draw point by point.`;
 }
 
-function Fact({ label, value, hint }: { label: string; value?: string; hint?: string }) {
+function Fact({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value?: string;
+  hint?: string;
+}) {
   return (
     <div>
       <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
       <dd className="mt-0.5 text-sm">
         {value ?? <span className="text-muted-foreground">—</span>}
-        {hint ? <span className="ml-1.5 text-xs text-muted-foreground">{hint}</span> : null}
+        {hint ? (
+          <span className="ml-1.5 text-xs text-muted-foreground">{hint}</span>
+        ) : null}
       </dd>
     </div>
   );

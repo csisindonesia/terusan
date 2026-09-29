@@ -217,7 +217,10 @@ function ProfileCard({
         </form>
 
         <dl className="grid gap-3 border-t pt-4 text-sm sm:grid-cols-3">
-          <Fact label="Role" value={<Badge variant="secondary">{roleLabel(role)}</Badge>} />
+          <Fact
+            label="Role"
+            value={<Badge variant="secondary">{roleLabel(role)}</Badge>}
+          />
           <Fact label="Account created" value={formatMoment(createdAt)} />
           <Fact
             label="Last login"
@@ -552,10 +555,16 @@ function TokensCard() {
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    void navigator.clipboard.writeText(fresh).then(() => setCopied(true));
+                    void navigator.clipboard
+                      .writeText(fresh)
+                      .then(() => setCopied(true));
                   }}
                 >
-                  {copied ? <IconCheck className="size-4" /> : <IconCopy className="size-4" />}
+                  {copied ? (
+                    <IconCheck className="size-4" />
+                  ) : (
+                    <IconCopy className="size-4" />
+                  )}
                   {copied ? "Copied" : "Copy"}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setFresh(null)}>

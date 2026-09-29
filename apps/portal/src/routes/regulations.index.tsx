@@ -51,7 +51,11 @@ export const Route = createFileRoute("/regulations/")({
  */
 const TRACKS = [
   { value: "pusat", label: "Central", hint: "UU, Perpu, PP, Perpres, Keppres" },
-  { value: "kementerian", label: "Ministerial", hint: "Ministries and national agencies" },
+  {
+    value: "kementerian",
+    label: "Ministerial",
+    hint: "Ministries and national agencies",
+  },
   { value: "perda", label: "Perda", hint: "Passed with the regional legislature" },
   { value: "pkd", label: "Perkada", hint: "Issued by the head of the region alone" },
 ];
