@@ -38,6 +38,7 @@ from .kemkes_workforce import KemkesWorkforceExtractor
 from .menpan import MenpanHolidaysExtractor
 from .news import NewsArticleExtractor, NewsScreenshotExtractor, NewsTallyExtractor
 from .ojk_sjk import OjkSjkExtractor
+from .ojk_spi import OjkSpiExtractor
 from .pihps import PihpsPricesExtractor
 from .seki import SekiExtractor
 from .sina import SinaFuturesExtractor
@@ -135,6 +136,9 @@ DEFAULT_EXTRACTORS: tuple[Extractor, ...] = (
     BnpbDatastoreExtractor(),
     # Same reason: OJK's grid export wraps a page of facts in one object.
     OjkSjkExtractor(),
+    # Before the generic workbook readers, which land the SPI's cells but not
+    # the province series in them.
+    OjkSpiExtractor(),
     # And SATUSEHAT's workforce register is a DataTables envelope; its pages
     # are HTML the generic reader would take as prose, headers and all.
     KemkesWorkforceExtractor(),

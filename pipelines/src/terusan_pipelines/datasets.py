@@ -1176,7 +1176,23 @@ DATASETS: tuple[DatasetMeta, ...] = (
             "month from OJK's SJK cubes: commercial bank deposits by type and "
             "currency, credit by purpose, orientation and business size, "
             "non-performing credit by grade, and rural bank deposits — per "
-            "province and for the country, in Rupiah."
+            "province and for the country, in Rupiah. Beside them, deposits "
+            "and credit by bank group, and credit by economic sector and by "
+            "currency."
+        ),
+        tags=("banking", "deposits", "credit", "npl", "msme", "finance", "provinces", "ojk"),
+    ),
+    DatasetMeta(
+        slug="ojk-spi-figures",
+        title="Indonesian banking statistics by province (OJK SPI, to June 2025)",
+        source="ojk-banking-spi",
+        description=(
+            "The province tables of the Statistik Perbankan Indonesia, one "
+            "month from each monthly edition until OJK moved to the SJK portal "
+            "in July 2025: commercial bank deposits by type and currency, "
+            "credit and non-performing credit by purpose, credit by "
+            "orientation, credit to micro, small and medium enterprises, and "
+            "branch offices — in billions of Rupiah, as the SPI printed them."
         ),
         tags=("banking", "deposits", "credit", "npl", "msme", "finance", "provinces", "ojk"),
     ),

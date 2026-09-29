@@ -413,6 +413,12 @@ ojk-silver: ## Land OJK's banking statistics from the SJK portal, extract and no
 	cd pipelines && uv run terusan warehouse extract statistics ojk-banking-sjk
 	@./scripts/normalize-ojk.sh
 
+.PHONY: ojk-spi-silver
+ojk-spi-silver: ## Land every archived SPI edition (to June 2025), extract and normalize into Silver
+	cd pipelines && uv run terusan sources run ojk-banking-spi --param full=true
+	cd pipelines && uv run terusan warehouse extract statistics ojk-banking-spi
+	@./scripts/normalize-ojk-spi.sh
+
 .PHONY: kemkes-silver
 kemkes-silver: ## Land the SATUSEHAT workforce planning dashboard, extract and normalize into Silver
 	cd pipelines && uv run terusan sources run kemkes-sdmk-planning

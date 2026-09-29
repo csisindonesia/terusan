@@ -19,7 +19,14 @@ produces both, as VEWS's does:
 - **`ojk-banking-figures`** — each month summed into the series the SPI
   printed: deposits by type and by currency, credit by purpose, by
   orientation and by business size, and non-performing credit, per province
-  and for the country. `scripts/normalize-ojk.sh` takes these into Silver.
+  and for the country. Beside them, breakdowns the cubes carry that the SPI
+  did not print by province: deposits and credit by bank group, and credit by
+  economic sector and by currency. `scripts/normalize-ojk.sh` takes these into
+  Silver.
+
+The branch-office cube is not summed. It files every office under `Kantor
+Pusat`, head office, and its count is the SPI's count of branches; a series
+named after either would be a guess at which label is wrong.
 
 Summing is only possible over a whole month, and a month is only whole in an
 artifact that holds all of it. The source lands a month per artifact; the first
@@ -152,6 +159,36 @@ SERIES: tuple[Series, ...] = (
         "Nilai",
         "KategoriUsaha",
         keep=lambda row: row.get("KategoriUsaha", "").startswith(MSME_SIZES),
+    ),
+    # The breakdowns the SPI printed by province only as totals, or not at
+    # all, that the cubes carry on every row.
+    Series(
+        "ojk_bu_dpk_bank_group",
+        "Commercial bank third-party funds by bank group",
+        "BU_DanaPihakKetiga",
+        "Nilai",
+        "KelompokBank",
+    ),
+    Series(
+        "ojk_bu_credit_sector",
+        "Commercial bank credit by economic sector",
+        "BU_KreditdanPembiayaanEntitas",
+        "Nilai",
+        "SektorEkonomi",
+    ),
+    Series(
+        "ojk_bu_credit_currency",
+        "Commercial bank credit by currency",
+        "BU_KreditdanPembiayaanEntitas",
+        "Nilai",
+        "MataUang",
+    ),
+    Series(
+        "ojk_bu_credit_bank_group",
+        "Commercial bank credit by bank group",
+        "BU_KreditdanPembiayaanEntitas",
+        "Nilai",
+        "KelompokBank",
     ),
     Series(
         "ojk_bpr_dpk",

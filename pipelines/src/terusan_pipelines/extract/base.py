@@ -138,7 +138,11 @@ from typing import Any
 #:     series the SPI printed, under `ojk-banking-figures`. The pages of ten
 #:     thousand rows the first run landed are skipped: a page is part of a
 #:     month, and its rows are in the whole-month artifact beside it.
-PARSER_VERSION = "24"
+#: 25: OJK's SPI editions are read into `ojk-spi-figures` beside their cells —
+#:     deposits, credit, non-performing credit, branches and MSME credit by
+#:     province, each edition for its own month — and the SJK cubes gain
+#:     deposits and credit by bank group, and credit by sector and currency.
+PARSER_VERSION = "25"
 
 
 class ExtractionError(Exception):

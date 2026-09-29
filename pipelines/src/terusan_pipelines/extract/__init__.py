@@ -18,6 +18,7 @@ from .hdx_mobility import MovementDistributionExtractor
 from .kemkes_workforce import KemkesWorkforceExtractor
 from .menpan import MenpanHolidaysExtractor
 from .ojk_sjk import OjkSjkExtractor
+from .ojk_spi import OjkSpiExtractor
 from .pihps import PihpsPricesExtractor
 from .runner import (
     DEFAULT_EXTRACTORS,
@@ -56,6 +57,7 @@ __all__ = [
     "PIPELINE_VERSION",
     "BnpbDatastoreExtractor",
     "OjkSjkExtractor",
+    "OjkSpiExtractor",
     "KemkesWorkforceExtractor",
     "ConsumerSurveyExtractor",
     "CsvExtractor",
