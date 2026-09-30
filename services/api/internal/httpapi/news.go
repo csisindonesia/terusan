@@ -334,10 +334,36 @@ func (s *Server) newsOutletStats(ctx context.Context) string {
 		"') AND columns['outlet_host'] IS NOT NULL AND try_cast(parser_version AS INTEGER) = " +
 		currentParserVersion(records, newsArticlesDataset) + ") GROUP BY host"
 
+	//
+	// What was read is reduced to one tally per outlet and publication date
+	// before it is summed, keeping the one that scanned the most. An outlet
+	// read twice in a day lands two tallies, and the second run re-reads every
+	// article the first only counted, so summing both reported the paper
+	// publishing half as much again as it did. The maximum is the rule the
+	// pipelines apply when they publish `news_articles_read` and
+	// `news_articles_recorded` (news/cluster.py, `_reading_rows`); applying
+	// the same one here is what makes this page and those series agree.
+	tallies := "SELECT columns['outlet_host'] AS host, " +
+		"try_cast(columns['date'] AS DATE) AS day, " +
+		"try_cast(columns['scanned'] AS BIGINT) AS scanned, " +
+		"try_cast(columns['matched'] AS BIGINT) AS matched, " +
+		"try_cast(columns['recorded'] AS BIGINT) AS recorded, retrieved_at FROM " +
+		records + " WHERE dataset = '" + newsTalliesDataset +
+		"' AND columns['outlet_host'] IS NOT NULL AND try_cast(parser_version AS INTEGER) = " +
+		currentParserVersion(records, newsTalliesDataset)
+
+	// The window runs before the filter, so the last visit counts even when
+	// its tally was not the one kept for the day or carried no date.
+	ranked := "SELECT host, day, scanned, matched, recorded, " +
+		"max(retrieved_at) OVER (PARTITION BY host) AS last_visit, " +
+		"row_number() OVER (PARTITION BY host, day " +
+		"ORDER BY scanned DESC NULLS LAST, recorded DESC NULLS LAST) AS pick " +
+		"FROM (" + tallies + ")"
+
 	read := "SELECT host, " +
-		"sum(try_cast(scanned AS BIGINT)) AS scanned, " +
-		"sum(try_cast(matched AS BIGINT)) AS matched, " +
-		"sum(try_cast(recorded AS BIGINT)) AS recorded, " +
+		"coalesce(sum(scanned) FILTER (WHERE pick = 1 AND day IS NOT NULL), 0) AS scanned, " +
+		"coalesce(sum(matched) FILTER (WHERE pick = 1 AND day IS NOT NULL), 0) AS matched, " +
+		"coalesce(sum(recorded) FILTER (WHERE pick = 1 AND day IS NOT NULL), 0) AS recorded, " +
 		// When the crawl last had this outlet in front of it. Taken from the
 		// tallies rather than from stored articles, because almost no outlet
 		// stores any: on most days a paper publishes nothing that is
@@ -346,12 +372,8 @@ func (s *Server) newsOutletStats(ctx context.Context) string {
 		// `retrieved_at`, not the tally's own day key: that key is the date the
 		// articles were *published*, and a paper that post-dates a piece would
 		// then report having been collected next month.
-		"CAST(max(retrieved_at) AS DATE) AS last_read " +
-		"FROM (SELECT columns['outlet_host'] AS host, columns['scanned'] AS scanned, " +
-		"columns['matched'] AS matched, columns['recorded'] AS recorded, retrieved_at FROM " +
-		records + " WHERE dataset = '" + newsTalliesDataset +
-		"' AND columns['outlet_host'] IS NOT NULL AND try_cast(parser_version AS INTEGER) = " +
-		currentParserVersion(records, newsTalliesDataset) + ") GROUP BY host"
+		"CAST(max(last_visit) AS DATE) AS last_read " +
+		"FROM (" + ranked + ") GROUP BY host"
 
 	// A full join: an outlet can have tallies and no kept articles — a paper
 	// that published nothing about the issue that week, which is a real and

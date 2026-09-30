@@ -494,13 +494,19 @@ def _reading_rows(tallies: list[dict[str, str]], issue: Profile) -> list[dict[st
     maximum is the right reduction because the count for a past day can only
     grow as more of that day is discovered — it never legitimately falls.
     """
+
+    # A tie on what was scanned goes to the tally that recorded more, rather
+    # than to whichever was read first: the order Bronze returns rows in is not
+    # a fact about the crawl, and the API's outlet page applies the same rule,
+    # so the two only agree when neither depends on it.
+    def fullness(tally: dict[str, str]) -> tuple[int, int]:
+        return (_as_int(tally.get("scanned") or 0), _as_int(tally.get("recorded") or 0))
+
     best: dict[tuple[str, str], dict[str, str]] = {}
     for tally in tallies:
         key = (str(tally.get("outlet_host") or ""), str(tally.get("date") or ""))
         previous = best.get(key)
-        if previous is None or _as_int(tally.get("scanned") or 0) > _as_int(
-            previous.get("scanned") or 0
-        ):
+        if previous is None or fullness(tally) > fullness(previous):
             best[key] = tally
 
     totals: dict[tuple[str, str, str], dict[str, int]] = defaultdict(lambda: defaultdict(int))

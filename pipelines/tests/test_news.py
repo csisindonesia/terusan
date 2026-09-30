@@ -591,6 +591,36 @@ def test_a_rerun_does_not_double_a_day() -> None:
     assert read[0]["value"] == "5"
 
 
+def test_a_tie_on_scanned_goes_to_the_tally_that_recorded_more() -> None:
+    """Two runs that scanned as much keep the fuller one, whichever came first.
+
+    Bronze returns rows in no promised order, so a tie broken by position gave
+    a figure that could change between runs — and differ by one from the API's
+    outlet page, which breaks the same tie on what was recorded.
+    """
+    from terusan_pipelines.news.cluster import _reading_rows
+    from terusan_pipelines.news.profiles import VIOLENCE
+
+    fuller = {
+        "date": "2026-09-22",
+        "outlet_host": "poskota.co.id",
+        "outlet_province": "DKI JAKARTA",
+        "outlet_geo_id": "ID-31",
+        "scanned": "5",
+        "matched": "2",
+        "recorded": "2",
+    }
+    thinner = fuller | {"recorded": "1"}
+    for order in ([fuller, thinner], [thinner, fuller]):
+        recorded = [
+            row["columns"]["value"]
+            for row in _reading_rows(order, VIOLENCE)
+            if row["columns"]["indicator"] == "news_articles_recorded"
+            and row["columns"]["geo_level"] == "province"
+        ]
+        assert recorded == ["2"]
+
+
 # -- reading a sitemap and a feed ------------------------------------------
 #
 # These failed silently for every outlet: the first version parsed XML with an
