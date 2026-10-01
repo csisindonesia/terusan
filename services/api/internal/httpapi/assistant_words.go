@@ -118,14 +118,57 @@ var moreTranslations = map[string]string{
 	"polusi": "pollution", "pencemaran": "pollution", "udara": "air",
 	// Elections.
 	"pemilihan": "election electoral", "suara": "vote votes", "partai": "party parties",
+	// Schooling as readers name it, against how BPS titles it: a level is
+	// "yang ditamatkan" or "ijazah tertinggi", a degree is "Universitas" or
+	// "S1 ke atas", and university enrolment is "Perguruan Tinggi".
+	"sarjana": "s1 universitas ditamatkan", "lulusan": "ditamatkan ijazah",
+	"tamatan": "ditamatkan ijazah", "tamat": "ditamatkan", "ijazah": "ijazah ditamatkan",
+	"kuliah": "perguruan universitas", "universitas": "universitas perguruan",
+	"mahasiswa": "perguruan universitas students",
+	// An island is a set of provinces, and no title names one: a question
+	// about Java wants a series by province.
+	"jawa": "provinsi province", "sumatera": "provinsi province", "sumatra": "provinsi province",
+	"kalimantan": "provinsi province", "sulawesi": "provinsi province",
+	"maluku": "provinsi province", "papua": "provinsi province", "nusa": "provinsi province",
+	// The words of the satellite series, which are titled in English: "titik
+	// api" are VIIRS's active fire detections, "kehilangan tutupan pohon" is
+	// Hansen's tree cover loss, and a flood's "luas genangan" is its area
+	// flooded. "Kehilangan" is listed whole, or its root would make it
+	// "missing". "Api" is "fire" alone: a term matches the words it begins,
+	// so "fires" beside it counted BNPB's "forest and land fires" twice and
+	// six of their tables pushed the satellite's detections off the list.
+	"api": "fire", "titik": "detections hotspot hotspots", "pohon": "tree trees", "tutupan": "cover",
+	"kehilangan": "loss", "luas": "area extent", "genangan": "flooded flood inundation",
+	"genang": "flooded flood inundation",
 	// Money.
 	"keuangan": "finance financial fiscal",
+	// OJK's series name small business lending in English.
+	"umkm": "msme micro small medium enterprises", "ukm": "msme small medium enterprises",
+	"kredit": "credit loans", "macet": "non-performing npl", "npl": "non-performing",
 	// Goods.
 	"perikanan": "fisheries fishery fish", "ikan": "fish", "nelayan": "fishers fishermen",
 	"perkebunan": "plantation estate crops", "kelapa": "coconut palm", "karet": "rubber",
 	"kopi": "coffee", "kakao": "cocoa", "teh": "tea", "tembakau": "tobacco", "garam": "salt",
 	"semen": "cement", "baja": "steel", "nikel": "nickel", "timah": "tin",
 	"tembaga": "copper", "bauksit": "bauxite",
+}
+
+// translatedOnly are the words searched for by their translation alone: "api"
+// is fire to a reader and the tag "government-api" on every BPS series to the
+// catalogue, which put a regional GDP table on a chart of fire hotspots.
+var translatedOnly = map[string]bool{"api": true}
+
+// educationLevels are the levels readers write as two letters, which the
+// length rule would otherwise drop, with what BPS titles them by. A level
+// asked about is nearly always the one finished, so each brings the word for
+// that too.
+var educationLevels = map[string]string{
+	"s1": "s1 universitas sarjana ditamatkan perguruan",
+	"s2": "s2 universitas pascasarjana ditamatkan perguruan",
+	"s3": "s3 universitas doktor ditamatkan perguruan",
+	"d1": "d1-d3 diploma ditamatkan", "d2": "d1-d3 diploma ditamatkan",
+	"d3": "d1-d3 diploma akademi ditamatkan", "d4": "diploma universitas ditamatkan",
+	"sd": "sd ditamatkan",
 }
 
 func init() {

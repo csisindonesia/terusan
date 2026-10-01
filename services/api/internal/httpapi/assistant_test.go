@@ -333,3 +333,195 @@ func TestYesNoQuestions(t *testing.T) {
 		}
 	}
 }
+
+func TestAnAttainmentQuestionFindsAttainmentNotTraining(t *testing.T) {
+	// The question that was told "tersedia" beside five series on training
+	// participation: "S1" was two letters and dropped, "jawa" is in no title,
+	// and what was left — "tingkat", "pendidikan", "tahun" — is the title of
+	// SDG 4.3.1 word for word.
+	title := func(s string) *string { return &s }
+	series := []Indicator{
+		{IndicatorID: "training", Name: title("4.3.1* Tingkat Partisipasi Remaja dan Dewasa dalam Pendidikan dan " +
+			"Pelatihan Formal dan Non Formal dalam 12 Bulan Terakhir Menurut Provinsi — Usia 15-64 tahun"),
+			Geographies: 39, PeriodStart: "2022", PeriodEnd: "2024", Observations: 117},
+		{IndicatorID: "attainment", Name: title("Penduduk Berumur 15 Tahun Ke Atas yang Bekerja Menurut " +
+			"Pendidikan Tertinggi yang Ditamatkan — Universitas"),
+			Geographies: 1, PeriodStart: "2018-02", PeriodEnd: "2025-08", Observations: 16},
+		{IndicatorID: "university", Name: title("Angka Partisipasi Kasar (APK) Perguruan Tinggi (PT) Menurut Provinsi"),
+			Geographies: 39, PeriodStart: "2015", PeriodEnd: "2025", Observations: 393},
+	}
+	question := "Cari data tingkat pendidikan S1 di pulau jawa tahun 2014-2024"
+	terms := searchTerms(question)
+	for _, want := range []string{"s1", "universitas", "ditamatkan", "perguruan"} {
+		if !slices.Contains(terms, want) {
+			t.Errorf("terms %v lack %q", terms, want)
+		}
+	}
+	for _, stop := range []string{"tingkat", "tahun", "pulau"} {
+		if slices.Contains(terms, stop) {
+			t.Errorf("terms %v keep the filler word %q", terms, stop)
+		}
+	}
+	ranked := rankSeries(series, nil, terms)
+	if len(ranked) < 2 || ranked[len(ranked)-1].IndicatorID != "training" {
+		var ids []string
+		for _, i := range ranked {
+			ids = append(ids, i.IndicatorID)
+		}
+		t.Errorf("ranked %v, want the training series last", ids)
+	}
+
+	// What each series covers is written beside it, against what was asked,
+	// so a reply cannot call national figures from 2018 an answer for Java
+	// from 2014.
+	q := readQuestion([]assistantMessage{{Role: "user", Content: question}})
+	prompt, _ := assistantPrompt(assistantCatalogue{series: series}, nil, q)
+	for _, want := range []string{"national only", "39 places", "Years asked: 2014 to 2024"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("the prompt lacks %q", want)
+		}
+	}
+}
+
+func TestAskedYears(t *testing.T) {
+	now := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	for question, want := range map[string][2]string{
+		"pendidikan S1 di jawa tahun 2014-2024": {"2014", "2024"},
+		"inflasi 2020 sampai 2023":              {"2020", "2023"},
+		"harga beras tahun 2019":                {"2019", "2019"},
+		"harga beras terbaru":                   {"", ""},
+		"penduduk 15 tahun ke atas":             {"", ""},
+		// "Since" runs to now: the question that asked for rice prices
+		// "harian sejak 2020" was read as 2020 alone.
+		"harga beras harian sejak 2020": {"2020", "2026"},
+		"rice prices since 2018":        {"2018", "2026"},
+		"mulai tahun 2021":              {"2021", "2026"},
+	} {
+		from, to := askedYearsAt(question, now)
+		if [2]string{from, to} != want {
+			t.Errorf("askedYears(%q) = %q, %q, want %q", question, from, to, want)
+		}
+	}
+}
+
+func TestAFloodAreaIsNotAFloorArea(t *testing.T) {
+	// "luas genangannya" was read as "luas" alone — "genangan" was a word no
+	// table knew — and a chart of households' floor area was proposed for it.
+	title := func(s string) *string { return &s }
+	catalogue := assistantCatalogue{series: []Indicator{
+		{IndicatorID: "deaths", Name: title("Deaths from disasters: floods")},
+		{IndicatorID: "floor", Name: title("Persentase Rumah Tangga yang Tinggal di Bangunan Tempat Tinggal " +
+			"dengan luas lantai lebih dari sama dengan 7.2 m2 per kapita menurut Kabupaten/Kota")},
+		{IndicatorID: "flooded", Name: title("Area flooded during the year (Global Flood Database)")},
+	}}
+	question := "Berapa korban meninggal akibat banjir di Jawa Barat tahun 2020, dan bandingkan dengan luas genangannya?"
+	chart := func(ids ...string) *chartSpec {
+		spec := &chartSpec{}
+		for _, id := range ids {
+			for _, i := range catalogue.series {
+				if i.IndicatorID == id {
+					spec.Series = append(spec.Series, chartSeries{ID: id, Label: *i.Name})
+				}
+			}
+		}
+		return spec
+	}
+	if side := uncoveredSide(catalogue, chart("deaths", "floor"), question); side == "" {
+		t.Error("floor area was taken for the area flooded")
+	}
+	if side := uncoveredSide(catalogue, chart("deaths", "flooded"), question); side != "" {
+		t.Errorf("deaths and area flooded left %q uncovered", side)
+	}
+}
+
+func TestATwiceAYearSurveyIsNotCalledMonthly(t *testing.T) {
+	poverty := Indicator{Resolution: "monthly", Months: []string{"03", "09"}}
+	if got := resolutionText(poverty); got != "2 a year (March and September only)" {
+		t.Errorf("resolutionText = %q", got)
+	}
+	if got := resolutionText(Indicator{Resolution: "monthly"}); got != "monthly" {
+		t.Errorf("a series with every month was called %q", got)
+	}
+}
+
+func TestAChartMustReachTheYearsAsked(t *testing.T) {
+	chart := &chartSpec{Periods: []string{"2010", "2012", "2016"}}
+	if chartReaches(chart, "2020", "2020") {
+		t.Error("2010 to 2016 was taken for 2020")
+	}
+	if !chartReaches(chart, "2015", "2024") {
+		t.Error("2016 is within 2015 to 2024")
+	}
+	if !chartReaches(&chartSpec{Periods: []string{"2020-01", "2020-02"}}, "2020", "2020") {
+		t.Error("monthly periods of 2020 were not taken for 2020")
+	}
+}
+
+func TestASeriesCoveringTwoOfTenYearsIsNotCharted(t *testing.T) {
+	series := []Indicator{
+		{IndicatorID: "affected", PeriodStart: "2024", PeriodEnd: "2025"},
+		{IndicatorID: "viirs", PeriodStart: "2012-02", PeriodEnd: "2026-08"},
+		{IndicatorID: "loss", PeriodStart: "2001", PeriodEnd: "2025"},
+	}
+	var ids []string
+	for _, i := range spanningYears(series, "2015", "2024") {
+		ids = append(ids, i.IndicatorID)
+	}
+	if !slices.Equal(ids, []string{"viirs", "loss"}) {
+		t.Errorf("kept %v, want viirs and loss", ids)
+	}
+	// One year asked is the chart check's business, not this one's.
+	if len(spanningYears(series, "2020", "2020")) != 3 {
+		t.Error("a single year asked dropped series")
+	}
+}
+
+func TestAPlaceIsNotASideOfTheQuestion(t *testing.T) {
+	title := func(s string) *string { return &s }
+	trees := Indicator{IndicatorID: "trees", Name: title("Land cover: trees (Dynamic World)"),
+		Tags: []string{"province"}}
+	catalogue := assistantCatalogue{series: []Indicator{
+		trees,
+		{IndicatorID: "viirs", Name: title("Active fire detections (VIIRS)"), Tags: []string{"province"}},
+		// The real catalogue's titles carry these words too, which is what
+		// makes them topics of the side.
+		{IndicatorID: "ntt", Name: title("Indeks Pembangunan Manusia Nusa Tenggara Timur — Jawa Tengah")},
+		{IndicatorID: "titik", Name: title("Jumlah Titik Pantau Kualitas Air")},
+	}}
+	question := "Bandingkan kehilangan tutupan pohon dan jumlah titik api di Kalimantan Tengah dan Riau periode 2015-2024"
+	for _, sd := range questionSides(catalogue, question) {
+		// Drawn for the place asked about, as the chart draws it.
+		if strings.Contains(strings.Join(sd.words, " "), "api") &&
+			sd.coveredBy(seriesText(trees, "Kalimantan Tengah", nil)) {
+			t.Errorf("tree cover was taken for the side %q", strings.Join(sd.words, " "))
+		}
+	}
+}
+
+func TestASideMatchesWholeWords(t *testing.T) {
+	sd := side{topics: [][]string{{"fire"}}}
+	if sd.coveredBy("pdrb per kapita atas dasar harga konstan") {
+		t.Error(`"api" was found inside "kapita"`)
+	}
+	if !sd.coveredBy("active fire detections (viirs)") {
+		t.Error("the fire detections did not cover a side about fire")
+	}
+}
+
+func TestCoverageIsWeighedAgainstTheYearsAsked(t *testing.T) {
+	for _, c := range []struct{ start, end, from, to, want string }{
+		{"2017-03-01", "2026-10-01", "2020", "2026", "covers all the years asked"},
+		{"2022", "2024", "2014", "2024", "covers only 2022 to 2024 of the years asked"},
+		{"2024", "2025", "2020", "2020", "none of the years asked"},
+		{"2000", "2018", "2020", "2020", "none of the years asked"},
+		{"2012-03", "2026-03", "2015", "2024", "covers all the years asked"},
+		{"2026-09-23", "2026-09-30", "2020", "2026", "covers only 2026 of the years asked"},
+	} {
+		if got := coverageNote(c.start, c.end, c.from, c.to); got != c.want {
+			t.Errorf("coverageNote(%s, %s, %s-%s) = %q, want %q", c.start, c.end, c.from, c.to, got, c.want)
+		}
+	}
+	if got := coverageNote("2000", "2018", "", ""); got != "" {
+		t.Errorf("no years asked gave %q", got)
+	}
+}

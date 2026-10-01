@@ -1,0 +1,80 @@
+{
+  "_comment": "Questions the assistant answers with series, and what the model must be shown for each. Every entry of 'want' must be in the title of a series or dataset shown (case-insensitive). The best-ranked series' title must contain one of 'first', and no series shown may contain any of 'never'. 'prompt' are strings the prompt must carry, such as the years asked. Add a case for every wrong answer a reader reports.",
+  "cases": [
+    {
+      "ask": [
+        "Cari data tingkat pendidikan S1 di pulau jawa tahun 2014-2024"
+      ],
+      "first": [
+        "ditamatkan",
+        "perguruan tinggi",
+        "universitas",
+        "s1 ke atas"
+      ],
+      "never": [
+        "4.3.1"
+      ],
+      "prompt": [
+        "Years asked: 2014 to 2024"
+      ]
+    },
+    {
+      "ask": [
+        "Bandingkan kehilangan tutupan pohon dan jumlah titik api di Kalimantan Tengah dan Riau periode 2015-2024. Data apa yang bisa saya pakai, dan apakah resolusi waktunya cocok untuk dikorelasikan?"
+      ],
+      "want": [
+        "tree cover loss",
+        "active fire"
+      ],
+      "prompt": [
+        "Years asked: 2015 to 2024"
+      ]
+    },
+    {
+      "ask": [
+        "Saya butuh data kredit bank umum untuk UMKM di Jawa Timur, bulanan 2018-2024, beserta kredit macetnya (NPL)."
+      ],
+      "want": [
+        "credit to micro, small and medium enterprises by project location",
+        "non-performing"
+      ]
+    },
+    {
+      "ask": [
+        "Cari harga beras medium tingkat kabupaten/kota di Jawa Tengah, harian sejak 2020."
+      ],
+      "want": [
+        "by regency",
+        "strategic food prices"
+      ],
+      "prompt": [
+        "Years asked: 2020 to",
+        "covers all the years asked"
+      ]
+    },
+    {
+      "ask": [
+        "Persentase penduduk miskin per provinsi, dipisah perkotaan dan perdesaan, untuk semester Maret dan September 2015-2024."
+      ],
+      "want": [
+        "Persentase Penduduk Miskin (P0) Menurut Provinsi dan Daerah — Perkotaan",
+        "Persentase Penduduk Miskin (P0) Menurut Provinsi dan Daerah — Perdesaan"
+      ],
+      "prompt": [
+        "2 a year (March and September only)"
+      ]
+    },
+    {
+      "ask": [
+        "Berapa korban meninggal akibat banjir di Jawa Barat tahun 2020, dan bandingkan dengan luas genangannya?"
+      ],
+      "want": [
+        "deaths from disasters: floods",
+        "area flooded"
+      ],
+      "prompt": [
+        "Years asked: 2020 to 2020"
+      ]
+    }
+  ]
+}

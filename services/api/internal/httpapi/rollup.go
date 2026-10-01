@@ -43,7 +43,8 @@ func (s *Server) buildRollup(ctx context.Context) error {
 		       count(*) AS n,
 		       min(o.period) AS period_start,
 		       max(o.period) AS period_end,
-		       max(o.processed_at) AS processed_at
+		       max(o.processed_at) AS processed_at,
+		       list(DISTINCT substr(o.period, 6, 2)) FILTER (WHERE o.temporal_resolution = 'monthly') AS months
 		FROM %s o
 		GROUP BY ALL`, rollupTable, observations)); err != nil {
 		return fmt.Errorf("build rollup: %w", err)
@@ -78,6 +79,10 @@ func (s *Server) observationsSignature() string {
 // rollup: the same answers, in the rollup's terms.
 type aggregates struct {
 	from, count, first, last, processed string
+	// The calendar months a monthly series has figures in, which is how a
+	// survey BPS runs every March and September is told from a monthly one:
+	// both are periods of "2024-03".
+	months string
 }
 
 func (s *Server) aggregatesOver(observations string) aggregates {
@@ -88,6 +93,7 @@ func (s *Server) aggregatesOver(observations string) aggregates {
 			first:     "min(o.period_start)",
 			last:      "max(o.period_end)",
 			processed: "max(o.processed_at)",
+			months:    "list_sort(list_distinct(flatten(list(o.months))))",
 		}
 	}
 	return aggregates{
@@ -96,5 +102,10 @@ func (s *Server) aggregatesOver(observations string) aggregates {
 		first:     "min(o.period)",
 		last:      "max(o.period)",
 		processed: "max(o.processed_at)",
+		months:    rawMonths,
 	}
 }
+
+// rawMonths is the months a monthly series has figures in, read off the
+// observations themselves.
+const rawMonths = "list_sort(list(DISTINCT substr(o.period, 6, 2)) FILTER (WHERE o.temporal_resolution = 'monthly'))"

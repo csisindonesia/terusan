@@ -43,6 +43,12 @@ type Indicator struct {
 	// The sources behind the series, named rather than counted: "bps" tells a
 	// reader where a figure came from, "1" tells them nothing.
 	Sources []string `json:"sources"`
+	// The calendar months a monthly series has figures in, where it has only
+	// a few: BPS's poverty counts are "monthly" because their periods are
+	// 2024-03 and 2024-09, and a reader asking for March and September needs
+	// to hear that rather than "monthly". Empty for a series with figures in
+	// most months, and for every other resolution.
+	Months []string `json:"-"`
 	// The collection this series belongs to, and the words it is found by.
 	// Both come from the indicators table, where they are derived when the
 	// series is published rather than typed by anyone.
@@ -191,7 +197,7 @@ func (s *Server) indicatorRows(
 	// 26 APBD series carry rows under two collections, and any_value named
 	// either, differently from one query to the next.
 	agg := aggregates{from: observations, count: "count(*)", first: "min(o.period)",
-		last: "max(o.period)", processed: "max(o.processed_at)"}
+		last: "max(o.period)", processed: "max(o.processed_at)", months: rawMonths}
 	if where == "" && len(only) == 0 {
 		agg = s.aggregatesOver(observations)
 	}
@@ -212,12 +218,13 @@ func (s *Server) indicatorRows(
 		       list_sort(list(DISTINCT o.source_id)),
 		       strftime(%s, '%%Y-%%m-%%dT%%H:%%M:%%SZ'),
 		       min(o.dataset_id),
-		       any_value(n.tags)
+		       any_value(n.tags),
+		       %s
 		FROM %s o
 		LEFT JOIN %s
 		%s
 		GROUP BY o.indicator_id
-		ORDER BY o.indicator_id`, agg.count, agg.first, agg.last, agg.processed, agg.from, named, where), args...)
+		ORDER BY o.indicator_id`, agg.count, agg.first, agg.last, agg.processed, agg.months, agg.from, named, where), args...)
 	if err != nil {
 		internalError(w, s.log, "query indicators", err)
 		return nil, err
@@ -227,17 +234,20 @@ func (s *Server) indicatorRows(
 	indicators := make([]Indicator, 0, 16)
 	for rows.Next() {
 		var i Indicator
-		var sources, tags any
+		var sources, tags, months any
 		if err := rows.Scan(
 			&i.IndicatorID, &i.Name, &i.Code, &i.Slug, &i.Description, &i.Publisher,
 			&i.Release, &i.Resolution, &i.Unit, &i.Observations,
 			&i.Geographies, &i.PeriodStart, &i.PeriodEnd, &sources, &i.LastUpdated,
-			&i.DatasetID, &tags,
+			&i.DatasetID, &tags, &months,
 		); err != nil {
 			internalError(w, s.log, "scan indicator", err)
 			return nil, err
 		}
 		i.Sources = asStrings(sources)
+		if listed := asStrings(months); len(listed) > 0 && len(listed) <= fewMonths {
+			i.Months = listed
+		}
 		// Never null in the response: a reader filtering on tags should get an
 		// empty list from a series published before tagging, not a null they
 		// have to guard every access with.
@@ -254,6 +264,10 @@ func (s *Server) indicatorRows(
 
 	return indicators, nil
 }
+
+// fewMonths is the most calendar months a monthly series may have figures in
+// and still be told apart from one with a figure every month.
+const fewMonths = 4
 
 // Geography is one member of the geography dimension (program.md §11).
 type Geography struct {

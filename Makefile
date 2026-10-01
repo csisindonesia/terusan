@@ -461,8 +461,8 @@ test-lake: ## Check the API's rollup answers exactly what the observations do, a
 	cd services/api && LAKE_TESTS=1 go test ./internal/httpapi/ -run TestTheRollupAnswersAsTheObservationsDo -count=1 -v
 
 .PHONY: eval-assistant
-eval-assistant: ## Measure the assistant's regulation search against the local lake (needs `make regulations-index`)
-	cd services/api && go test ./internal/httpapi/ -run TestRegulationSearchAgainstTheLake -count=1 -v
+eval-assistant: ## Measure the assistant's regulation and series search against the local lake (regulations need `make regulations-index`)
+	cd services/api && go test ./internal/httpapi/ -run 'TestRegulationSearchAgainstTheLake|TestSeriesSearchAgainstTheLake' -count=1 -v
 
 .PHONY: test-python
 test-python: ## Run pipeline tests

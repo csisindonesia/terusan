@@ -340,10 +340,11 @@ func (s *Server) analyse(
 	for _, i := range candidates {
 		byID[i.IndicatorID] = i
 	}
-	chosen := checkPlan(&plan, byID)
+	from, to := askedYears(question)
+	chosen := spanningYears(checkPlan(&plan, byID), from, to)
 	if len(chosen) == 0 {
 		plan = defaultPlan(groups, candidates, question)
-		if chosen = checkPlan(&plan, byID); len(chosen) == 0 {
+		if chosen = spanningYears(checkPlan(&plan, byID), from, to); len(chosen) == 0 {
 			return nil
 		}
 	}
@@ -374,7 +375,8 @@ func (s *Server) analyse(
 			if covered {
 				continue
 			}
-			for _, candidate := range candidates {
+			// From the ones spanning the years asked, as the plan was.
+			for _, candidate := range spanningYears(candidates, from, to) {
 				if sd.coveredBy(seriesText(candidate, "", titles)) &&
 					!containsSeries(chosen, candidate) && !containsSeries(extra, candidate) {
 					extra = append(extra, candidate)
@@ -402,6 +404,12 @@ func (s *Server) analyse(
 	// must be what one charted series is.
 	if chart != nil {
 		chart.asked = question
+		// A chart that stops before the years asked about answers another
+		// question: deaths in 2010 to 2016 were proposed for "tahun 2020".
+		if from, to := askedYears(question); from != "" && !chartReaches(chart, from, to) {
+			s.log.Info("assistant.plan_outside_years", "asked", from+"-"+to)
+			return nil
+		}
 		if side := uncoveredSide(catalogue, chart, question); side != "" {
 			charted := make([]string, len(chart.Series))
 			for n, series := range chart.Series {
@@ -423,6 +431,52 @@ func (s *Server) analyse(
 			"periods", len(chart.Periods))
 	}
 	return chart
+}
+
+// spanningYears drops the series that cover less than half of a span of
+// years asked about, where the span is three years or more: for "2015-2024"
+// the planner chose a count of people affected by fires, 2024 to 2025, over
+// the satellite's fire detections from 2012. A series dropped leaves its side
+// of the question uncovered, and the turn is answered without a chart.
+func spanningYears(series []Indicator, from, to string) []Indicator {
+	first, errFrom := strconv.Atoi(from)
+	last, errTo := strconv.Atoi(to)
+	if errFrom != nil || errTo != nil || last-first < 2 {
+		return series
+	}
+	asked := last - first + 1
+	var kept []Indicator
+	for _, i := range series {
+		start, errStart := strconv.Atoi(firstN(i.PeriodStart, 4))
+		end, errEnd := strconv.Atoi(firstN(i.PeriodEnd, 4))
+		if errStart != nil || errEnd != nil {
+			kept = append(kept, i)
+			continue
+		}
+		covered := min(end, last) - max(start, first) + 1
+		if 2*covered >= asked {
+			kept = append(kept, i)
+		}
+	}
+	return kept
+}
+
+func firstN(text string, n int) string {
+	if len(text) < n {
+		return text
+	}
+	return text[:n]
+}
+
+// chartReaches reports whether any of a chart's periods falls in the years
+// asked, by the year each period begins with.
+func chartReaches(chart *chartSpec, from, to string) bool {
+	for _, period := range chart.Periods {
+		if len(period) >= 4 && period[:4] >= from && period[:4] <= to {
+			return true
+		}
+	}
+	return false
 }
 
 // planChart asks the writing model, briefly and without streaming, which
@@ -454,6 +508,10 @@ func (s *Server) planChart(
 		"exchange rate against the US dollar for rupiah to dollar. Leave out anything only loosely related. " +
 		"If no listed series measures what the question asks for — only something near it, such as an " +
 		"industry's output for a budget — reply {\"series\":[]}: no chart is better than a chart of the wrong thing.\n")
+	if from, to := askedYears(question); from != "" {
+		fmt.Fprintf(&b, "The question asks about %s to %s: prefer the series that cover most of those years, "+
+			"and never choose one covering a year or two of them when another for the same thing covers more.\n", from, to)
+	}
 	if language == "id" {
 		b.WriteString("Write the title and the reason in Indonesian. ")
 	} else {
@@ -1295,11 +1353,17 @@ func (a analysisContext) candidates(catalogue assistantCatalogue) ([]Indicator, 
 // noChartPrompt is what the reply is told when the reader asked for a chart
 // and none could be drawn. Without it the model, seeing an earlier reply that
 // described a chart, describes one too — with figures it made up.
-const noChartPrompt = "\n## No chart this turn\nThe reader asked for a chart or a comparison, but no " +
-	"series in this portal measures what they asked for closely enough to chart. Say exactly that in one " +
-	"sentence, naming what is missing in the reader's words; give no other reason (not frequency, not " +
-	"format) and do not name a series you do not see listed above. Then point to the listed items that " +
-	"come closest, if any. Never describe a chart or write as if one is shown, and state no figures: the " +
+//
+// It speaks of the chart and not of the data: told "no series measures what
+// they asked", the model opened "the portal has no fire data" above a list
+// that began with the fire data. Whether the data is here is judged from the
+// items listed, by the rules above.
+const noChartPrompt = "\n## No chart this turn\nThe reader asked for a chart or a comparison, and none " +
+	"is drawn this turn. That is about the chart, not the data: whether the portal holds what they asked " +
+	"is judged from the items listed above, by the rules above, and an item listed that measures it is " +
+	"the answer. If none of them measures it, say so in one sentence, naming what is missing in the " +
+	"reader's words; give no other reason (not frequency, not format) and do not name a series you do not " +
+	"see listed above. Never describe a chart or write as if one is shown, and state no figures: the " +
 	"figures in earlier replies belonged to their charts and are not known for this turn.\n"
 
 // sameTitle compares a link's text with a title as the prompt printed it,
@@ -1323,11 +1387,19 @@ var sideWords = map[string]bool{
 // coverageNoise is words that name no thing to chart, though series carry
 // them: "Jumlah Penduduk Miskin" is not what "jumlah penduduk" asks for
 // because of "jumlah", and every FRED series is "for Indonesia".
+//
+// The last line is where, not what: the place is drawn as a member of a
+// series, and an island read as "province" made "titik api di Kalimantan
+// Tengah" a side that any series by province covered, so the fire detections
+// were never added to a chart of tree cover loss. "Titik" is the point of
+// "titik api", which the fire detections are titled without.
 var coverageNoise = func() map[string]bool {
 	set := map[string]bool{}
 	for _, word := range strings.Fields(`jumlah nilai angka tingkat total besaran indonesia nasional
 		national mata lagi cek coba sekarang berikan buatkan tampilkan lihat number amount level
-		value rate negara country countries`) {
+		value rate negara country countries periode period
+		jawa sumatera sumatra kalimantan sulawesi maluku papua nusa tengah barat timur utara selatan
+		titik`) {
 		set[word] = true
 	}
 	return set
@@ -1363,7 +1435,8 @@ func questionSides(catalogue assistantCatalogue, question string) []side {
 		}
 		var topics [][]string
 		for _, w := range words {
-			if isAnalysisWord(w) || coverageNoise[w] || stopWords[w] {
+			if isAnalysisWord(w) || coverageNoise[w] || stopWords[w] || isNumber(w) {
+				// A year is when the question is asked about, not what.
 				continue
 			}
 			// A short word matches inside longer ones — "tau" in "status" —
@@ -1395,7 +1468,9 @@ func (sd side) coveredBy(text string) bool {
 	hits := 0
 	for _, terms := range sd.topics {
 		for _, term := range terms {
-			if strings.Contains(text, term) {
+			// At the start of a word, as the search matches: "api" is in
+			// "kapita", and a regional GDP table was drawn for fire hotspots.
+			if containsWord(text, term) {
 				hits++
 				break
 			}
