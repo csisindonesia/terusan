@@ -136,7 +136,7 @@ func TestAMissingPartShowsWhatItsWordsName(t *testing.T) {
 		t.Errorf("a part nothing names got %+v", plan.Parts[2])
 	}
 	text, _ := renderAnswer(plan, items, "2020", "2020", "id")
-	if !strings.Contains(text, "**korban meninggal akibat banjir di Jawa Barat tahun 2020**: tidak tersedia untuk 2020; yang ada hanya untuk tahun lain:") {
+	if !strings.Contains(text, "**korban meninggal akibat banjir di Jawa Barat tahun 2020**: tidak tersedia untuk 2020; yang ada hanya untuk tahun atau tempat lain:") {
 		t.Errorf("the answer reads:\n%s", text)
 	}
 }
@@ -158,5 +158,41 @@ func TestAOneYearSpanIsWrittenOnce(t *testing.T) {
 	item := answerItem{Kind: "indicator", Resolution: "annual", Start: "2025", End: "2025", Places: 38}
 	if got := itemFacts(item, "2020", "2020", true); got != "Tahunan; 2025 (tidak mencakup tahun yang diminta); 38 wilayah, per provinsi" {
 		t.Errorf("itemFacts = %q", got)
+	}
+}
+
+func TestASeriesThePartNamesIsPreferred(t *testing.T) {
+	items := map[string]answerItem{
+		"/indicators/myr": {Kind: "indicator", ID: "myr", Ref: "/indicators/myr",
+			Title: "Malaysian ringgit / rupiah exchange rate, close", Start: "2021-09-24", End: "2026-09-30"},
+		"/indicators/sgd": {Kind: "indicator", ID: "sgd", Ref: "/indicators/sgd",
+			Title: "Singapore dollar / rupiah exchange rate, close", Start: "2021-09-24", End: "2026-09-30"},
+	}
+	plan := checkAnswer(answerPlan{Parts: []answerPart{{Asked: "kurs rupiah terhadap ringgit Malaysia harian", Status: "close",
+		Items: []answerPick{{Ref: "/indicators/sgd", Fit: "kurs ringgit"}}}}}, items, "2015", "2026", false)
+	if got := plan.Parts[0].Items; len(got) != 1 || got[0].Ref != "/indicators/myr" || got[0].Fit != "" {
+		t.Errorf("kept %+v, want the ringgit in place of the Singapore dollar, without the model's words", got)
+	}
+}
+
+func TestAPickIsOnlySwappedForOneThatNamesMore(t *testing.T) {
+	items := map[string]answerItem{
+		"/indicators/pm25": {Kind: "indicator", ID: "pm25", Ref: "/indicators/pm25", Title: "Surface PM2.5 (CAMS)", Places: 38},
+		"/indicators/cpi": {Kind: "indicator", ID: "cpi", Ref: "/indicators/cpi",
+			Title: "Inflasi Bulanan (M-to-M) (2022=100) Menurut Kelompok — Kesehatan", Places: 151},
+		"/indicators/personnel": {Kind: "indicator", ID: "personnel", Ref: "/indicators/personnel",
+			Title: "APBD personnel, realised, year to date — one regional government", Places: 466},
+		"/indicators/other": {Kind: "indicator", ID: "other", Ref: "/indicators/other",
+			Title: "APBD other expenditure, realised, year to date — one regional government", Places: 466},
+	}
+	for asked, want := range map[string]string{
+		"Konsentrasi PM2.5 bulanan di DKI Jakarta":         "/indicators/pm25",
+		"realisasi belanja pegawai APBD Kabupaten Bandung": "/indicators/personnel",
+	} {
+		plan := checkAnswer(answerPlan{Parts: []answerPart{{Asked: asked, Status: "held",
+			Items: []answerPick{{Ref: want}}}}}, items, "", "", false)
+		if got := plan.Parts[0].Items; len(got) != 1 || got[0].Ref != want {
+			t.Errorf("%q kept %+v, want %s", asked, got, want)
+		}
 	}
 }

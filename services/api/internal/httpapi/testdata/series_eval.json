@@ -75,6 +75,27 @@
       "prompt": [
         "Years asked: 2020 to 2020"
       ]
+    },
+    {
+      "ask": [
+        "Ada data outstanding pinjaman online (pinjol) per provinsi tahun 2022?"
+      ],
+      "want": [
+        "Fintech lending outstanding loans"
+      ]
+    },
+    {
+      "ask": [
+        "Saya perlu kurs rupiah terhadap ringgit Malaysia harian sejak 2015."
+      ],
+      "first": [
+        "ringgit"
+      ],
+      "never": [
+        "ringgit / rupiah exchange rate, open",
+        "ringgit / rupiah exchange rate, high",
+        "ringgit / rupiah exchange rate, low"
+      ]
     }
   ]
 }

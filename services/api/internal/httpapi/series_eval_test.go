@@ -83,7 +83,7 @@ func TestSeriesSearchAgainstTheLake(t *testing.T) {
 		}
 		asked := strings.Join(c.Ask, " → ")
 		q := readQuestion(messages)
-		shown := rankSeries(catalogue.series, titles, q.terms, q.topicTerms...)
+		shown := withoutQuoteVariants(rankSeries(catalogue.series, titles, q.terms, q.topicTerms...))
 		for n, i := range shown {
 			t.Logf("%s #%d %s (%d places, %s to %s)", clip(asked, 40), n+1, indicatorTitle(i), i.Geographies, i.PeriodStart, i.PeriodEnd)
 		}

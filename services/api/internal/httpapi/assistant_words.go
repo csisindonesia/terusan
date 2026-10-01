@@ -145,6 +145,11 @@ var moreTranslations = map[string]string{
 	// OJK's series name small business lending in English.
 	"umkm": "msme micro small medium enterprises", "ukm": "msme small medium enterprises",
 	"kredit": "credit loans", "macet": "non-performing npl", "npl": "non-performing",
+	// The APBD's lines are titled in English.
+	"pegawai": "personnel employees", "realisasi": "realised realized",
+	"modal": "capital",
+	// Online lending is "fintech lending" in OJK's tables.
+	"pinjol": "fintech lending", "fintech": "fintech lending",
 	// Goods.
 	"perikanan": "fisheries fishery fish", "ikan": "fish", "nelayan": "fishers fishermen",
 	"perkebunan": "plantation estate crops", "kelapa": "coconut palm", "karet": "rubber",

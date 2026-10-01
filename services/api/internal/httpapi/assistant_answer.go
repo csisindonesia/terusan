@@ -52,6 +52,30 @@ type answerItem struct {
 	Resolution           string
 	Start, End           string
 	Places               int64
+	// The years it has figures for at each place the question names, where
+	// it names any; see assistant_places.go.
+	AtPlaces []placeYears
+}
+
+// reach is whether an item covers any, and all, of the years asked: at the
+// places asked where there are any, else over its whole span.
+func (item answerItem) reach(from, to string) (any, all bool) {
+	if len(item.AtPlaces) > 0 {
+		all = true
+		for _, p := range item.AtPlaces {
+			a, b := placeCoverage(p.Years, from, to)
+			any = any || a
+			all = all && b
+		}
+		return any, all
+	}
+	switch coverageNote(item.Start, item.End, from, to) {
+	case "", "covers all the years asked":
+		return true, true
+	case "none of the years asked":
+		return false, false
+	}
+	return true, false
 }
 
 const (
@@ -69,8 +93,8 @@ const answerFormat = `
 ## How to answer this turn
 This turn's format replaces the format rules above. Reply with one JSON object and nothing else:
 {"parts":[{"asked":"<one thing the question asks for, in the reader's words>","status":"held|close|missing","items":[{"ref":"<the item's link exactly as listed, e.g. /indicators/abc123>","fit":"<what it measures, and how it differs from what was asked>"}]}]}
-- One part per thing the question asks for, each named in a few words: "credit to small businesses in East Java, and its bad loans" is two parts ("credit to small businesses", "bad loans"), "deaths in floods and the area flooded" two, "poverty by province, urban and rural" one. Judge each part on its own: one part missing does not make another close. At most 4.
-- status "held": a listed item measures that very thing, whatever its years or places — the portal weighs those itself and says where they fall short, so never lower a status for them. "close": only something near it is listed (another measure, a broader total). "missing": nothing listed is about it at all.
+- One part per thing the question asks for, each named in a few words: "credit to small businesses in East Java, and its bad loans" is two parts ("credit to small businesses", "bad loans"), "deaths in floods and the area flooded" two, "poverty by province, urban and rural" one, "PM2.5 and NO2" two. Judge each part on its own: one part missing does not make another close. At most 4.
+- status "held": a listed item measures that very thing, whatever its years or places — the portal weighs those itself and says where they fall short, so never lower a status for them. "close": only something near it is listed (another measure, a broader total) — including a series that counts something else broken down by what was asked: internet use by level of schooling, or workers by level of schooling, is close for "people with a degree", never held. "missing": nothing listed is about it at all.
 - items: the listed items that show the part, best first, at most 3 per part. Never one that is not listed. An item about the very thing for other years or places is still listed under that part. None only for a part that is missing.
 - fit: under 15 words, in the reader's language. Say what the item measures, and for "close" how it differs. Never write years, dates, numbers of places, or how often it is measured: the portal writes those beside each item, and writing them twice reads as an error.
 `
@@ -79,12 +103,35 @@ This turn's format replaces the format rules above. Reply with one JSON object a
 func (s *Server) planAnswer(ctx context.Context, prompt string, history []assistantMessage) (answerPlan, error) {
 	ctx, cancel := context.WithTimeout(ctx, answerTimeout)
 	defer cancel()
-	content, err := s.completeAssistantModel(ctx,
-		append([]assistantMessage{{Role: "system", Content: prompt + answerFormat}}, history...), 900)
+	messages := append([]assistantMessage{{Role: "system", Content: prompt + answerFormat}}, history...)
+	content, err := s.completeAssistantModel(ctx, messages, 900)
 	if err != nil {
 		return answerPlan{}, err
 	}
-	return parseAnswerPlan(content)
+	plan, err := parseAnswerPlan(content)
+	if err != nil {
+		// Asked once more: a small model writes broken JSON now and then,
+		// and the free writer it would fall back to is what this replaces.
+		s.log.Info("assistant.answer_retried", "error", err)
+		if content, err = s.completeAssistantModel(ctx, messages, 900); err != nil {
+			return answerPlan{}, err
+		}
+		plan, err = parseAnswerPlan(content)
+	}
+	return plan, err
+}
+
+// withoutQuoteVariants drops a market series' open, high and low, which
+// filled three of the places a question about the ringgit had with one rate
+// and left out its close.
+func withoutQuoteVariants(series []Indicator) []Indicator {
+	out := series[:0:0]
+	for _, i := range series {
+		if !quoteVariant(i) {
+			out = append(out, i)
+		}
+	}
+	return out
 }
 
 // parseAnswerPlan reads the model's JSON, which it wraps in a code fence as
@@ -114,7 +161,7 @@ func answerItems(catalogue assistantCatalogue, q assistantQuery) map[string]answ
 		items[ref] = answerItem{Kind: "dataset", ID: d.DatasetID, Title: datasetTitle(d), Ref: ref,
 			Start: d.PeriodStart, End: d.PeriodEnd}
 	}
-	for _, i := range rankSeries(catalogue.series, titles, q.terms, q.topicTerms...) {
+	for _, i := range withoutQuoteVariants(rankSeries(catalogue.series, titles, q.terms, q.topicTerms...)) {
 		ref := "/indicators/" + i.IndicatorID
 		items[ref] = answerItem{Kind: "indicator", ID: i.IndicatorID, Title: indicatorTitle(i), Ref: ref,
 			Resolution: resolutionText(i), Start: i.PeriodStart, End: i.PeriodEnd, Places: i.Geographies}
@@ -149,12 +196,40 @@ func checkAnswer(plan answerPlan, items map[string]answerItem, from, to string, 
 		if part.Asked == "" {
 			continue
 		}
+		// A series the part's own words name is preferred to one they do
+		// not: asked for the ringgit, the model chose the Singapore dollar
+		// from a list that held the ringgit first.
+		topics := partTopics(part.Asked, items)
+		named := map[string]bool{}
+		for _, ref := range relatedItems(part.Asked, items) {
+			if items[ref].Kind == "indicator" {
+				named[ref] = true
+			}
+		}
 		var kept []answerPick
+		taken := map[string]bool{}
 		for _, pick := range part.Items {
 			ref := refPath.FindString(pick.Ref)
-			if _, ok := items[ref]; !ok || len(kept) == 3 || used == answerItemsPerAll {
+			if _, ok := items[ref]; !ok || len(kept) == 3 || used == answerItemsPerAll || taken[ref] {
 				continue
 			}
+			if items[ref].Kind == "indicator" && len(named) > 0 && !named[ref] {
+				swapped := ""
+				// Only for one that names more of the part than the pick:
+				// a title that shares one word with it is no better.
+				for _, candidate := range sortedRefs(named, items) {
+					if !taken[candidate] && !pickedAmong(part.Items, candidate) &&
+						topicHits(topics, items[candidate]) > topicHits(topics, items[ref]) {
+						swapped = candidate
+						break
+					}
+				}
+				if swapped == "" {
+					continue
+				}
+				ref, pick.Fit = swapped, ""
+			}
+			taken[ref] = true
 			kept = append(kept, answerPick{Ref: ref, Fit: withoutYears(strings.TrimSpace(clip(pick.Fit, answerFitLength)))})
 			used++
 		}
@@ -178,7 +253,7 @@ func checkAnswer(plan answerPlan, items map[string]answerItem, from, to string, 
 		case "held", "close", "missing":
 		case "related":
 			part.Status = "missing"
-			if from != "" && !reachesYears(kept, items, from, to) {
+			if (from != "" || placed(kept, items)) && !reachesYears(kept, items, from, to) {
 				part.Status = "outside"
 			}
 		default:
@@ -187,15 +262,11 @@ func checkAnswer(plan answerPlan, items map[string]answerItem, from, to string, 
 		if len(kept) == 0 {
 			part.Status = "missing"
 		}
-		if part.Status == "held" && from != "" {
+		if part.Status == "held" && (from != "" || placed(kept, items)) {
 			all, any := false, false
-			for _, pick := range kept {
-				switch note := coverageNote(items[pick.Ref].Start, items[pick.Ref].End, from, to); {
-				case note == "covers all the years asked" || note == "":
-					all, any = true, true
-				case note != "none of the years asked":
-					any = true
-				}
+			for _, pick := range judged(kept, items) {
+				a, b := items[pick.Ref].reach(from, to)
+				any, all = any || a, all || b
 			}
 			switch {
 			case !any:
@@ -206,7 +277,7 @@ func checkAnswer(plan answerPlan, items map[string]answerItem, from, to string, 
 		}
 		// Close to the thing, but for none of the years asked, is the
 		// thing for other years.
-		if part.Status == "close" && from != "" && !reachesYears(kept, items, from, to) {
+		if part.Status == "close" && (from != "" || placed(kept, items)) && !reachesYears(kept, items, from, to) {
 			part.Status = "outside"
 		}
 		if part.Status == "held" && regional {
@@ -244,28 +315,87 @@ func withoutYears(fit string) string {
 // reachesYears reports whether any of the items covers any of the years
 // asked.
 func reachesYears(picks []answerPick, items map[string]answerItem, from, to string) bool {
-	for _, pick := range picks {
-		if coverageNote(items[pick.Ref].Start, items[pick.Ref].End, from, to) != "none of the years asked" {
+	for _, pick := range judged(picks, items) {
+		if any, _ := items[pick.Ref].reach(from, to); any {
 			return true
 		}
 	}
 	return false
 }
 
-// relatedItems is the listed items whose titles name what a part asks for,
-// as the chart's sides are matched: every topic of a short part, most of a
-// long one. Widest first.
-func relatedItems(asked string, items map[string]answerItem) []string {
-	titled := make(map[string]string, len(items))
-	for ref, item := range items {
-		titled[ref] = strings.ToLower(item.Title)
+// sortedRefs is a set of refs, widest first as relatedItems orders them.
+func sortedRefs(set map[string]bool, items map[string]answerItem) []string {
+	refs := make([]string, 0, len(set))
+	for ref := range set {
+		refs = append(refs, ref)
 	}
-	var sd side
+	sort.Slice(refs, func(a, b int) bool {
+		if items[refs[a]].Places != items[refs[b]].Places {
+			return items[refs[a]].Places > items[refs[b]].Places
+		}
+		return refs[a] < refs[b]
+	})
+	return refs
+}
+
+// pickedAmong reports whether the model chose a ref itself, by any spelling.
+func pickedAmong(picks []answerPick, ref string) bool {
+	for _, pick := range picks {
+		if refPath.FindString(pick.Ref) == ref {
+			return true
+		}
+	}
+	return false
+}
+
+// judged is the items a part's years are judged by: those read at the places
+// asked, where any were. A collection's span is every place's, and it held
+// "Kabupaten Bandung, 2015 to 2023" beside a series with nothing for Bandung
+// in those years.
+func judged(picks []answerPick, items map[string]answerItem) []answerPick {
+	if !placed(picks, items) {
+		return picks
+	}
+	var out []answerPick
+	for _, pick := range picks {
+		if len(items[pick.Ref].AtPlaces) > 0 {
+			out = append(out, pick)
+		}
+	}
+	return out
+}
+
+// placed reports whether any of the items was read at the places asked.
+func placed(picks []answerPick, items map[string]answerItem) bool {
+	for _, pick := range picks {
+		if len(items[pick.Ref].AtPlaces) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// frequencyWords say how often, which is the catalogue's to say: "bulanan"
+// is in every monthly inflation title, and a question about monthly PM2.5
+// was answered with them.
+var frequencyWords = map[string]bool{
+	"harian": true, "mingguan": true, "bulanan": true, "triwulanan": true, "kuartalan": true,
+	"semesteran": true, "tahunan": true, "daily": true, "weekly": true, "monthly": true,
+	"quarterly": true, "annual": true, "yearly": true,
+}
+
+// partTopics is what a part asks for, as the chart's sides are read: each
+// word the tables translate, each that a listed title carries, and each that
+// mixes letters and digits ("pm2", "no2"), which is a name however short.
+func partTopics(asked string, items map[string]answerItem) [][]string {
+	var topics [][]string
 	for _, word := range questionWords(asked) {
-		if coverageNoise[word] || stopWords[word] || regionWords[word] || isNumber(word) || isAnalysisWord(word) {
+		if coverageNoise[word] || stopWords[word] || regionWords[word] || frequencyWords[word] ||
+			isNumber(word) || isAnalysisWord(word) {
 			continue
 		}
-		if len([]rune(word)) < 4 && translations[word] == "" {
+		coded := strings.ContainsAny(word, "0123456789")
+		if len([]rune(word)) < 4 && translations[word] == "" && !coded {
 			continue
 		}
 		// A word the tables translate is a topic whether or not anything
@@ -273,26 +403,48 @@ func relatedItems(asked string, items map[string]answerItem) []string {
 		// without them holds nothing for "korban gempa". Any other word is
 		// a topic only where something listed carries it.
 		terms := searchTerms(word)
-		known := len(terms) > 1
-		for _, title := range titled {
-			if known || score(terms, field{title, 1}) > 0 {
-				sd.topics = append(sd.topics, terms)
+		if coded {
+			terms = []string{word}
+		}
+		known := len(terms) > 1 || coded
+		for _, item := range items {
+			if known || score(terms, field{strings.ToLower(item.Title), 1}) > 0 {
+				topics = append(topics, terms)
 				break
 			}
 		}
 	}
-	if len(sd.topics) == 0 {
+	return topics
+}
+
+// topicHits is how many of a part's topics an item's title carries.
+func topicHits(topics [][]string, item answerItem) int {
+	title := strings.ToLower(item.Title)
+	hits := 0
+	for _, terms := range topics {
+		if score(terms, field{title, 1}) > 0 {
+			hits++
+		}
+	}
+	return hits
+}
+
+// enough is whether an item carries enough of a part's topics to be about
+// it: every one of a short part, most of a long one.
+func enough(hits, topics int) bool {
+	return hits == topics || topics >= 3 && 2*hits >= topics+1
+}
+
+// relatedItems is the listed items whose titles name what a part asks for.
+// Widest first.
+func relatedItems(asked string, items map[string]answerItem) []string {
+	topics := partTopics(asked, items)
+	if len(topics) == 0 {
 		return nil
 	}
 	var refs []string
-	for ref, title := range titled {
-		hits := 0
-		for _, terms := range sd.topics {
-			if score(terms, field{title, 1}) > 0 {
-				hits++
-			}
-		}
-		if hits == len(sd.topics) || len(sd.topics) >= 3 && 2*hits >= len(sd.topics)+1 {
+	for ref, item := range items {
+		if enough(topicHits(topics, item), len(topics)) {
 			refs = append(refs, ref)
 		}
 	}
@@ -387,10 +539,14 @@ func statusText(status, from, to string, hasItems, id bool) string {
 		return "tidak tersedia per wilayah; yang ada hanya angka nasional:"
 	case status == "national":
 		return "not held by region; only national figures:"
+	case status == "outside" && from == "" && id:
+		return "tidak ada data untuk tempat yang diminta; yang ada hanya untuk tempat lain:"
+	case status == "outside" && from == "":
+		return "no figures for the place asked; only for other places:"
 	case status == "outside" && id:
-		return fmt.Sprintf("tidak tersedia untuk %s; yang ada hanya untuk tahun lain:", years)
+		return fmt.Sprintf("tidak tersedia untuk %s; yang ada hanya untuk tahun atau tempat lain:", years)
 	case status == "outside":
-		return fmt.Sprintf("not held for %s; only for other years:", years)
+		return fmt.Sprintf("not held for %s; only for other years or places:", years)
 	case hasItems && id:
 		return "tidak tersedia di portal; yang terkait:"
 	case hasItems:
@@ -414,13 +570,17 @@ func itemFacts(item answerItem, from, to string, id bool) string {
 		if item.End != item.Start {
 			span += " – " + item.End
 		}
-		if note := coverageNote(item.Start, item.End, from, to); note != "" {
+		// At the places asked, the series' own span says nothing of them.
+		if note := coverageNote(item.Start, item.End, from, to); note != "" && len(item.AtPlaces) == 0 {
 			span += " (" + coverageWords(note, id) + ")"
 		}
 		parts = append(parts, span)
 	}
 	if item.Kind != "dataset" {
 		parts = append(parts, placesWords(item.Places, id))
+	}
+	if facts := placeFacts(item, from, to, id); facts != "" {
+		parts = append(parts, facts)
 	}
 	text := strings.Join(parts, "; ")
 	if text != "" {

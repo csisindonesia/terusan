@@ -334,6 +334,7 @@ func (s *Server) handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 			plan, err := s.planAnswer(r.Context(), prompt, trimHistory(verifiedHistory(messages, catalogue)))
 			if err == nil {
 				from, to := askedYears(question.latest)
+				s.yearsAtPlaces(r.Context(), items, s.placesAsked(r.Context(), question.latest))
 				plan = checkAnswer(plan, items, from, to, asksRegion(question.latest))
 				if text, keys := renderAnswer(plan, items, from, to, route.Language); len(plan.Parts) > 0 {
 					s.log.Info("assistant.answered", "parts", len(plan.Parts), "router", route.Source)
@@ -668,7 +669,7 @@ func assistantPrompt(
 		}
 	}
 
-	series := rankSeries(catalogue.series, titles, q.terms, q.topicTerms...)
+	series := withoutQuoteVariants(rankSeries(catalogue.series, titles, q.terms, q.topicTerms...))
 	if len(series) > 0 {
 		fmt.Fprintf(&b, "\n## Series matching the question\n")
 	}
