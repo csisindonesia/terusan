@@ -115,6 +115,10 @@ function NewsArticlePage() {
   const coding = article.coding;
   const coded = coding?.accepted === true;
   const awaiting = coding?.accepted === null;
+  // Read and rejected: the dictionary matched and the gate said no. Reachable
+  // from the outlet page's set-aside list, and worth saying so rather than
+  // "not coded", which reads as nothing having looked at it.
+  const rejected = coding?.accepted === false;
 
   return (
     <div className="space-y-5">
@@ -331,7 +335,9 @@ function NewsArticlePage() {
                     ? "A classifier read the article and answered the questions a VEWS coder answers. Nobody has verified it."
                     : awaiting
                       ? "The classifier was unreachable when this was collected. It is kept as a candidate and will be coded on a later pass."
-                      : "No coding was made."
+                      : rejected
+                        ? `The classifier read this article and judged it not to be collective violence${coding?.gate_probability === undefined ? "" : ` (${Math.round(coding.gate_probability * 100)}% likely)`}. It is not counted as an incident.`
+                        : "No coding was made."
                 }
               >
                 {coded && coding ? (
@@ -395,7 +401,11 @@ function NewsArticlePage() {
                   </div>
                 ) : (
                   <Badge variant="outline">
-                    {awaiting ? "Awaiting coding" : "Not coded"}
+                    {awaiting
+                      ? "Awaiting coding"
+                      : rejected
+                        ? "Set aside"
+                        : "Not coded"}
                   </Badge>
                 )}
               </Section>

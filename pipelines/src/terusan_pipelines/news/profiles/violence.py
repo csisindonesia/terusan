@@ -42,27 +42,68 @@ from ..lexicon import violence_lexicon
 from ..places import resolve
 from .base import Coding, Profile, register
 
-#: How the gate question is put. Deliberately narrow: collective violence is
-#: two or more people acting together, which is what separates it from the
-#: assaults and robberies that fill the same crime desk.
+#: How the gate question is put. Narrow on what counts as violence and wide on
+#: how the article tells it. Collective violence is two or more people acting
+#: together, which is what separates it from the assaults and robberies that
+#: fill the same crime desk; that line is kept.
+#:
+#: What the gate no longer does is turn away the aftermath. It used to answer
+#: no to a report that only covered the investigation, the suspects or the
+#: victims of a clash, on the reasoning that another paper would carry the
+#: incident itself. Often none does. A regional paper picks a land clash up on
+#: its second day, when the police are questioning witnesses, and on Batam
+#: Tribun in September 2026 the three reports of the Setokok clash, deaths and
+#: all, were every one of them follow-ups. The gate threw all three away and
+#: the clash vanished from the record. Whether a report is the incident or its
+#: aftermath is now a separate question, `report_kind`, and clustering decides
+#: what an aftermath report may count for.
 GATE_INSTRUCTION = (
-    "Apakah berita ini MELAPORKAN peristiwa kekerasan kolektif yang baru terjadi — "
-    "yaitu kekerasan fisik yang dilakukan atau dialami oleh sekelompok orang (dua orang "
+    "Apakah berita ini tentang suatu peristiwa kekerasan kolektif tertentu — yaitu "
+    "kekerasan fisik yang dilakukan atau dialami oleh sekelompok orang (dua orang "
     "atau lebih yang bertindak bersama), seperti bentrokan, pengeroyokan, tawuran, "
-    "kerusuhan, penyerangan massa, atau kekerasan aparat terhadap warga? "
-    "Jawab TIDAK jika berita hanya membahas tindak lanjut dari peristiwa yang sudah "
-    "lewat — pemeriksaan saksi, penyidikan, penetapan tersangka, penangkapan, "
-    "persidangan, vonis, santunan, atau pernyataan pejabat — tanpa menceritakan "
-    "peristiwa kekerasannya sendiri. Jawab TIDAK juga jika tidak ada kekerasan fisik."
+    "kerusuhan, penyerangan massa, perusakan atau pembakaran oleh massa, atau "
+    "kekerasan aparat terhadap warga? "
+    "Jawab YA baik jika berita menceritakan peristiwanya sendiri maupun jika berita "
+    "melaporkan kelanjutannya — korban, pemeriksaan saksi, penyidikan, penetapan "
+    "tersangka, penangkapan, persidangan, atau pernyataan pejabat — selama berita "
+    "itu jelas merujuk pada satu peristiwa kekerasan kolektif yang nyata. "
+    "Jawab TIDAK jika kekerasannya dilakukan perorangan terhadap perorangan "
+    "(penganiayaan, perampokan, pembunuhan biasa), jika berita hanya membahas "
+    "kebijakan, imbauan, atau statistik tanpa merujuk pada satu peristiwa tertentu, "
+    "atau jika tidak ada kekerasan fisik sama sekali."
 )
 GATE_YES = (
-    "Ya, berita menceritakan peristiwa kekerasan kolektif itu sendiri, kapan dan di mana terjadinya"
+    "Ya, berita ini tentang satu peristiwa kekerasan kolektif yang nyata, entah "
+    "menceritakan kejadiannya atau kelanjutannya"
 )
 GATE_NO = (
-    "Tidak — berita hanya membahas tindak lanjut hukum, penyidikan, persidangan, "
-    "kebijakan, imbauan, atau kejahatan individual tanpa keterlibatan kelompok, atau "
-    "tidak melaporkan kekerasan fisik sama sekali"
+    "Tidak — kejahatan perorangan tanpa keterlibatan kelompok, pembahasan kebijakan "
+    "atau imbauan tanpa peristiwa tertentu, atau tidak ada kekerasan fisik sama sekali"
 )
+
+#: What kind of report this is: the incident, or what came after it. Asked
+#: because the gate now admits both, and they count for different things. A
+#: report of the incident dates it. A follow-up names an incident that already
+#: happened — days ago, or years ago when it is a verdict — so its publication
+#: date is not the incident's date, and counted as an incident of its own it
+#: would put a 2024 riot in this month's figures. Recent and old are separated
+#: because a follow-up filed within the week is often the only report a
+#: regional paper carries, and dated by its publication it lands in the right
+#: month; one about an old incident never does.
+REPORT_KINDS: dict[str, str] = {
+    "PERISTIWA": (
+        "Berita menceritakan peristiwa kekerasannya sendiri: apa yang terjadi, kapan, di mana"
+    ),
+    "TINDAK LANJUT BARU": (
+        "Berita melaporkan kelanjutan (korban, saksi, penyidikan, tersangka, "
+        "penangkapan) dari peristiwa yang terjadi dalam tujuh hari terakhir"
+    ),
+    "TINDAK LANJUT LAMA": (
+        "Berita melaporkan kelanjutan (persidangan, vonis, peringatan, santunan) dari "
+        "peristiwa yang terjadi lebih dari tujuh hari sebelumnya"
+    ),
+    ENUM_MISSING: "Tidak dapat ditentukan dari berita",
+}
 
 #: How far the incident got. This is the one column VEWS does not have, and it
 #: is written here rather than mined for that reason — there is no human list
@@ -137,6 +178,7 @@ DESCRIPTIONS: dict[str, str] = {
 
 #: The questions whose answer is a label from a vocabulary.
 CHOICE_FIELDS = (
+    "report_kind",
     "violence_form1",
     "violence_form2",
     "weapon_type1",
@@ -161,6 +203,7 @@ BOOLEAN_FIELDS = ("actor1a_vm", "actor2a_vm", "intervene", "pol_rel")
 #: one of each, and asking a large model to find a second one is asking it to
 #: invent one.
 DEEP_FIELDS = (
+    "report_kind",
     "violence_form1",
     "weapon_type1",
     "issue_type1",
@@ -207,6 +250,11 @@ def questions() -> dict[str, dict[str, Any]]:
     actors = _criteria("", actors=True)
     return {
         "gate": noul(GATE_INSTRUCTION, GATE_YES, GATE_NO),
+        "report_kind": choice(
+            "Apakah berita ini menceritakan peristiwa kekerasannya sendiri, atau "
+            "kelanjutan dari peristiwa yang sudah terjadi?",
+            REPORT_KINDS,
+        ),
         "violence_form1": choice(
             "Bentuk kekerasan yang paling utama dalam peristiwa ini",
             _criteria("violence_form"),
@@ -260,6 +308,8 @@ def _vocabulary(field: str) -> tuple[str, ...]:
     """The labels one field may hold, as the second reader is shown them."""
     if field == "escalation":
         return tuple(ESCALATION)
+    if field == "report_kind":
+        return tuple(REPORT_KINDS)
     if field in ("actor1a", "actor2a", "intervene_actor1"):
         return tuple(_criteria("", actors=True))
     if field in ("actor1a_t", "actor2a_t", "intervene_actor_type1"):
@@ -529,6 +579,10 @@ def deepen(
 #: wording because the vocabulary rides with the question and the model is
 #: reading the whole article rather than answering from a window of it.
 _INSTRUCTIONS: dict[str, str] = {
+    "report_kind": (
+        "Apakah berita menceritakan peristiwanya sendiri, atau kelanjutan dari "
+        "peristiwa yang terjadi dalam tujuh hari terakhir, atau lebih lama dari itu"
+    ),
     "violence_form1": "Bentuk kekerasan yang paling utama dalam peristiwa ini",
     "weapon_type1": "Jenis senjata utama yang dipakai; pilih tidak jelas jika tanpa senjata",
     "issue_type1": "Isu atau pemicu utama peristiwa kekerasan ini",

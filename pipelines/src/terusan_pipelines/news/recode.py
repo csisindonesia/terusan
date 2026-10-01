@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -145,6 +146,33 @@ def read_pairs(
     return pairs
 
 
+#: What extraction writes on a coding before any reader answers. Carried over
+#: when a coding is asked again; everything else on the row is the readers'.
+_EXTRACTION_FIELDS = (
+    "profile",
+    "url",
+    "outlet_host",
+    "outlet_geo_id",
+    "matched_terms",
+    "matched_categories",
+    "dictionary_score",
+)
+
+
+def _raw_date(raw_root: Path, provenance: dict[str, Any]) -> date | None:
+    """The publication date the page itself states, read from RAW."""
+    from ..sources.news.article import parse
+
+    relative = provenance.get("raw_path")
+    if not relative:
+        return None
+    try:
+        html = (raw_root / str(relative)).read_bytes()
+    except OSError:
+        return None
+    return parse(html, str(provenance.get("source_url") or "")).published_at
+
+
 def _subject(coding: dict[str, str], article: dict[str, str], published: Any) -> dict[str, Any]:
     """The article as a profile expects to be handed it.
 
@@ -221,6 +249,7 @@ def recode(
     until: date | None = None,
     url: str | None = None,
     ask_model: bool = False,
+    reask: bool = False,
     limit: int | None = None,
     dry_run: bool = False,
     resolver: StorageResolver | None = None,
@@ -230,8 +259,17 @@ def recode(
     Unchanged codings are not rewritten. A recode over a corpus where nothing
     moved must cost nothing downstream, or the collection doubles in size every
     time somebody checks whether it needed correcting.
+
+    `reask` puts every coding back to the readers, coded or not, accepted or
+    not. It is what a change to the questions themselves needs — a gate that
+    now admits follow-up reports, a field added to the form — and it is the
+    expensive path, a model call per article. It is still appended at the
+    current parser version rather than done by bumping that version, because
+    the version is shared by every extractor in the repository, and bumping it
+    to re-ask a hundred articles would re-read every other source with them.
     """
     issue = get_profile(issue_slug)
+    ask_model = ask_model or reask
     if issue.recode is None and not ask_model:
         raise ValueError(
             f"profile {issue.slug!r} cannot rebuild a coding in place; "
@@ -251,11 +289,30 @@ def recode(
     changed: dict[str, int] = {}
     examined = asked = 0
 
+    raw_root = Path(resolver.resolve(Layer.RAW))
     for provenance, stored, article in pairs:
+        if provenance["published_at"] is None:
+            # Undated in Bronze because the crawl's reader missed the page's
+            # own date. Read again from RAW so the rebuilt coding is dated;
+            # the provenance carries it too, so the row says so.
+            provenance["published_at"] = _raw_date(raw_root, provenance)
         subject = _subject(stored, article, provenance["published_at"])
         uncoded = stored.get("engine", "") in ("", "unavailable")
 
-        if uncoded:
+        if reask:
+            if client is None or not client.available():
+                break
+            asked += 1
+            fresh = _ask(issue, subject, client)
+            if fresh is None:
+                continue
+            # Built from what extraction knew rather than merged onto the old
+            # coding: a coding that is now rejected must not keep the event row
+            # of the acceptance it replaces, and a field the new answers leave
+            # out must not survive from the old ones.
+            kept = {key: stored[key] for key in _EXTRACTION_FIELDS if key in stored}
+            after = _columns(kept | fresh)
+        elif uncoded:
             # Never coded: there is no row to rebuild, only a question nobody
             # answered. Left alone unless the caller asked for the model.
             if not ask_model or client is None or not client.available():

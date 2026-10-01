@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from typing import Any
 
 import httpx
 import structlog
@@ -133,16 +135,33 @@ def _parse_date(value: str) -> date | None:
     return None
 
 
+def _jsonld_entries(payload: Any) -> Iterator[dict[str, Any]]:
+    """Every object in a schema.org block, including those inside `@graph`.
+
+    A graph is how Yoast and the Tribun network's CMS write it: the article is
+    one node among the website, the breadcrumb and the organisation. Reading
+    only the top level found nothing on every one of those pages, and the
+    Tribun papers carry a third of the regional outlets.
+    """
+    for entry in payload if isinstance(payload, list) else [payload]:
+        if not isinstance(entry, dict):
+            continue
+        yield entry
+        graph = entry.get("@graph")
+        if isinstance(graph, list):
+            yield from _jsonld_entries(graph)
+
+
 def _jsonld_date(tree: HTMLParser) -> date | None:
     """The date from a schema.org block, which most CMSs emit correctly."""
     for node in tree.css('script[type="application/ld+json"]'):
         try:
-            payload = json.loads(node.text() or "{}")
+            # Not strict: CMS templates indent with raw tabs inside strings,
+            # which the strict parser refuses.
+            payload = json.loads(node.text() or "{}", strict=False)
         except (ValueError, TypeError):
             continue
-        for entry in payload if isinstance(payload, list) else [payload]:
-            if not isinstance(entry, dict):
-                continue
+        for entry in _jsonld_entries(payload):
             for key in ("datePublished", "dateCreated", "uploadDate"):
                 found = _parse_date(str(entry.get(key) or ""))
                 if found:
@@ -207,6 +226,9 @@ def parse(html: bytes, url: str) -> Article:
     except Exception:  # noqa: BLE001
         text = ""
     tree = HTMLParser(text)
+    # Read before the page is stripped: the schema.org block is a <script>,
+    # and stripping scripts first is why no JSON-LD date was ever found.
+    stated = published_date(tree, url, "")
     for selector in _STRIP:
         for node in tree.css(selector):
             node.decompose()
@@ -240,7 +262,7 @@ def parse(html: bytes, url: str) -> Article:
         lead=lead[:1000],
         body=body[:60_000],
         canonical_url=canonical,
-        published_at=_plausible(published_date(tree, url, body)),
+        published_at=_plausible(stated or _parse_date(body[:400])),
     )
 
 

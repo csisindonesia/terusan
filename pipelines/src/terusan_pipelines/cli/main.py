@@ -1618,6 +1618,14 @@ def news_recode(
             help="Also put articles that were never coded to the classifier. Costs a call each.",
         ),
     ] = False,
+    reask: Annotated[
+        bool,
+        typer.Option(
+            "--reask",
+            help="Put every coding back to the classifier, accepted or not. "
+            "For a change to the questions. Costs a call each.",
+        ),
+    ] = False,
     limit: Annotated[
         int | None, typer.Option("--limit", help="Stop after rewriting this many codings.")
     ] = None,
@@ -1641,6 +1649,10 @@ def news_recode(
     `--ask-model` additionally walks the articles that were never coded — the
     ones landed with `engine = "unavailable"` because the classifier could not
     be reached — and asks for them now. That one costs a model call per article.
+
+    `--reask` asks again for every coding, which is what a change to the
+    questions needs: a gate that now admits follow-up reports re-decides the
+    articles the old one rejected.
     """
     from datetime import date as _date
 
@@ -1652,6 +1664,7 @@ def news_recode(
         until=_date.fromisoformat(until) if until else None,
         url=url,
         ask_model=ask_model,
+        reask=reask,
         limit=limit,
         dry_run=dry_run,
     )

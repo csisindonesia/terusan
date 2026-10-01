@@ -34,4 +34,5 @@ def read_article(landed: Landed) -> dict[str, Any]:
         "lead": lead,
         "body": body,
         "text": f"{title}\n{body or lead}".strip(),
+        "published_at": article.published_at,
     }

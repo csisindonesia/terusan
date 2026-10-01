@@ -52,6 +52,19 @@ log = structlog.get_logger(__name__)
 #: morning after writes tomorrow's date on yesterday's brawl.
 DATE_TOLERANCE_DAYS = 1
 
+#: How long after an incident a follow-up report may still be about it, by the
+#: kind of follow-up the classifier said it was. A follow-up is filed after the
+#: incident by definition, so the window opens on the incident's date and runs
+#: forward. The recent kind is the week its name promises plus the same day of
+#: slack a fresh report gets; the old kind is bounded at two months because a
+#: verdict on a clash from last year that happened to find a same-district,
+#: same-form brawl last month is not a report of it.
+FOLLOW_UP_DAYS: dict[str, int] = {"TINDAK LANJUT BARU": 8, "TINDAK LANJUT LAMA": 60}
+
+#: A follow-up about an incident older than a week. It may join an event, but
+#: it never starts one: its publication date is not when anything happened.
+OLD_FOLLOW_UP = "TINDAK LANJUT LAMA"
+
 #: A missing casualty figure, as VEWS writes it.
 NUM_MISSING = -99
 
@@ -147,19 +160,47 @@ def _actors(row: dict[str, str]) -> set[str]:
     }
 
 
+def _kind(row: dict[str, str]) -> str:
+    """What kind of report a coding is. Codings from before the question was
+    asked carry none, and are read as what the old gate admitted: incidents."""
+    return str(row.get("report_kind") or "PERISTIWA").upper()
+
+
 def same_incident(left: dict[str, str], right: dict[str, str]) -> bool:
-    """Whether two codings describe one incident."""
+    """Whether two codings describe one incident.
+
+    `left` is the earlier report, the one the cluster was opened by. A
+    follow-up on the right is matched on a looser rule than a fresh report:
+    the investigation of a clash is often filed a week later and coded with a
+    different form — "the police questioned 23 witnesses" reads to a coder as
+    less than the clash it follows — so the form or a shared side is enough,
+    where two fresh reports need the form and a side. Within a district and a
+    week, a follow-up naming nobody is taken to follow the incident it comes
+    after rather than counted as a second one.
+    """
     district = left.get("district_city_id") or left.get("district_city")
     if not district or district != (right.get("district_city_id") or right.get("district_city")):
         return False
     first, second = _as_date(left.get("date")), _as_date(right.get("date"))
     if first is None or second is None:
         return False
+    shared = _actors(left) & _actors(right)
+    same_form = left.get("violence_form1") == right.get("violence_form1")
+
+    window = FOLLOW_UP_DAYS.get(_kind(right))
+    if window is not None:
+        gap = (second - first).days
+        if gap < -DATE_TOLERANCE_DAYS or gap > window:
+            return False
+        # A follow-up often names no side at all — "23 witnesses questioned"
+        # — and then the district and the window are all there is to go on,
+        # the same allowance two fresh reports get when neither names a side.
+        return same_form or bool(shared) or not (_actors(left) and _actors(right))
+
     if abs((first - second).days) > DATE_TOLERANCE_DAYS:
         return False
-    if left.get("violence_form1") != right.get("violence_form1"):
+    if not same_form:
         return False
-    shared = _actors(left) & _actors(right)
     # An incident where neither report could name a side still clusters on
     # district, date and form: the alternative is one event per paper, which is
     # the miscount this whole step exists to prevent.
@@ -241,11 +282,23 @@ def _merge(reports: list[dict[str, str]]) -> dict[str, str]:
     return merged
 
 
+#: The order reports of one day are taken in: the incident before its
+#: follow-ups, so a cluster is opened by the report that dates it.
+_KIND_ORDER = {"PERISTIWA": 0, "TIDAK JELAS": 1, "TINDAK LANJUT BARU": 2, OLD_FOLLOW_UP: 3}
+
+
 def cluster(codings: Iterable[dict[str, str]]) -> list[Event]:
     """Group codings into events.
 
     Grouped within a district first, so the pairwise comparison is over the
     handful of reports from one place rather than over the whole window.
+
+    A follow-up about an old incident that matches no event is dropped from
+    the events, not made into one. It is still a coding, and still in the
+    corpus; it is only not evidence that anything happened on the day it was
+    published. A recent follow-up that matches nothing does open an event,
+    because for a regional clash it is often the only report there is, and a
+    week either side is inside the month the incident is counted in.
     """
     buckets: dict[str, list[dict[str, str]]] = defaultdict(list)
     for coding in codings:
@@ -255,13 +308,17 @@ def cluster(codings: Iterable[dict[str, str]]) -> list[Event]:
     events: list[Event] = []
     for reports in buckets.values():
         open_clusters: list[list[dict[str, str]]] = []
-        for report in sorted(reports, key=lambda r: str(r.get("date") or "")):
+        ordered = sorted(
+            reports, key=lambda r: (str(r.get("date") or ""), _KIND_ORDER.get(_kind(r), 1))
+        )
+        for report in ordered:
             for members in open_clusters:
                 if same_incident(members[0], report):
                     members.append(report)
                     break
             else:
-                open_clusters.append([report])
+                if _kind(report) != OLD_FOLLOW_UP:
+                    open_clusters.append([report])
         for members in open_clusters:
             row = _merge(members)
             events.append(Event(event_id=_event_id(row), row=row, reports=members))
@@ -286,11 +343,15 @@ def read_codings(
     with warehouse() as house:
         expression = house.source(Layer.BRONZE, "records")
         rows = house.query(
+            # Newest first, and only then accepted: filtered the other way
+            # round, an article a later reading rejected kept counting through
+            # the older coding that had accepted it.
             "SELECT columns FROM (SELECT columns, row_number() OVER ("
             "PARTITION BY columns['url'] ORDER BY processed_at DESC) AS pick "
             f"FROM {expression} "
-            f"WHERE dataset = '{issue.codings_dataset}' AND columns['accepted'] = 'true' "
-            f"AND parser_version = '{PARSER_VERSION}') WHERE pick = 1"
+            f"WHERE dataset = '{issue.codings_dataset}' "
+            f"AND parser_version = '{PARSER_VERSION}') "
+            "WHERE pick = 1 AND columns['accepted'] = 'true'"
         ).fetchall()
     codings = [dict(row[0]) for row in rows]
     if since or until:
@@ -313,7 +374,7 @@ def read_codings(
 #: version — it is how re-extracting under a new parser avoids doubling every
 #: observation — so a derived collection that stamped a version of its own
 #: would be invisible to the normalizer that turns its counts into figures.
-CLUSTER_VERSION = "1"
+CLUSTER_VERSION = "2"
 
 
 def _provenance(document_id: str, content_hash: str) -> dict[str, Any]:

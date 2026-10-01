@@ -1077,6 +1077,10 @@ export type NewsCoding = {
    * spread, a riot. Machine-coded only — VEWS has no such column, so it is
    * never shown as comparable with a human coding. */
   escalation?: string;
+  /** Whether the article tells the incident or what came after it:
+   * `PERISTIWA`, `TINDAK LANJUT BARU` (within the week) or `TINDAK LANJUT
+   * LAMA`. Absent on codings made before the question was asked. */
+  report_kind?: string;
 };
 
 /**
@@ -1194,6 +1198,9 @@ export type NewsArticleQuery = {
   to?: string;
   /** Only articles a classifier read and accepted. */
   coded?: string;
+  /** Which side of the classifier's verdict: accepted (the default, and
+   * articles awaiting a coding), rejected, or all. */
+  verdict?: "accepted" | "rejected" | "all";
   /** The coded labels, each a multiple choice. Sent as repeated parameters, so
    * a label containing a comma stays one value. */
   form?: string[];

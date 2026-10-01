@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from dataclasses import replace
 from typing import Any
 
 import structlog
@@ -83,6 +84,18 @@ class NewsArticleExtractor(Extractor):
         article = read_article(landed)
         issues = self._issues if self._issues is not None else profiles()
 
+        # The crawl's date, and the page's own where the crawl had none. The
+        # crawl parsed the page once, with a reader that could not see a
+        # schema.org date inside a `@graph`; a third of the corpus landed
+        # undated, and an undated coding can never be clustered or counted in
+        # a month. Re-read here, from RAW, by the reader as it now is. Set on
+        # the rows themselves, which the runner lets override the landing
+        # record's provenance.
+        published = landed.published_at or article["published_at"]
+        if published != landed.published_at:
+            landed = replace(landed, published_at=published)
+        dated = {"published_at": published} if published else {}
+
         matched: dict[str, Match] = {}
         for issue in issues:
             try:
@@ -94,7 +107,7 @@ class NewsArticleExtractor(Extractor):
             if found.candidate:
                 matched[issue.slug] = found
 
-        yield _record(
+        yield dated | _record(
             ARTICLES_DATASET,
             1,
             {
@@ -127,7 +140,8 @@ class NewsArticleExtractor(Extractor):
         for issue in issues:
             if issue.slug not in matched:
                 continue
-            yield from self._coding(issue, landed, article, matched[issue.slug], client)
+            for row in self._coding(issue, landed, article, matched[issue.slug], client):
+                yield dated | row
 
     def _coding(
         self,

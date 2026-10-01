@@ -118,6 +118,11 @@ type NewsCoding struct {
 	// never comparable with a human coding and is labelled as its own thing
 	// wherever it is shown.
 	Escalation *string `json:"escalation,omitempty"`
+	// Whether the article tells the incident itself or what came after it,
+	// recently or long after. A follow-up is about an incident without dating
+	// it, which is why clustering lets one join an event and lets only the
+	// recent kind start one. Absent on codings made before it was asked.
+	ReportKind *string `json:"report_kind,omitempty"`
 }
 
 // NewsEvent is one incident, after several papers' reports of it were collapsed.
@@ -588,9 +593,14 @@ func newsCorpus(records string) string {
 		"c.columns['intervene'] AS cv_intervene, " +
 		"c.columns['num_death'] AS cv_deaths, c.columns['num_injured'] AS cv_injured, " +
 		"c.columns['escalation'] AS cv_escalation, " +
+		"c.columns['report_kind'] AS cv_report_kind, " +
 		// Cast to text: the column is a timestamp and a reader wants the day a
 		// paper published, not a midnight that is an artefact of the type.
-		"(s.url IS NOT NULL) AS screenshot, a.pub AS pub FROM " +
+		// The coding's date where the article row has none: articles landed
+		// before the reader could see a schema.org `@graph` are undated in
+		// Bronze, and a recode re-reads the date from RAW onto the coding.
+		"(s.url IS NOT NULL) AS screenshot, " +
+		"coalesce(a.pub, nullif(c.columns['date'], '')) AS pub FROM " +
 		// The published date comes off the article row, so it is projected
 		// inside the deduplicating subquery rather than joined back in.
 		"(SELECT document_id, columns, CAST(published_at AS VARCHAR) AS pub, " +
@@ -606,12 +616,12 @@ func newsCorpus(records string) string {
 		"LEFT JOIN (SELECT DISTINCT columns['url'] AS url FROM " + records +
 		" WHERE dataset = '" + newsShotsDataset + "' AND try_cast(parser_version AS INTEGER) = " +
 		currentParserVersion(records, newsShotsDataset) + ") s ON s.url = a.columns['url'] " +
-		// An article the classifier read and rejected is not about the issue,
-		// whatever its vocabulary suggested, and the crawl no longer keeps
-		// one. Rows landed before that was true are excluded here for the same
-		// reason: the corpus is what is about an issue, not what mentioned a
-		// word. Articles awaiting coding stay — nothing has judged them yet.
-		"WHERE a.pick = 1 AND coalesce(c.columns['accepted'], 'true') <> 'false'"
+		// Rejected codings are in here and filtered out by `verdict` in
+		// newsCorpusFilters, not dropped by the query itself. Hidden outright,
+		// a report the crawl kept and a later reading rejected left an outlet
+		// page claiming three articles and listing none, with nothing to say
+		// where they went.
+		"WHERE a.pick = 1"
 }
 
 // newsCorpusFilters is everything a caller may narrow the corpus by.
@@ -682,6 +692,25 @@ func newsCorpusFilters(r *http.Request) (string, []any, error) {
 	if to != "" {
 		clauses = append(clauses, "pub <= CAST(? AS DATE)")
 		args = append(args, to)
+	}
+
+	// Which side of the classifier's verdict to show. The corpus is what is
+	// about an issue, so by default an article a reader judged not to be is
+	// left out, whatever its vocabulary suggested; articles awaiting a coding
+	// stay, because nothing has judged them yet. `rejected` is the other side,
+	// for seeing what the gate turned away and arguing with it.
+	verdict, err := stringParam(r, "verdict", identifierPattern)
+	if err != nil {
+		return "", nil, err
+	}
+	switch verdict {
+	case "", "accepted":
+		clauses = append(clauses, "coalesce(accepted, 'true') <> 'false'")
+	case "rejected":
+		clauses = append(clauses, "accepted = 'false'")
+	case "all":
+	default:
+		return "", nil, fmt.Errorf("verdict must be accepted, rejected or all")
 	}
 
 	coded, err := boolParam(r, "coded")
@@ -883,6 +912,7 @@ func (s *Server) handleNewsArticles(w http.ResponseWriter, r *http.Request) {
 			&row.CvProvince, &row.CvDistrict, &row.CvDate, &row.CvForm,
 			&row.CvWeapon, &row.CvIssue, &row.CvActor1, &row.CvActor2,
 			&row.CvIntervene, &row.CvDeaths, &row.CvInjured, &row.CvEscalation,
+			&row.CvReportKind,
 			&row.Screenshot, &row.Published,
 		); err != nil {
 			internalError(w, s.log, "scan news articles", err)
@@ -1041,6 +1071,7 @@ type newsArticleRow struct {
 	CvIntervene            sql.NullString
 	CvDeaths, CvInjured    sql.NullString
 	CvEscalation           sql.NullString
+	CvReportKind           sql.NullString
 	Screenshot             sql.NullBool
 	Published              sql.NullString
 }
@@ -1083,6 +1114,7 @@ func (r newsArticleRow) article() NewsArticle {
 	coding.Deaths = optCount(r.CvDeaths)
 	coding.Injured = optCount(r.CvInjured)
 	coding.Escalation = optEnum(r.CvEscalation)
+	coding.ReportKind = optEnum(r.CvReportKind)
 	article.Coding = coding
 	return article
 }
@@ -1255,7 +1287,7 @@ func (s *Server) handleNewsArticle(w http.ResponseWriter, r *http.Request) {
 			"c.columns['date'], c.columns['violence_form1'], c.columns['weapon_type1'], "+
 			"c.columns['issue_type1'], c.columns['actor1a'], c.columns['actor2a'], "+
 			"c.columns['intervene'], c.columns['num_death'], c.columns['num_injured'], "+
-			"c.columns['escalation'], "+
+			"c.columns['escalation'], c.columns['report_kind'], "+
 			"(s.url IS NOT NULL), CAST(a.published_at AS VARCHAR), "+
 			"a.columns['discovered_by'], a.columns['body_chars'], a.content_hash, a.raw_path, "+
 			"a.media_type, CAST(a.retrieved_at AS VARCHAR), a.source_id, c.columns['confidence'], "+
@@ -1268,16 +1300,16 @@ func (s *Server) handleNewsArticle(w http.ResponseWriter, r *http.Request) {
 			"processed_at DESC) AS pick FROM "+records+" WHERE dataset = '"+
 			newsArticlesDataset+"' AND document_id = ? AND try_cast(parser_version AS INTEGER) = "+
 			currentParserVersion(records, newsArticlesDataset)+" "+
-			// The same filter the list applies. An article that matched no
-			// issue, or that the classifier read and rejected, is not part of
-			// the corpus — and a page for one reachable only by typing its id
-			// would be a second, quieter answer to what the corpus contains.
+			// An article that matched no issue is not part of the corpus. One
+			// the classifier read and rejected is served, carrying its verdict:
+			// the outlet page lists those under their own heading so a reader
+			// can see what the gate turned away, and each needs a page.
 			"AND columns['issues'] NOT IN ('', '[]')) a "+
 			"LEFT JOIN "+latestCoding(records)+" c ON c.columns['url'] = a.columns['url'] "+
 			"LEFT JOIN (SELECT DISTINCT columns['url'] AS url FROM "+records+
 			" WHERE dataset = '"+newsShotsDataset+"' AND try_cast(parser_version AS INTEGER) = "+
 			currentParserVersion(records, newsShotsDataset)+") s ON s.url = a.columns['url'] "+
-			"WHERE a.pick = 1 AND coalesce(c.columns['accepted'], 'true') <> 'false'", id,
+			"WHERE a.pick = 1", id,
 	).Scan(
 		&row.DocumentID, &row.URL, &row.Title, &row.Lead,
 		&row.Outlet, &row.Host, &row.Province, &row.Issues, &row.Terms,
@@ -1285,7 +1317,7 @@ func (s *Server) handleNewsArticle(w http.ResponseWriter, r *http.Request) {
 		&row.CvProvince, &row.CvDistrict, &row.CvDate, &row.CvForm,
 		&row.CvWeapon, &row.CvIssue, &row.CvActor1, &row.CvActor2,
 		&row.CvIntervene, &row.CvDeaths, &row.CvInjured, &row.CvEscalation,
-		&row.Screenshot, &row.Published,
+		&row.CvReportKind, &row.Screenshot, &row.Published,
 		&discovered, &bodyChars, &hash, &rawPath, &mediaType, &retrieved, &sourceID,
 		&confidence, &categories, &escalationReason, &deepened,
 	)

@@ -167,6 +167,7 @@ def test_a_word_is_not_matched_inside_a_longer_one() -> None:
 
 def _coding(**overrides: object) -> Coding:
     row = {
+        "report_kind": "PERISTIWA",
         "violence_form1": "SERANGAN TANPA SENJATA API",
         "weapon_type1": "SENJATA JARAK DEKAT",
         "issue_type1": "KONFLIK LAHAN",
@@ -424,6 +425,114 @@ def test_a_different_form_is_a_different_incident() -> None:
     assert not same_incident(_report(), _report(violence_form1="PENGEBOMAN/LEDAKAN"))
 
 
+def test_a_follow_up_a_week_later_joins_the_incident() -> None:
+    # The police question witnesses six days after the clash, and the coder
+    # reads that as a lesser form than the clash itself. A shared side is
+    # enough to know it is the same incident.
+    follow_up = _report(
+        date="2026-05-10",
+        report_kind="TINDAK LANJUT BARU",
+        violence_form1="INTIMIDASI MASSA/PUBLIK",
+    )
+    assert same_incident(_report(report_kind="PERISTIWA"), follow_up)
+
+
+def test_a_follow_up_never_reaches_back_before_its_incident() -> None:
+    follow_up = _report(date="2026-05-01", report_kind="TINDAK LANJUT BARU")
+    assert not same_incident(_report(), follow_up)
+
+
+def test_a_recent_follow_up_with_no_incident_report_is_still_an_incident() -> None:
+    # The Setokok clash on Batam Tribun: every report the paper carried was a
+    # follow-up. Dropping them all lost the clash from the record.
+    events = cluster(
+        [_report(report_kind="TINDAK LANJUT BARU", url=f"https://p.id/{n}") for n in range(3)]
+    )
+    assert len(events) == 1
+    assert len(events[0].reports) == 3
+
+
+def test_a_follow_up_about_an_old_incident_is_never_an_incident_of_its_own() -> None:
+    # A verdict on last year's riot, published this month, is not evidence
+    # that anything happened this month.
+    assert cluster([_report(report_kind="TINDAK LANJUT LAMA")]) == []
+
+
+def test_a_follow_up_about_an_old_incident_still_joins_one_in_the_window() -> None:
+    events = cluster(
+        [
+            _report(url="https://a.id/clash"),
+            _report(date="2026-06-20", report_kind="TINDAK LANJUT LAMA", url="https://b.id/trial"),
+        ]
+    )
+    assert len(events) == 1
+    assert len(events[0].reports) == 2
+
+
+def test_the_incident_report_opens_the_event_when_both_land_on_one_day() -> None:
+    events = cluster(
+        [
+            _report(report_kind="TINDAK LANJUT BARU", url="https://a.id/follow"),
+            _report(report_kind="PERISTIWA", url="https://b.id/clash"),
+        ]
+    )
+    assert len(events) == 1
+    assert events[0].reports[0]["url"] == "https://b.id/clash"
+
+
+def test_follow_ups_naming_nobody_join_the_incident_they_follow() -> None:
+    # The three Batam Tribun reports of the Setokok clash: one dated the 22nd,
+    # two the 23rd, each coded with a different form and no side named.
+    events = cluster(
+        [
+            _report(
+                date="2026-09-22",
+                report_kind="TINDAK LANJUT BARU",
+                violence_form1="SERANGAN BERSENJATA",
+                actor1a="TIDAK JELAS",
+                actor2a="TIDAK JELAS",
+                url="https://batam.id/1",
+            ),
+            _report(
+                date="2026-09-23",
+                report_kind="TINDAK LANJUT BARU",
+                violence_form1="TIDAK JELAS",
+                actor1a="TIDAK JELAS",
+                actor2a="TIDAK JELAS",
+                url="https://batam.id/2",
+            ),
+        ]
+    )
+    assert len(events) == 1
+
+
+def test_a_later_rejection_stops_an_article_counting() -> None:
+    # Newest coding first, accepted second. The other order kept counting an
+    # article through the older coding that had accepted it.
+    import inspect
+
+    from terusan_pipelines.news import cluster as module
+
+    source = inspect.getsource(module.read_codings)
+    assert source.index("WHERE pick = 1 AND columns['accepted']") > source.index("row_number()")
+
+
+def test_codings_from_before_the_question_count_as_incident_reports() -> None:
+    assert len(cluster([_report()])) == 1
+
+
+def test_the_gate_admits_the_aftermath_of_a_clash() -> None:
+    # The question used to answer no to a report of the investigation alone.
+    # It now leaves that to `report_kind`, which the coding form must ask.
+    questions = VIOLENCE_PROFILE.questions()
+    assert "kelanjutannya" in questions["gate"]["instructions"]
+    assert set(questions["report_kind"]["criteria"]) >= {
+        "PERISTIWA",
+        "TINDAK LANJUT BARU",
+        "TINDAK LANJUT LAMA",
+    }
+
+
 def test_five_reports_of_one_brawl_become_one_event() -> None:
     reports = [_report(url=f"https://paper{n}.id/a") for n in range(5)]
     events = cluster(reports)
@@ -491,6 +600,25 @@ def test_dates_inside_the_window() -> None:
     # No date readable: admitted rather than dropped. Several outlets state one
     # nowhere, and dropping them loses those outlets entirely.
     assert in_window(Article(url="u", status=200, published_at=None), since)
+
+
+def test_a_date_inside_a_schema_graph_is_read() -> None:
+    # How the Tribun network writes it: the article is one node of a graph,
+    # with tabs inside the strings, and the page states it nowhere else a
+    # machine reads. Missing it left a third of the corpus undated.
+    from terusan_pipelines.sources.news.article import parse
+
+    html = (
+        b"<html><head><script type='application/ld+json'>"
+        b'{"@context": "https://schema.org", "@graph": ['
+        b'{"@type": "NewsArticle", "headline": "Bentrokan\tdi Barelang", '
+        b'"datePublished": "2026-09-22T17:38:45+07:00"}, {"@type": "BreadcrumbList"}]}'
+        b"</script></head><body><p>Bentrokan dua kelompok warga pecah di Setokok.</p></body>"
+        b"</html>"
+    )
+    assert parse(html, "https://batam.tribunnews.com/kota-batam/696087/x").published_at == date(
+        2026, 9, 22
+    )
 
 
 # -- read everything, keep the issue ---------------------------------------

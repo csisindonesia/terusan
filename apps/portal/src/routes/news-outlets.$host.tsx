@@ -67,6 +67,20 @@ export const Route = createFileRoute("/news-outlets/$host")({
   component: NewsOutletPage,
 });
 
+/**
+ * The issue under the form, prefixed when the article is a follow-up. A report
+ * of the police questioning witnesses is kept as being about the clash it
+ * follows, and a reader scanning the column should see that it is not the
+ * clash itself.
+ */
+function followUpNote(kind?: string, issue?: string): string | undefined {
+  const parts = [
+    kind?.startsWith("TINDAK LANJUT") ? "Follow-up" : undefined,
+    issue ? codedLabel(issue) : undefined,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : undefined;
+}
+
 const columns: ColumnDef<NewsArticle>[] = [
   {
     accessorKey: "title",
@@ -147,7 +161,7 @@ const columns: ColumnDef<NewsArticle>[] = [
               {codedLabel(coding.violence_form)}
             </ClampedText>
           }
-          secondary={coding.issue_type ? codedLabel(coding.issue_type) : undefined}
+          secondary={followUpNote(coding.report_kind, coding.issue_type)}
         />
       );
     },
@@ -370,6 +384,17 @@ function NewsOutletPage() {
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       }),
+  });
+
+  // What the classifier read and set aside. Shown under the list rather than
+  // hidden, because the crawl's own count of what it kept is made on the day
+  // and a later, stricter reading can reject the same articles: hidden, those
+  // left a paper reporting three kept articles and listing none.
+  const rejected = useQuery({
+    queryKey: ["news-outlet-rejected", host],
+    queryFn: () =>
+      api.newsOutletArticles(host, { verdict: "rejected", limit: PAGE_SIZE }),
+    enabled: tab === "articles",
   });
 
   const facets = useQuery({
@@ -708,6 +733,10 @@ function NewsOutletPage() {
                   ) : null
                 }
               />
+              <RejectedArticles
+                rows={rejected.data?.data ?? []}
+                total={rejected.data?.meta?.total ?? 0}
+              />
             </TabsContent>
 
             <TabsContent value="log" className="space-y-5">
@@ -775,5 +804,52 @@ function Fact({
         ) : null}
       </dd>
     </div>
+  );
+}
+
+/**
+ * Articles the dictionary matched and the classifier then rejected.
+ *
+ * Nothing renders when there are none, which is most papers. Where there are
+ * some, each carries the gate's reading, so a reader who disagrees can see how
+ * near the call was and open the article to check.
+ */
+function RejectedArticles({ rows, total }: { rows: NewsArticle[]; total: number }) {
+  if (rows.length === 0) return null;
+  return (
+    <section className="space-y-3 border-t pt-5">
+      <div className="space-y-1">
+        <h3 className="text-sm font-medium">
+          Read and set aside · {formatCount(total)}
+        </h3>
+        <p className="max-w-2xl text-sm text-muted-foreground">
+          These carried the dictionary&rsquo;s terms, and the classifier then read them
+          as not being collective violence. They are not counted as incidents. The
+          crawl&rsquo;s figure for violence is made on the day, so an article set aside
+          by a later reading can still be in it.
+        </p>
+      </div>
+      <ul className="divide-y rounded-md border">
+        {rows.map((row) => (
+          <li key={row.url} className="flex items-baseline gap-3 px-3 py-2 text-sm">
+            <Link
+              to="/news-articles/$articleId"
+              params={{ articleId: row.document_id }}
+              className="min-w-0 flex-1 hover:underline"
+            >
+              <ClampedText>{row.title}</ClampedText>
+            </Link>
+            <span className="shrink-0 tabular-nums text-muted-foreground">
+              {formatDate(row.published_at)}
+            </span>
+            <span className="w-24 shrink-0 text-right tabular-nums text-muted-foreground">
+              {row.coding?.gate_probability === undefined
+                ? "—"
+                : `${Math.round(row.coding.gate_probability * 100)}% likely`}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
