@@ -45,6 +45,9 @@ type Dataset struct {
 	PeriodStart  string  `json:"period_start"`
 	PeriodEnd    string  `json:"period_end"`
 	LastUpdated  *string `json:"last_updated,omitempty"`
+	// The name of its entity set in the OData feed (odata.go), which is
+	// what a workbook connected from Excel holds on to.
+	ODataSet string `json:"odata_set,omitempty"`
 }
 
 // datasetSelect groups the figures and hangs the registry record off them.

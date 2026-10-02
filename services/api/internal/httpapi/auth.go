@@ -251,12 +251,18 @@ func (s *Server) withSession(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if bearer, ok := bearerToken(r); ok {
+		if bearer, ok := apiToken(r); ok {
 			session, err := s.auth.TokenSession(r.Context(), bearer)
 			switch {
 			case errors.Is(err, auth.ErrNoSession):
+				detail := "the token is unknown, expired or revoked"
+				if isODataPath(r.URL.Path) {
+					odataChallenge(w)
+					detail += "; in Excel, choose Basic and paste an API token " +
+						"(trs_…) from your profile page as the password"
+				}
 				writeError(w, http.StatusUnauthorized, CodeUnauthorized,
-					"invalid API token", "the token is unknown, expired or revoked")
+					"invalid API token", detail)
 				return
 			case errors.Is(err, auth.ErrDisabled), errors.Is(err, auth.ErrPending),
 				errors.Is(err, auth.ErrExpired):
@@ -343,6 +349,49 @@ func bearerToken(r *http.Request) (string, bool) {
 	}
 	value = strings.TrimSpace(value)
 	return value, value != ""
+}
+
+// apiToken is the API token the request carries: as a bearer token, or, on
+// the OData feed only, as the password of HTTP Basic.
+//
+// Basic because it is what Excel's "From OData Feed" dialog can send. Its
+// other choices are an anonymous request, Windows credentials, and an
+// organisational account that would need this API registered with Entra as a
+// resource; "Web API" sends a key in a query string, which ends up in every
+// log the URL passes through. The user name is ignored — a token already says
+// whose it is — and a token pasted into the user name field instead is taken
+// from there, because that is an easy mistake to make in a two-field dialog.
+//
+// Only on the feed. Basic credentials are something a browser remembers and
+// resends by itself, which for a read-only feed is the point and anywhere
+// else is a second way in that nobody asked for.
+func apiToken(r *http.Request) (string, bool) {
+	if token, ok := bearerToken(r); ok {
+		return token, true
+	}
+	if !isODataPath(r.URL.Path) {
+		return "", false
+	}
+	user, password, ok := r.BasicAuth()
+	if !ok {
+		return "", false
+	}
+	user, password = strings.TrimSpace(user), strings.TrimSpace(password)
+	if !strings.HasPrefix(password, auth.TokenPrefix) && strings.HasPrefix(user, auth.TokenPrefix) {
+		password = user
+	}
+	if password == "" {
+		// Sent as Basic and saying nothing: still somebody who meant to sign
+		// in, and told so rather than served as a stranger.
+		return "-", true
+	}
+	return password, true
+}
+
+// odataChallenge tells Excel that the feed takes Basic, which is what makes
+// it ask the reader for credentials instead of failing the connection.
+func odataChallenge(w http.ResponseWriter) {
+	w.Header().Set("WWW-Authenticate", `Basic realm="Terusan", charset="UTF-8"`)
 }
 
 // session is who is asking, if anybody.
@@ -720,6 +769,11 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 			if write && !s.cfg.Auth.Required {
 				detail = "this deployment keeps accounts, so changing anything " +
 					"needs a session; reading does not"
+			}
+			if isODataPath(r.URL.Path) {
+				odataChallenge(w)
+				detail = "in Excel, choose Basic and paste an API token (trs_…) " +
+					"from your profile page as the password"
 			}
 			writeError(w, http.StatusUnauthorized, CodeUnauthorized,
 				"not signed in", detail)

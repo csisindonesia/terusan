@@ -63,6 +63,12 @@ func cursorFor(keys []observationSortKey, row Observation) string {
 	for _, key := range keys {
 		values = append(values, cursorKey[key.expr](row))
 	}
+	return encodeCursor(values)
+}
+
+// encodeCursor writes a boundary row's sort key, read off however the caller
+// holds the row: the OData feed reads it straight from the query (odata.go).
+func encodeCursor(values []*string) string {
 	encoded, err := json.Marshal(values)
 	if err != nil {
 		return ""

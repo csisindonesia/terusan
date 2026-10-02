@@ -224,6 +224,15 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/news/events", s.withCache(s.handleNewsEvents))
 
 	mux.HandleFunc("GET /v1/capabilities", s.handleCapabilities)
+	// The datasets as an OData feed, for Excel's "From OData Feed" and Power
+	// BI (odata.go). Uncached: a page is one step of a walk Power Query takes
+	// once per refresh, and caching every step would fill the cache with
+	// pages nobody asks for twice.
+	mux.HandleFunc("GET "+odataPrefix, s.handleODataService)
+	mux.HandleFunc("GET "+odataPrefix+"/{$}", s.handleODataService)
+	mux.HandleFunc("GET "+odataPrefix+"/$metadata", s.handleODataMetadata)
+	mux.HandleFunc("GET "+odataPrefix+"/{set}", s.handleODataSet)
+	mux.HandleFunc("GET "+odataPrefix+"/{set}/{rest}", s.handleODataSet)
 
 	// The one write surface, and it writes nothing itself: it asks a pipeline
 	// to run, and the pipeline lands what it finds the way every figure here

@@ -161,6 +161,7 @@ func (s *Server) buildCatalogue(ctx context.Context) (*lakeCatalogue, error) {
 	for at := range built.datasets {
 		built.datasets[at].Series = foldedCount(built.datasets[at].Indicators, sets)
 	}
+	assignODataSets(built.datasets)
 	return built, nil
 }
 
