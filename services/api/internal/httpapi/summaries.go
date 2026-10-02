@@ -219,7 +219,17 @@ func (s *Server) staleSummaries() {
 // makes, and the sign-in gate — which a warm-up has no session for — is not
 // in the way.
 func (s *Server) WarmSummaries(ctx context.Context) {
-	// The catalogue first: the series and collection lists, the home page's
+	// The response cache first, because it outlives the process: Redis kept
+	// running across the deploy, and what it holds was written by the build
+	// before this one. A summary warmed through it would hold the old answer
+	// for as long as a summary is held, and the deploy that added
+	// `odata_set` to the datasets served them without it for a quarter of an
+	// hour. A new build answers from its own code or not at all.
+	if err := s.cache.Purge(ctx); err != nil {
+		s.log.Warn("cache.purge_failed", "error", err)
+	}
+
+	// The catalogue next: the series and collection lists, the home page's
 	// figures and the assistant all read it.
 	started := time.Now()
 	if _, err := s.lakeCatalogue(ctx); err != nil {
