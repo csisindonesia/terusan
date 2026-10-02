@@ -47,8 +47,24 @@ var Cadences = []string{
 }
 
 // Where a request has got to. Deliberately few: this is a queue somebody works
-// through, not a project tracker.
+// through, not a project tracker. "planned" is a request an administrator has
+// accepted, and "declined" one they have turned down.
 var Statuses = []string{"open", "planned", "ingested", "declined"}
+
+// Why a request was declined. A refusal without a reason reads as a door shut
+// in the asker's face, and the commonest reason — the warehouse already holds
+// it — is the one that most deserves an answer the asker can act on, which is
+// the dataset itself.
+var Reasons = []string{
+	// Already in the warehouse, under a name the asker did not find. Comes
+	// with the dataset it is in.
+	"already-collected",
+	// Not something this warehouse is for.
+	"out-of-scope",
+	// Behind a login, a captcha or a wall nobody here can get past.
+	"unreachable",
+	"other",
+}
 
 func valid(value string, allowed []string) bool {
 	for _, entry := range allowed {
@@ -73,15 +89,36 @@ type Suggestion struct {
 	Description string `json:"description,omitempty"`
 	// One of Statuses.
 	Status string `json:"status"`
-	/// What a maintainer said when they moved it — why it was declined, or
-	/// which source it became.
+	// One of Reasons, when the status is "declined".
+	Reason string `json:"reason,omitempty"`
+	// The dataset that answers the request: the one it was already in, for a
+	// request declined as already collected, or the one it became, for one
+	// that has been ingested.
+	DatasetID string `json:"dataset_id,omitempty"`
+	// What a maintainer said when they moved it — why it was declined, or
+	// which source it became.
 	Note string `json:"note,omitempty"`
 	// Who asked. Kept as the address as well as the id, so a suggestion still
 	// names its author after the account is gone.
-	RequestedBy      string    `json:"requested_by"`
-	RequestedByEmail string    `json:"requested_by_email"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	RequestedBy      string `json:"requested_by"`
+	RequestedByEmail string `json:"requested_by_email"`
+	// Which administrator last moved it, and when. Absent while it has never
+	// been looked at, which is what "open" alone cannot tell apart from
+	// "reopened".
+	ReviewedByEmail string     `json:"reviewed_by_email,omitempty"`
+	ReviewedAt      *time.Time `json:"reviewed_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+// Decision is an administrator moving a request through the queue.
+type Decision struct {
+	Status    string
+	Reason    string
+	DatasetID string
+	Note      string
+	// The administrator's address, kept for the same reason the asker's is.
+	ReviewedByEmail string
 }
 
 type Store struct {
@@ -105,7 +142,36 @@ CREATE TABLE IF NOT EXISTS suggestions (
     created_at          TIMESTAMP WITH TIME ZONE NOT NULL,
     updated_at          TIMESTAMP WITH TIME ZONE NOT NULL
 );
+ALTER TABLE suggestions ADD COLUMN IF NOT EXISTS reason TEXT;
+ALTER TABLE suggestions ADD COLUMN IF NOT EXISTS dataset_id TEXT;
+ALTER TABLE suggestions ADD COLUMN IF NOT EXISTS reviewed_by_email TEXT;
+ALTER TABLE suggestions ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP WITH TIME ZONE;
 `
+
+// columns is what every read selects, in the order scan expects.
+const columns = `
+	suggestion_id, title, url, cadence, COALESCE(description, ''), status,
+	COALESCE(reason, ''), COALESCE(dataset_id, ''), COALESCE(note, ''),
+	requested_by, requested_by_email, COALESCE(reviewed_by_email, ''), reviewed_at,
+	created_at, updated_at`
+
+type scanner interface {
+	Scan(dest ...any) error
+}
+
+func scan(row scanner) (Suggestion, error) {
+	var entry Suggestion
+	var reviewedAt sql.NullTime
+	err := row.Scan(&entry.ID, &entry.Title, &entry.URL, &entry.Cadence,
+		&entry.Description, &entry.Status, &entry.Reason, &entry.DatasetID, &entry.Note,
+		&entry.RequestedBy, &entry.RequestedByEmail, &entry.ReviewedByEmail, &reviewedAt,
+		&entry.CreatedAt, &entry.UpdatedAt)
+	if reviewedAt.Valid {
+		at := reviewedAt.Time.UTC()
+		entry.ReviewedAt = &at
+	}
+	return entry, err
+}
 
 func New(db *appdb.DB) (*Store, error) {
 	if db == nil {
@@ -156,8 +222,7 @@ func (s *Store) List(ctx context.Context, limit int) ([]Suggestion, error) {
 		limit = 50
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT suggestion_id, title, url, cadence, COALESCE(description, ''), status,
-		       COALESCE(note, ''), requested_by, requested_by_email, created_at, updated_at
+		SELECT `+columns+`
 		FROM suggestions
 		ORDER BY status = 'open' DESC, created_at DESC
 		LIMIT ?`, limit)
@@ -168,10 +233,8 @@ func (s *Store) List(ctx context.Context, limit int) ([]Suggestion, error) {
 
 	out := []Suggestion{}
 	for rows.Next() {
-		var entry Suggestion
-		if err := rows.Scan(&entry.ID, &entry.Title, &entry.URL, &entry.Cadence,
-			&entry.Description, &entry.Status, &entry.Note, &entry.RequestedBy,
-			&entry.RequestedByEmail, &entry.CreatedAt, &entry.UpdatedAt); err != nil {
+		entry, err := scan(rows)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, entry)
@@ -179,20 +242,55 @@ func (s *Store) List(ctx context.Context, limit int) ([]Suggestion, error) {
 	return out, rows.Err()
 }
 
-// SetStatus moves a request through the queue.
+// Decide moves a request through the queue.
 //
-// Any signed-in person may move one, which matches what the rest of this
-// service enforces: a session says who is asking and roles grant nothing yet
-// (program.md §35). The note is where a maintainer says why.
-func (s *Store) SetStatus(ctx context.Context, id, status, note string) (Suggestion, error) {
-	if !valid(status, Statuses) {
+// Only an administrator may (the route checks), and what they may say is
+// constrained so the queue can be read without asking anyone: a declined
+// request always says why, one declined because the warehouse already holds
+// it always says where, and reopening a request clears what the last decision
+// said rather than leaving a stale reason beside an "open".
+func (s *Store) Decide(ctx context.Context, id string, decision Decision) (Suggestion, error) {
+	decision.Reason = strings.TrimSpace(decision.Reason)
+	decision.DatasetID = strings.TrimSpace(decision.DatasetID)
+	decision.Note = strings.TrimSpace(decision.Note)
+
+	if !valid(decision.Status, Statuses) {
 		return Suggestion{}, fmt.Errorf(
-			"status: %q is not one of %s", status, strings.Join(Statuses, ", "))
+			"status: %q is not one of %s", decision.Status, strings.Join(Statuses, ", "))
 	}
+	switch decision.Status {
+	case "declined":
+		if !valid(decision.Reason, Reasons) {
+			return Suggestion{}, fmt.Errorf(
+				"reason: a declined request says why, one of %s", strings.Join(Reasons, ", "))
+		}
+		if decision.Reason == "already-collected" && decision.DatasetID == "" {
+			return Suggestion{}, errors.New(
+				"dataset_id: name the dataset that already holds it, so the asker can open it")
+		}
+		if decision.Reason != "already-collected" {
+			decision.DatasetID = ""
+		}
+	case "ingested":
+		decision.Reason = ""
+	default:
+		if decision.Reason != "" {
+			return Suggestion{}, errors.New("reason: only a declined request has one")
+		}
+		decision.DatasetID = ""
+	}
+	if decision.Status == "open" {
+		decision.Note = ""
+	}
+
+	now := time.Now().UTC()
 	result, err := s.db.ExecContext(ctx, `
-		UPDATE suggestions SET status = ?, note = ?, updated_at = ?
+		UPDATE suggestions
+		SET status = ?, reason = ?, dataset_id = ?, note = ?,
+		    reviewed_by_email = ?, reviewed_at = ?, updated_at = ?
 		WHERE suggestion_id = ?`,
-		status, nullable(strings.TrimSpace(note)), time.Now().UTC(), id)
+		decision.Status, nullable(decision.Reason), nullable(decision.DatasetID),
+		nullable(decision.Note), nullable(decision.ReviewedByEmail), now, now, id)
 	if err != nil {
 		return Suggestion{}, err
 	}
@@ -203,14 +301,8 @@ func (s *Store) SetStatus(ctx context.Context, id, status, note string) (Suggest
 }
 
 func (s *Store) Get(ctx context.Context, id string) (Suggestion, error) {
-	var entry Suggestion
-	err := s.db.QueryRowContext(ctx, `
-		SELECT suggestion_id, title, url, cadence, COALESCE(description, ''), status,
-		       COALESCE(note, ''), requested_by, requested_by_email, created_at, updated_at
-		FROM suggestions WHERE suggestion_id = ?`, id,
-	).Scan(&entry.ID, &entry.Title, &entry.URL, &entry.Cadence, &entry.Description,
-		&entry.Status, &entry.Note, &entry.RequestedBy, &entry.RequestedByEmail,
-		&entry.CreatedAt, &entry.UpdatedAt)
+	entry, err := scan(s.db.QueryRowContext(ctx,
+		`SELECT `+columns+` FROM suggestions WHERE suggestion_id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Suggestion{}, ErrNotFound
 	}

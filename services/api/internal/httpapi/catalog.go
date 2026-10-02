@@ -390,6 +390,37 @@ type LakeTable struct {
 	Rows  int64  `json:"rows"`
 }
 
+// lakeTable is one physical table the serving layer knows how to read.
+type lakeTable struct {
+	layer   storage.Layer
+	dataset string
+	name    string
+}
+
+// lakeTables is every table the administration pages account for: what
+// /v1/storage counts and /v1/schemas describes. A table missing from the lake
+// is skipped where it is read, so listing one here costs nothing until it
+// exists.
+var lakeTables = []lakeTable{
+	{storage.LayerSilver, "observations", "Observations"},
+	{storage.LayerSilver, "indicators", "Indicator catalogue"},
+	{storage.LayerSilver, "datasets", "Dataset catalogue"},
+	{storage.LayerSilver, "indicator_duplicates", "Superseded series"},
+	{storage.LayerSilver, "geography", "Geography dimension"},
+	{storage.LayerSilver, "commodities", "Commodity dimension"},
+	{storage.LayerSilver, "sources", "Source registry"},
+	{storage.LayerSilver, "events", "Event calendar"},
+	{storage.LayerSilver, "documents", "Document catalogue"},
+	{storage.LayerSilver, "news_outlets", "News outlets"},
+	{storage.LayerSilver, "pipeline_runs", "Run journal"},
+	{storage.LayerSilver, "regulations", "Regulations"},
+	{storage.LayerSilver, "regulation_sections", "Regulation sections"},
+	{storage.LayerSilver, "regulation_citations", "Regulation citations"},
+	{storage.LayerSilver, "regulation_tags", "Regulation tags"},
+	{storage.LayerBronze, "records", "Bronze records"},
+	{storage.LayerBronze, "documents", "Bronze documents"},
+}
+
 // handleStorage lists what is actually in the lake.
 //
 // Read from storage rather than from the PostgreSQL catalog, so the endpoint
@@ -397,24 +428,7 @@ type LakeTable struct {
 // what is on disk, which a catalog can.
 func (s *Server) handleStorage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	known := []struct {
-		layer   storage.Layer
-		dataset string
-		name    string
-	}{
-		{storage.LayerSilver, "observations", "Observations"},
-		{storage.LayerSilver, "geography", "Geography dimension"},
-		{storage.LayerSilver, "commodities", "Commodity dimension"},
-		{storage.LayerSilver, "sources", "Source registry"},
-		{storage.LayerSilver, "events", "Event calendar"},
-		{storage.LayerSilver, "documents", "Document catalogue"},
-		{storage.LayerSilver, "regulations", "Regulations"},
-		{storage.LayerSilver, "regulation_sections", "Regulation sections"},
-		{storage.LayerSilver, "regulation_citations", "Regulation citations"},
-		{storage.LayerSilver, "regulation_tags", "Regulation tags"},
-		{storage.LayerBronze, "records", "Bronze records"},
-		{storage.LayerBronze, "documents", "Bronze documents"},
-	}
+	known := lakeTables
 
 	// Counted side by side: each is a separate scan, and one after another
 	// the answer took as long as all of them together.

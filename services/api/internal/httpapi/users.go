@@ -18,6 +18,12 @@ import (
 
 // requireAdmin answers the request itself unless an admin is asking.
 func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) (auth.Session, bool) {
+	return s.requireAdminTo(w, r, "manage accounts")
+}
+
+// requireAdminTo is requireAdmin for another administrator's task, named in
+// the refusal so it says what was refused.
+func (s *Server) requireAdminTo(w http.ResponseWriter, r *http.Request, what string) (auth.Session, bool) {
 	if !s.authReady(w) {
 		return auth.Session{}, false
 	}
@@ -25,9 +31,29 @@ func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) (auth.Sess
 	if !ok {
 		return auth.Session{}, false
 	}
+	return s.adminOnly(w, session, what)
+}
+
+// requireAdminOrToken is requireAdminTo for a task that is not about accounts,
+// which an administrator's API token may also do. The browser-only rule
+// exists so a leaked token cannot take over the account behind it; editing a
+// list of published work gives it nothing of the kind, and a curator should
+// be able to script it.
+func (s *Server) requireAdminOrToken(w http.ResponseWriter, r *http.Request, what string) (auth.Session, bool) {
+	if !s.authReady(w) {
+		return auth.Session{}, false
+	}
+	session, ok := s.requireSession(w, r)
+	if !ok {
+		return auth.Session{}, false
+	}
+	return s.adminOnly(w, session, what)
+}
+
+func (s *Server) adminOnly(w http.ResponseWriter, session auth.Session, what string) (auth.Session, bool) {
 	if session.User.Role != auth.RoleAdmin {
 		writeError(w, http.StatusForbidden, CodeForbidden,
-			"only an administrator can manage accounts", "")
+			"only an administrator can "+what, "")
 		return auth.Session{}, false
 	}
 	return session, true
@@ -79,24 +105,43 @@ func (n *nullableT) UnmarshalJSON(raw []byte) error {
 // cap (auth.maxPending); this keeps one visitor from filling it alone.
 const registrationsPerHour = 5
 
-type registrationLimiter struct {
+// How many sign-in attempts one address may make in loginWindow. The
+// accounts package locks an email address after a few wrong passwords, which
+// does nothing against somebody trying a different made-up address each
+// time; each of those still costs a full password hash. Generous enough for
+// an office behind one NAT address, where everybody signs in at nine.
+const (
+	loginsPerWindow = 30
+	loginWindow     = 5 * time.Minute
+)
+
+// ipLimiter lets an address make `per` requests in each `window`. The zero
+// value is the registration limit.
+type ipLimiter struct {
+	per    int
+	window time.Duration
+
 	mu   sync.Mutex
 	seen map[string][]time.Time
 }
 
-func (l *registrationLimiter) allow(ip string, now time.Time) bool {
+func (l *ipLimiter) allow(ip string, now time.Time) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	per, window := l.per, l.window
+	if per == 0 {
+		per, window = registrationsPerHour, time.Hour
+	}
 	if l.seen == nil || len(l.seen) > 10_000 {
 		l.seen = map[string][]time.Time{}
 	}
 	recent := l.seen[ip][:0]
 	for _, at := range l.seen[ip] {
-		if now.Sub(at) < time.Hour {
+		if now.Sub(at) < window {
 			recent = append(recent, at)
 		}
 	}
-	if len(recent) >= registrationsPerHour {
+	if len(recent) >= per {
 		l.seen[ip] = recent
 		return false
 	}
@@ -128,6 +173,20 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Department string `json:"department"`
 	}
 	if !decodeBody(w, r, &body, 8<<10) {
+		return
+	}
+	// Nothing here proves the person filling in the form owns the address,
+	// and an address on the directory's own domains belongs to somebody
+	// Microsoft can vouch for. Taking a password for one would let a
+	// stranger set up the account its owner later signs in to, so those
+	// people are sent to Microsoft instead. Only listed domains: with none,
+	// the tenant admits anyone it vouches for, and refusing every address
+	// would shut out the outsiders registration exists for.
+	if ms := s.cfg.Auth.Microsoft; ms.Enabled() && len(ms.Domains) > 0 &&
+		ms.Allows(auth.NormalizeEmail(body.Email)) {
+		writeError(w, http.StatusForbidden, CodeForbidden,
+			"this address signs in with Microsoft",
+			"use \"Log in with Microsoft\" on the sign-in page instead of registering")
 		return
 	}
 	err := s.auth.Register(r.Context(), body.Email, body.Password, body.Name, body.Department)

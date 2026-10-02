@@ -3,12 +3,14 @@ package httpapi
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"net/http"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/csis/terusan/services/api/internal/articles"
 	"github.com/csis/terusan/services/api/internal/auth"
 	"github.com/csis/terusan/services/api/internal/cache"
 	"github.com/csis/terusan/services/api/internal/collections"
@@ -16,6 +18,7 @@ import (
 	"github.com/csis/terusan/services/api/internal/conversations"
 	"github.com/csis/terusan/services/api/internal/query"
 	"github.com/csis/terusan/services/api/internal/runner"
+	"github.com/csis/terusan/services/api/internal/showcase"
 	"github.com/csis/terusan/services/api/internal/storage"
 	"github.com/csis/terusan/services/api/internal/suggestions"
 )
@@ -32,13 +35,16 @@ type Server struct {
 	shelf       *collections.Store
 	auth        *auth.Service
 	suggestions *suggestions.Store
+	showcase    *showcase.Store
+	articles    *articles.Store
 	// The chat's catalogue and rate limit (see assistant.go), and where its
 	// conversations are kept — nil without an application database, and the
 	// portal then keeps them in the browser.
 	assistant assistantState
 	chats     *conversations.Store
 	// Per-address limit on the "request access" form (see users.go).
-	registrations registrationLimiter
+	registrations ipLimiter
+	logins        ipLimiter
 	// The lake's summaries, held and refreshed in the process (summaries.go),
 	// and the routes that serve them, for the warm-up at start.
 	summaries summaryStore
@@ -46,7 +52,10 @@ type Server struct {
 	// Whether the rollup (rollup.go) is built and the summaries read it.
 	rollupReady   atomic.Bool
 	summaryRoutes map[string]http.HandlerFunc
-	log           *slog.Logger
+	// The connection pools reported on /readyz and watched for queueing
+	// (pools.go), by name.
+	pools map[string]*sql.DB
+	log   *slog.Logger
 }
 
 // New returns a Server over cfg.
@@ -59,7 +68,8 @@ type Server struct {
 func New(
 	cfg *config.Config, warehouse *query.Warehouse, c cache.Cache,
 	shelf *collections.Store, accounts *auth.Service, asked *suggestions.Store,
-	chats *conversations.Store, log *slog.Logger,
+	shown *showcase.Store, written *articles.Store, chats *conversations.Store,
+	log *slog.Logger,
 ) *Server {
 	if c == nil {
 		c = cache.Nothing{}
@@ -72,8 +82,15 @@ func New(
 		shelf:       shelf,
 		auth:        accounts,
 		suggestions: asked,
+		showcase:    shown,
+		articles:    written,
 		chats:       chats,
+		pools:       map[string]*sql.DB{},
+		logins:      ipLimiter{per: loginsPerWindow, window: loginWindow},
 		log:         log,
+	}
+	if warehouse != nil {
+		s.WatchPool("warehouse", warehouse.DB())
 	}
 	// Disabled unless the deployment asked for it, and then the only thing it
 	// can do is start `uv run terusan …` against a source the registry names
@@ -150,6 +167,17 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/sources", s.withCache(s.handleSources))
 	mux.HandleFunc("GET /v1/events", s.withCache(s.handleEvents))
 	mux.HandleFunc("GET /v1/runs", s.withCache(s.handleRuns))
+	// The same journal, a row per pipeline: what the administration pages
+	// read to find the broken one among hundreds.
+	mux.HandleFunc("GET /v1/pipelines", s.withCache(s.handlePipelines))
+	// Data governance: the lake described rather than served — its schemas,
+	// how clean each series is, its vocabularies, where a dataset came from,
+	// and which code versions produced each layer.
+	mux.HandleFunc("GET /v1/schemas", s.withCache(s.handleSchemas))
+	mux.HandleFunc("GET /v1/quality", s.withCache(s.handleQuality))
+	mux.HandleFunc("GET /v1/classifications", s.withCache(s.handleClassifications))
+	mux.HandleFunc("GET /v1/lineage/{id}", s.withCache(s.handleLineage))
+	mux.HandleFunc("GET /v1/versions", s.withCache(s.handleVersions))
 	mux.HandleFunc("GET /v1/documents", s.withCache(s.handleDocuments))
 	// Before the {id} route, which would otherwise swallow it.
 	mux.HandleFunc("GET /v1/documents/facets", s.withCache(s.handleDocumentFacets))
@@ -240,6 +268,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/auth/login", s.handleLogin)
 	mux.HandleFunc("POST /v1/auth/logout", s.handleLogout)
 	mux.HandleFunc("GET /v1/auth/me", s.handleMe)
+	// Signing in with the office's Microsoft 365 account (see sso.go). Both
+	// are browser navigations, not fetches, and answer with redirects.
+	mux.HandleFunc("GET /v1/auth/microsoft/start", s.handleMicrosoftStart)
+	mux.HandleFunc("GET /v1/auth/microsoft/callback", s.handleMicrosoftCallback)
 	// The account's own page: a name, a password, and everywhere it is signed
 	// in. All scoped to the session asking — there is no route here that takes
 	// somebody else's user id.
@@ -273,6 +305,18 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/suggestions", s.handleCreateSuggestion)
 	mux.HandleFunc("PATCH /v1/suggestions/{id}", s.handleUpdateSuggestion)
 	mux.HandleFunc("DELETE /v1/suggestions/{id}", s.handleDeleteSuggestion)
+	mux.HandleFunc("GET /v1/showcase", s.handleShowcase)
+	mux.HandleFunc("POST /v1/showcase", s.handleCreateShowcase)
+	mux.HandleFunc("GET /v1/showcase/{id}", s.handleShowcaseEntry)
+	mux.HandleFunc("PATCH /v1/showcase/{id}", s.handleUpdateShowcase)
+	mux.HandleFunc("DELETE /v1/showcase/{id}", s.handleDeleteShowcase)
+	mux.HandleFunc("GET /v1/articles", s.handleArticles)
+	mux.HandleFunc("POST /v1/articles", s.handleCreateArticle)
+	mux.HandleFunc("GET /v1/articles/measures", s.handleArticleMeasures)
+	mux.HandleFunc("POST /v1/articles/figures", s.handleArticleFigures)
+	mux.HandleFunc("GET /v1/articles/{slug}", s.handleArticle)
+	mux.HandleFunc("PATCH /v1/articles/{slug}", s.handleUpdateArticle)
+	mux.HandleFunc("DELETE /v1/articles/{slug}", s.handleDeleteArticle)
 
 	mux.HandleFunc("GET /v1/queries", s.handleSavedQueries)
 	mux.HandleFunc("POST /v1/queries", s.handleSaveQuery)
@@ -289,9 +333,46 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("PATCH /v1/assistant/conversations/{id}/messages/{seq}", s.handleSetMessageCollection)
 
 	// Outermost first: CORS answers the browser's preflight before anything
-	// else looks at the request, the log records what arrived, the session is
-	// resolved once, and the gate decides whether it goes through.
-	return s.withCORS(s.withCompression(s.withRequestLogging(s.withSession(s.withAuth(mux)))))
+	// else looks at the request, the log records what arrived, a change sent
+	// by some other site's page is turned away, the session is resolved once,
+	// and the gate decides whether it goes through.
+	return s.withSecurityHeaders(s.withCORS(s.withCompression(s.withRequestLogging(
+		s.withCrossOriginProtection(s.withSession(s.withAuth(mux)))))))
+}
+
+// withSecurityHeaders sets what every response says to the browser about
+// how it may be used.
+//
+// Nothing here is a page, so nothing here should be framed, sniffed into a
+// type it was not sent as, or quoted in a Referer to whatever a link in it
+// leads to. The exception is a document's own file, which the portal shows
+// in a frame on its preview page and which sets its own headers (see
+// documents.go). HSTS only where the deployment says it is served over
+// https, since on plain http it would lock a browser out of a local stack.
+func (s *Server) withSecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "no-referrer")
+		if !isDocumentFile(r.URL.Path) {
+			h.Set("X-Frame-Options", "DENY")
+			h.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+		}
+		if s.cfg.Auth.SecureCookies {
+			h.Set("Strict-Transport-Security", "max-age=31536000")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// isDocumentFile is /v1/documents/{id}/file and /v1/documents/{id}/file/{name}.
+func isDocumentFile(path string) bool {
+	rest, ok := strings.CutPrefix(path, "/v1/documents/")
+	if !ok {
+		return false
+	}
+	_, after, found := strings.Cut(rest, "/")
+	return found && (after == "file" || strings.HasPrefix(after, "file/"))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -302,19 +383,35 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 //
 // Storage reachability is the interesting part: a misconfigured mount or bucket
 // leaves the API healthy and useless.
+//
+// The route is open, because whatever checks readiness (a container runtime,
+// the tunnel, `make smoke`) holds no session and only reads the status code.
+// The detail is for the people running the deployment: where the lake is
+// mounted on disk and what the engine's error said are a map of the machine
+// for anyone else, so a visitor without a session gets the status alone.
 func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
-	body := map[string]any{
-		"status":          "ok",
-		"storage_profile": string(s.cfg.Storage.Profile),
-		"storage_backend": string(s.cfg.Storage.Backend),
-		"storage_root":    s.storage.Root(),
+	body := map[string]any{"status": "ok"}
+	detailed := s.auth == nil
+	if !detailed {
+		_, err := s.session(r)
+		detailed = err == nil
+	}
+	if detailed {
+		body["storage_profile"] = string(s.cfg.Storage.Profile)
+		body["storage_backend"] = string(s.cfg.Storage.Backend)
+		body["storage_root"] = s.storage.Root()
 		// Reported because a cache that has quietly stopped working looks
 		// exactly like one that is working, only slower.
-		"cache": s.cache.Stats(),
+		body["cache"] = s.cache.Stats()
+		// Whether queries are queueing for a connection rather than running.
+		body["pools"] = s.poolReport()
 	}
 	if err := s.warehouse.Ping(r.Context()); err != nil {
+		s.log.Warn("ready.warehouse", "error", err)
 		body["status"] = "degraded"
-		body["warehouse_error"] = err.Error()
+		if detailed {
+			body["warehouse_error"] = err.Error()
+		}
 		writeJSON(w, http.StatusServiceUnavailable, Response[any]{
 			Data: body,
 			Err: &APIError{
@@ -334,10 +431,60 @@ func (s *Server) withRequestLogging(next http.Handler) http.Handler {
 		s.log.Info("request",
 			"method", r.Method,
 			"path", r.URL.Path,
-			"query", r.URL.RawQuery,
+			"query", loggedQuery(r),
 			"ms", time.Since(started).Milliseconds(),
 		)
 	})
+}
+
+// loggedQuery is the query string as the access log records it.
+//
+// Every query string is a reader's filters and worth keeping, except the one
+// Microsoft sends back to the sign-in callback, which carries the
+// authorization code and the state that pairs it with a browser. The code is
+// single use and useless without the PKCE verifier and the client secret, but
+// a log is read by more people than the callback is, and nothing in the log
+// needs it.
+func loggedQuery(r *http.Request) string {
+	if r.URL.Path == "/v1/auth/microsoft/callback" && r.URL.RawQuery != "" {
+		return "[redacted]"
+	}
+	return r.URL.RawQuery
+}
+
+// withCrossOriginProtection refuses a change a browser sends on behalf of a
+// page that is not the portal.
+//
+// The session cookie is SameSite=Lax, which keeps it off requests from other
+// sites but not from other hosts on the same one: any page under the same
+// registrable domain as the portal is "same-site", and a form or a
+// `fetch(..., {credentials: "include"})` from it arrives here carrying the
+// signed-in person's cookie. A body sent as text/plain needs no preflight,
+// and the JSON decoders read it all the same, so without this such a page
+// could have a visiting admin create an account of its choosing.
+//
+// The browser says where a request comes from (Sec-Fetch-Site, or failing
+// that Origin), and only the portal's own origins and the API's own are let
+// through for anything but a read. A client that is not a browser sends
+// neither header and is unaffected: it holds a token or a cookie because
+// somebody gave it one.
+func (s *Server) withCrossOriginProtection(next http.Handler) http.Handler {
+	protection := http.NewCrossOriginProtection()
+	for _, origin := range append([]string{s.cfg.PortalOrigin}, s.cfg.CORSOrigins...) {
+		origin = strings.TrimSpace(origin)
+		if origin == "" {
+			continue
+		}
+		if err := protection.AddTrustedOrigin(origin); err != nil {
+			s.log.Warn("http.trusted_origin", "origin", origin, "err", err)
+		}
+	}
+	protection.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeError(w, http.StatusForbidden, CodeForbidden,
+			"cross-origin request refused",
+			"changes are only accepted from the portal's own pages")
+	}))
+	return protection.Handler(next)
 }
 
 // withCORS allows the portal's dev server to call the API.

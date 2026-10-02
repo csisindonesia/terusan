@@ -189,6 +189,9 @@ type Query struct {
 	// What the filters said when it was saved, for the card.
 	Summary   string    `json:"summary,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
+	// The account that saved it, or "" for one from before queries had
+	// owners, which everyone on the deployment shares as they always did.
+	OwnerID string `json:"-"`
 }
 
 // Shelf is everything one deployment holds, which is what an import carries.
@@ -246,7 +249,9 @@ CREATE TABLE IF NOT EXISTS saved_queries (
     -- for every new facet would be a tax on the portal, not on this file.
     search      TEXT NOT NULL,
     summary     TEXT,
-    created_at  TIMESTAMP WITH TIME ZONE NOT NULL
+    created_at  TIMESTAMP WITH TIME ZONE NOT NULL,
+    -- '' for a query nobody owns, which everyone on the deployment shares.
+    owner_id    TEXT DEFAULT ''
 );
 `
 
@@ -264,6 +269,11 @@ var migrations = []string{
 	// removed rather than kept out of sight: a row nothing shows and nothing
 	// can remove is a row that confuses the next person to read this table.
 	`DELETE FROM collection_items WHERE kind <> 'indicator'`,
+	// Saved queries were once one list for the whole deployment, which let
+	// anyone signed in read, overwrite or delete anybody's. The ones saved
+	// before then stay shared; every new one is its author's.
+	`ALTER TABLE saved_queries ADD COLUMN IF NOT EXISTS owner_id TEXT DEFAULT ''`,
+	`UPDATE saved_queries SET owner_id = '' WHERE owner_id IS NULL`,
 }
 
 // New prepares the shelf's tables in the application database.
@@ -758,11 +768,14 @@ func (s *Store) RemoveMember(ctx context.Context, viewer, id, user string) (Coll
 	return s.load(ctx, id)
 }
 
-// Queries returns every saved query, newest first.
-func (s *Store) Queries(ctx context.Context) ([]Query, error) {
+// Queries returns the saved queries the viewer can see, newest first: their
+// own, and the shared ones from before queries had owners.
+func (s *Store) Queries(ctx context.Context, viewer string) ([]Query, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT query_id, name, kind, path, search, COALESCE(summary, ''), created_at
-		FROM saved_queries ORDER BY created_at DESC`)
+		SELECT query_id, name, kind, path, search, COALESCE(summary, ''), created_at,
+		       COALESCE(owner_id, '')
+		FROM saved_queries WHERE COALESCE(owner_id, '') IN ('', ?)
+		ORDER BY created_at DESC`, viewer)
 	if err != nil {
 		return nil, err
 	}
@@ -772,7 +785,8 @@ func (s *Store) Queries(ctx context.Context) ([]Query, error) {
 	for rows.Next() {
 		var q Query
 		var search string
-		if err := rows.Scan(&q.ID, &q.Name, &q.Kind, &q.Path, &search, &q.Summary, &q.CreatedAt); err != nil {
+		if err := rows.Scan(&q.ID, &q.Name, &q.Kind, &q.Path, &search, &q.Summary, &q.CreatedAt,
+			&q.OwnerID); err != nil {
 			return nil, err
 		}
 		q.Search = json.RawMessage(search)
@@ -781,14 +795,29 @@ func (s *Store) Queries(ctx context.Context) ([]Query, error) {
 	return out, rows.Err()
 }
 
-// GetQuery returns one saved query, or ErrNotFound.
-func (s *Store) GetQuery(ctx context.Context, id string) (Query, error) {
+// GetQuery returns one saved query the viewer can see, or ErrNotFound. One
+// that belongs to somebody else is not found, the same answer as one that
+// does not exist, so ids cannot be probed.
+func (s *Store) GetQuery(ctx context.Context, viewer, id string) (Query, error) {
+	q, err := s.query(ctx, id)
+	if err != nil {
+		return Query{}, err
+	}
+	if q.OwnerID != "" && q.OwnerID != viewer {
+		return Query{}, ErrNotFound
+	}
+	return q, nil
+}
+
+// query is a saved query by id, whoever it belongs to.
+func (s *Store) query(ctx context.Context, id string) (Query, error) {
 	var q Query
 	var search string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT query_id, name, kind, path, search, COALESCE(summary, ''), created_at
+		SELECT query_id, name, kind, path, search, COALESCE(summary, ''), created_at,
+		       COALESCE(owner_id, '')
 		FROM saved_queries WHERE query_id = ?`, id,
-	).Scan(&q.ID, &q.Name, &q.Kind, &q.Path, &search, &q.Summary, &q.CreatedAt)
+	).Scan(&q.ID, &q.Name, &q.Kind, &q.Path, &search, &q.Summary, &q.CreatedAt, &q.OwnerID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Query{}, ErrNotFound
 	}
@@ -799,9 +828,22 @@ func (s *Store) GetQuery(ctx context.Context, id string) (Query, error) {
 	return q, nil
 }
 
-// PutQuery saves a query, replacing one of the same id.
-func (s *Store) PutQuery(ctx context.Context, q Query) error {
+// PutQuery saves a query as the viewer's, replacing one of the same id that
+// the viewer can see. The id is the caller's to choose, so one that already
+// belongs to somebody else is refused as not found rather than overwritten.
+// A shared query that is replaced stays shared.
+func (s *Store) PutQuery(ctx context.Context, viewer string, q Query) error {
 	if err := s.guard(); err != nil {
+		return err
+	}
+	q.OwnerID = viewer
+	switch existing, err := s.query(ctx, q.ID); {
+	case err == nil:
+		if existing.OwnerID != "" && existing.OwnerID != viewer {
+			return ErrNotFound
+		}
+		q.OwnerID = existing.OwnerID
+	case !errors.Is(err, ErrNotFound):
 		return err
 	}
 	search := string(q.Search)
@@ -819,9 +861,9 @@ func (s *Store) PutQuery(ctx context.Context, q Query) error {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO saved_queries (query_id, name, kind, path, search, summary, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		q.ID, q.Name, q.Kind, q.Path, search, nullable(q.Summary), q.CreatedAt); err != nil {
+		INSERT INTO saved_queries (query_id, name, kind, path, search, summary, created_at, owner_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		q.ID, q.Name, q.Kind, q.Path, search, nullable(q.Summary), q.CreatedAt, q.OwnerID); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -829,11 +871,11 @@ func (s *Store) PutQuery(ctx context.Context, q Query) error {
 
 // RenameQuery changes what a saved query is called, which is the only thing
 // about one worth changing: its filters are what it *is*.
-func (s *Store) RenameQuery(ctx context.Context, id, name string) (Query, error) {
+func (s *Store) RenameQuery(ctx context.Context, viewer, id, name string) (Query, error) {
 	if err := s.guard(); err != nil {
 		return Query{}, err
 	}
-	current, err := s.GetQuery(ctx, id)
+	current, err := s.GetQuery(ctx, viewer, id)
 	if err != nil {
 		return Query{}, err
 	}
@@ -846,12 +888,12 @@ func (s *Store) RenameQuery(ctx context.Context, id, name string) (Query, error)
 	return current, err
 }
 
-// DeleteQuery removes a saved query.
-func (s *Store) DeleteQuery(ctx context.Context, id string) error {
+// DeleteQuery removes a saved query the viewer can see.
+func (s *Store) DeleteQuery(ctx context.Context, viewer, id string) error {
 	if err := s.guard(); err != nil {
 		return err
 	}
-	if _, err := s.GetQuery(ctx, id); err != nil {
+	if _, err := s.GetQuery(ctx, viewer, id); err != nil {
 		return err
 	}
 	_, err := s.db.ExecContext(ctx, `DELETE FROM saved_queries WHERE query_id = ?`, id)
@@ -883,12 +925,12 @@ func (s *Store) Import(ctx context.Context, viewer string, shelf Shelf) (collect
 		collections++
 	}
 	for _, q := range shelf.Queries {
-		if _, err := s.GetQuery(ctx, q.ID); err == nil {
+		if _, err := s.query(ctx, q.ID); err == nil {
 			continue
 		} else if !errors.Is(err, ErrNotFound) {
 			return collections, queries, err
 		}
-		if err := s.PutQuery(ctx, q); err != nil {
+		if err := s.PutQuery(ctx, viewer, q); err != nil {
 			return collections, queries, err
 		}
 		queries++

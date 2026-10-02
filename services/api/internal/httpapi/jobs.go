@@ -54,9 +54,14 @@ type Capabilities struct {
 	AuthRequired bool `json:"auth_required"`
 	// Whether the login page can offer "request access".
 	Registration bool `json:"registration"`
+	// Whether the login page can offer "Log in with Microsoft".
+	MicrosoftLogin bool `json:"microsoft_login"`
 	// Whether readers can ask for a source to be collected, which needs
 	// somewhere to keep the queue.
 	Suggestions bool `json:"suggestions"`
+	// Whether the Discover page can list work built on the data, which needs
+	// somewhere to keep the list.
+	Showcase bool `json:"showcase"`
 	// Whether `POST /v1/assistant/chat` has a model behind it.
 	Assistant bool `json:"assistant"`
 	// Whether this deployment keeps the assistant's conversations, so a chat
@@ -73,7 +78,9 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, _ *http.Request) {
 		Auth:              s.auth != nil,
 		AuthRequired:      s.auth != nil && s.cfg.Auth.Required,
 		Registration:      s.auth != nil && s.cfg.Auth.Registration,
+		MicrosoftLogin:    s.auth != nil && s.cfg.Auth.Microsoft.Enabled(),
 		Suggestions:       s.suggestions != nil,
+		Showcase:          s.showcase != nil,
 		Assistant:         s.cfg.Assistant.Enabled(),
 		AssistantHistory:  s.cfg.Assistant.Enabled() && s.chats != nil,
 	}, nil)
@@ -86,6 +93,9 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, _ *http.Request) {
 // going and nobody watching it.
 func (s *Server) handleRunSource(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	if !s.pipelineAdmin(w, r, "run a pipeline") {
+		return
+	}
 
 	if !s.runner.Enabled() {
 		writeError(w, http.StatusForbidden, CodeForbidden,
@@ -165,6 +175,9 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 		writeData(w, []runner.Job{}, &Meta{Total: 0})
 		return
 	}
+	if !s.pipelineAdmin(w, r, "read pipeline jobs") {
+		return
+	}
 
 	target, err := stringParam(r, "source", slugPattern)
 	if err != nil {
@@ -184,6 +197,9 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 
 // handleJob serves one job, output and all. What the portal polls.
 func (s *Server) handleJob(w http.ResponseWriter, r *http.Request) {
+	if !s.pipelineAdmin(w, r, "read a pipeline job") {
+		return
+	}
 	job, err := s.runner.Get(r.PathValue("id"))
 	if errors.Is(err, runner.ErrNoSuchJob) {
 		notFound(w, "no such job",
@@ -196,6 +212,21 @@ func (s *Server) handleJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeData(w, job, nil)
+}
+
+// pipelineAdmin decides who may start an ingestion and read what it printed.
+//
+// An administrator, on a deployment with accounts: a run takes the machine's
+// CPU, disk and the source's patience for minutes at a time, and its output
+// is a command line's, with paths and errors nobody else needs to see. A
+// deployment without accounts has nobody to tell apart, and the gate in
+// withAuth already decided what it lets through.
+func (s *Server) pipelineAdmin(w http.ResponseWriter, r *http.Request, what string) bool {
+	if s.auth == nil {
+		return true
+	}
+	_, ok := s.requireAdminOrToken(w, r, what)
+	return ok
 }
 
 // knowsSource reports whether the lake has heard of this slug.

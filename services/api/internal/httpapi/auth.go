@@ -64,6 +64,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid body", "email and password are both required")
 		return
 	}
+	if !s.logins.allow(s.client(r).IP, time.Now()) {
+		writeError(w, http.StatusTooManyRequests, CodeTooManyRequests,
+			"too many attempts from this address",
+			fmt.Sprintf("try again in %s", loginWindow))
+		return
+	}
 
 	token, session, err := s.auth.Login(
 		r.Context(), body.Email, body.Password, r.UserAgent(), body.Remember)
@@ -164,7 +170,20 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 // Read off the connection, never off a header: X-Forwarded-For is whatever the
 // client wrote there, and trusting it here would make the loopback check a
 // suggestion.
+//
+// A connection from loopback is not proof on its own, though. A tunnel or a
+// reverse proxy on the same machine (cloudflared in front of a laptop, the
+// portal's dev server proxying /v1) connects from 127.0.0.1 on behalf of
+// whoever is at the other end, which can be anyone on the internet. Those
+// say so in a forwarding header, and a request that carries one is treated
+// as having come from wherever the header points: not here. A header can be
+// forged to make a local request look remote, which only refuses it.
 func isLoopback(r *http.Request) bool {
+	for _, header := range []string{"Cf-Connecting-Ip", "X-Forwarded-For", "X-Real-Ip", "Forwarded"} {
+		if r.Header.Get(header) != "" {
+			return false
+		}
+	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
@@ -643,6 +662,9 @@ var openPaths = map[string]bool{
 	"/v1/auth/logout":    true,
 	"/v1/auth/me":        true,
 	"/v1/auth/bootstrap": true,
+	// Arrived at by somebody on their way to having a session.
+	"/v1/auth/microsoft/start":    true,
+	"/v1/auth/microsoft/callback": true,
 }
 
 // withAuth refuses requests that carry no session, where the deployment asked

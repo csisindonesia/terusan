@@ -181,6 +181,23 @@ const (
 	newsCodingsDataset  = "news-violence-codings"
 )
 
+// newsSourceID is the source whose Bronze partition holds every news record.
+const newsSourceID = "news-monitoring"
+
+// newsRecords is the Bronze records expression narrowed to the news source.
+//
+// Bronze records hold every source's rows, partitioned by source, and the news
+// datasets are a small share of them. A dataset filter alone does not spare
+// the engine the rest: it still opens and reads every file in the layer, six
+// hundred of them, before discarding all but the news rows — several times
+// over, since each statement reads the records more than once. That made the
+// outlets page take seconds. Narrowing falls back to the whole layer where it
+// cannot be done safely, so it changes how long a query takes and never what
+// it returns.
+func (s *Server) newsRecords() (string, error) {
+	return s.warehouse.SourceIn(storage.LayerBronze, "records", "source_id", []string{newsSourceID})
+}
+
 var newsOutletOrder = map[string]string{
 	"outlet":    "outlet ASC",
 	"-outlet":   "outlet DESC",
@@ -314,7 +331,7 @@ func (s *Server) newsOutletStats(ctx context.Context) string {
 	if !s.warehouse.Exists(ctx, storage.LayerBronze, "records") {
 		return empty
 	}
-	records, err := s.warehouse.Source(storage.LayerBronze, "records")
+	records, err := s.newsRecords()
 	if err != nil {
 		return empty
 	}
@@ -483,7 +500,7 @@ func (s *Server) handleNewsOutletTallies(w http.ResponseWriter, r *http.Request)
 		writeData(w, []NewsTally{}, &Meta{Limit: limit, Layer: "bronze"})
 		return
 	}
-	records, err := s.warehouse.Source(storage.LayerBronze, "records")
+	records, err := s.newsRecords()
 	if err != nil {
 		internalError(w, s.log, "resolve records", err)
 		return
@@ -805,7 +822,7 @@ func (s *Server) handleNewsArticleFacets(w http.ResponseWriter, r *http.Request)
 		writeData(w, facets, &Meta{Layer: "bronze"})
 		return
 	}
-	records, err := s.warehouse.Source(storage.LayerBronze, "records")
+	records, err := s.newsRecords()
 	if err != nil {
 		internalError(w, s.log, "resolve records", err)
 		return
@@ -874,7 +891,7 @@ func (s *Server) handleNewsArticles(w http.ResponseWriter, r *http.Request) {
 		writeData(w, []NewsArticle{}, &Meta{Limit: limit, Layer: "bronze"})
 		return
 	}
-	records, err := s.warehouse.Source(storage.LayerBronze, "records")
+	records, err := s.newsRecords()
 	if err != nil {
 		internalError(w, s.log, "resolve records", err)
 		return
@@ -961,7 +978,7 @@ func (s *Server) handleNewsEvents(w http.ResponseWriter, r *http.Request) {
 		writeData(w, []NewsEvent{}, &Meta{Limit: limit, Layer: "bronze"})
 		return
 	}
-	events, err := s.warehouse.Source(storage.LayerBronze, "records")
+	events, err := s.newsRecords()
 	if err != nil {
 		internalError(w, s.log, "resolve news events", err)
 		return
@@ -1269,7 +1286,7 @@ func (s *Server) handleNewsArticle(w http.ResponseWriter, r *http.Request) {
 		notFound(w, "no articles have been collected yet", id)
 		return
 	}
-	records, err := s.warehouse.Source(storage.LayerBronze, "records")
+	records, err := s.newsRecords()
 	if err != nil {
 		internalError(w, s.log, "resolve records", err)
 		return
@@ -1373,7 +1390,7 @@ func (s *Server) attachEvent(ctx context.Context, detail *NewsArticleDetail) {
 	if detail.URL == "" || !s.warehouse.Exists(ctx, storage.LayerBronze, "records") {
 		return
 	}
-	records, err := s.warehouse.Source(storage.LayerBronze, "records")
+	records, err := s.newsRecords()
 	if err != nil {
 		return
 	}
@@ -1417,7 +1434,7 @@ func (s *Server) handleNewsScreenshot(w http.ResponseWriter, r *http.Request) {
 		notFound(w, "no articles have been collected yet", id)
 		return
 	}
-	records, err := s.warehouse.Source(storage.LayerBronze, "records")
+	records, err := s.newsRecords()
 	if err != nil {
 		internalError(w, s.log, "resolve records", err)
 		return

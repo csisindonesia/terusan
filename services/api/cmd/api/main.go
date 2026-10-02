@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/csis/terusan/services/api/internal/appdb"
+	"github.com/csis/terusan/services/api/internal/articles"
 	"github.com/csis/terusan/services/api/internal/auth"
 	"github.com/csis/terusan/services/api/internal/cache"
 	"github.com/csis/terusan/services/api/internal/collections"
@@ -18,6 +20,7 @@ import (
 	"github.com/csis/terusan/services/api/internal/conversations"
 	"github.com/csis/terusan/services/api/internal/httpapi"
 	"github.com/csis/terusan/services/api/internal/query"
+	"github.com/csis/terusan/services/api/internal/showcase"
 	"github.com/csis/terusan/services/api/internal/storage"
 	"github.com/csis/terusan/services/api/internal/suggestions"
 )
@@ -79,13 +82,17 @@ func run(log *slog.Logger) error {
 	var shelf *collections.Store
 	var accounts *auth.Service
 	var asked *suggestions.Store
+	var shown *showcase.Store
+	var written *articles.Store
 	var chats *conversations.Store
+	var appPool *sql.DB
 	if cfg.AppDB != "" {
 		db, err := appdb.Open(cfg.AppDB)
 		if err != nil {
 			return err
 		}
 		defer db.Close()
+		appPool = db.DB
 
 		shelf, err = collections.New(db, cfg.Collections.Write)
 		if err != nil {
@@ -100,6 +107,14 @@ func run(log *slog.Logger) error {
 			return err
 		}
 		asked, err = suggestions.New(db)
+		if err != nil {
+			return err
+		}
+		shown, err = showcase.New(db)
+		if err != nil {
+			return err
+		}
+		written, err = articles.New(db)
 		if err != nil {
 			return err
 		}
@@ -127,7 +142,8 @@ func run(log *slog.Logger) error {
 		log.Info("appdb.disabled", "reason", "APP_DB is not set")
 	}
 
-	api := httpapi.New(cfg, warehouse, responses, shelf, accounts, asked, chats, log)
+	api := httpapi.New(cfg, warehouse, responses, shelf, accounts, asked, shown, written, chats, log)
+	api.WatchPool("app", appPool)
 	srv := &http.Server{
 		Addr:         cfg.Addr(),
 		Handler:      api.Routes(),
@@ -155,6 +171,7 @@ func run(log *slog.Logger) error {
 	// each reads every observation, and the first reader would otherwise
 	// wait for all four.
 	go api.WarmSummaries(ctx)
+	go api.MonitorPools(ctx)
 
 	select {
 	case err := <-errs:

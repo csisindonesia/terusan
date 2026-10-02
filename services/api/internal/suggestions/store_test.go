@@ -87,8 +87,10 @@ func TestListPutsOpenFirst(t *testing.T) {
 	}
 	// The older one is dealt with; the list is read to find what is still
 	// outstanding, so that is what comes first.
-	if _, err := asked.SetStatus(ctx, first.ID, "ingested", "landed as esdm-publications"); err != nil {
-		t.Fatalf("SetStatus: %v", err)
+	if _, err := asked.Decide(ctx, first.ID, Decision{
+		Status: "ingested", Note: "landed as esdm-publications",
+	}); err != nil {
+		t.Fatalf("Decide: %v", err)
 	}
 
 	list, err := asked.List(ctx, 0)
@@ -106,7 +108,7 @@ func TestListPutsOpenFirst(t *testing.T) {
 	}
 }
 
-func TestSetStatusRefusesRubbish(t *testing.T) {
+func TestDecideRefusesRubbish(t *testing.T) {
 	ctx := context.Background()
 	asked := store(t)
 	created, err := asked.Create(ctx, request("Something"))
@@ -114,13 +116,85 @@ func TestSetStatusRefusesRubbish(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	if _, err := asked.SetStatus(ctx, created.ID, "maybe", ""); err == nil {
-		t.Fatal("SetStatus accepted a status nobody defined")
-	} else if !strings.Contains(err.Error(), "status") {
-		t.Errorf("unhelpful error: %v", err)
+	cases := map[string]struct {
+		decision Decision
+		field    string
+	}{
+		"a status nobody defined":   {Decision{Status: "maybe"}, "status"},
+		"declined without a reason": {Decision{Status: "declined"}, "reason"},
+		"a reason nobody defined":   {Decision{Status: "declined", Reason: "meh"}, "reason"},
+		"already collected, but where": {
+			Decision{Status: "declined", Reason: "already-collected"}, "dataset_id",
+		},
+		"a reason for accepting": {Decision{Status: "planned", Reason: "other"}, "reason"},
 	}
-	if _, err := asked.SetStatus(ctx, "not-an-id", "planned", ""); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("SetStatus on a missing row = %v, want ErrNotFound", err)
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := asked.Decide(ctx, created.ID, c.decision)
+			if err == nil {
+				t.Fatal("Decide accepted it")
+			}
+			if !strings.Contains(err.Error(), c.field) {
+				t.Errorf("unhelpful error: %v", err)
+			}
+		})
+	}
+	if _, err := asked.Decide(ctx, "not-an-id", Decision{Status: "planned"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Decide on a missing row = %v, want ErrNotFound", err)
+	}
+}
+
+func TestDeclinedAsAlreadyCollectedPointsAtTheData(t *testing.T) {
+	ctx := context.Background()
+	asked := store(t)
+	created, err := asked.Create(ctx, request("Harga beras"))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if created.ReviewedAt != nil {
+		t.Fatal("a request nobody has looked at says it was reviewed")
+	}
+
+	declined, err := asked.Decide(ctx, created.ID, Decision{
+		Status: "declined", Reason: "already-collected", DatasetID: "pihps-prices",
+		Note: "Daily, by province.", ReviewedByEmail: "boss@example.org",
+	})
+	if err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
+	got, err := asked.Get(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Reason != "already-collected" || got.DatasetID != "pihps-prices" {
+		t.Fatalf("the answer did not survive: %+v", got)
+	}
+	if got.ReviewedByEmail != "boss@example.org" || got.ReviewedAt == nil {
+		t.Errorf("who decided it was lost: %+v", got)
+	}
+	if declined.Note != "Daily, by province." {
+		t.Errorf("note = %q", declined.Note)
+	}
+
+	// Reopened, it says nothing the last decision said: a stale "already
+	// collected" beside an "open" would answer a question nobody has yet.
+	reopened, err := asked.Decide(ctx, created.ID, Decision{Status: "open"})
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	if reopened.Reason != "" || reopened.DatasetID != "" || reopened.Note != "" {
+		t.Errorf("reopening kept the last decision: %+v", reopened)
+	}
+
+	// A reason other than "already collected" carries no dataset.
+	other, err := asked.Decide(ctx, created.ID, Decision{
+		Status: "declined", Reason: "out-of-scope", DatasetID: "pihps-prices",
+	})
+	if err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
+	if other.DatasetID != "" {
+		t.Errorf("out of scope, yet points at %q", other.DatasetID)
 	}
 }
 

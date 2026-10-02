@@ -1,11 +1,14 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/url"
 	"strings"
 
+	"github.com/csis/terusan/services/api/internal/auth"
+	"github.com/csis/terusan/services/api/internal/storage"
 	"github.com/csis/terusan/services/api/internal/suggestions"
 )
 
@@ -106,17 +109,21 @@ func (s *Server) handleCreateSuggestion(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusCreated, Response[suggestions.Suggestion]{Data: created})
 }
 
+// handleUpdateSuggestion is an administrator triaging a suggestion: whether
+// the source will be added is theirs to say, not whoever is signed in.
 func (s *Server) handleUpdateSuggestion(w http.ResponseWriter, r *http.Request) {
 	if !s.suggestionsReady(w) {
 		return
 	}
-	session, ok := s.requireSession(w, r)
+	session, ok := s.requireAdminOrToken(w, r, "triage suggestions")
 	if !ok {
 		return
 	}
 	var body struct {
-		Status string `json:"status"`
-		Note   string `json:"note"`
+		Status    string `json:"status"`
+		Reason    string `json:"reason"`
+		DatasetID string `json:"dataset_id"`
+		Note      string `json:"note"`
 	}
 	if !decodeBody(w, r, &body, 8<<10) {
 		return
@@ -125,9 +132,31 @@ func (s *Server) handleUpdateSuggestion(w http.ResponseWriter, r *http.Request) 
 		badRequest(w, "invalid body", "note: is too long")
 		return
 	}
+	// The dataset is shown to the asker as a link to its page, so it has to
+	// be one: a typo here would answer "we already have it" with a 404.
+	if dataset := strings.TrimSpace(body.DatasetID); dataset != "" {
+		if !identifierPattern.MatchString(dataset) {
+			badRequest(w, "invalid body", "dataset_id: is not a well-formed identifier")
+			return
+		}
+		known, err := s.knowsDataset(r.Context(), dataset)
+		if err != nil {
+			internalError(w, s.log, "look up dataset", err)
+			return
+		}
+		if !known {
+			badRequest(w, "invalid body", "dataset_id: the catalogue holds no "+dataset)
+			return
+		}
+	}
 
-	updated, err := s.suggestions.SetStatus(
-		r.Context(), r.PathValue("id"), strings.TrimSpace(body.Status), body.Note)
+	updated, err := s.suggestions.Decide(r.Context(), r.PathValue("id"), suggestions.Decision{
+		Status:          strings.TrimSpace(body.Status),
+		Reason:          body.Reason,
+		DatasetID:       body.DatasetID,
+		Note:            body.Note,
+		ReviewedByEmail: session.User.Email,
+	})
 	if errors.Is(err, suggestions.ErrNotFound) {
 		notFound(w, "no such suggestion", "")
 		return
@@ -137,18 +166,58 @@ func (s *Server) handleUpdateSuggestion(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.log.Info("suggestion.updated",
-		"id", updated.ID, "status", updated.Status, "by", session.User.Email)
+		"id", updated.ID, "status", updated.Status, "reason", updated.Reason,
+		"by", session.User.Email)
 	writeData(w, updated, nil)
 }
 
+// knowsDataset reports whether the catalogue lists this dataset.
+//
+// A deployment serving no lake has no catalogue to check against, and then the
+// identifier is taken as given: it only ever becomes a link, never an argument
+// to anything.
+func (s *Server) knowsDataset(ctx context.Context, id string) (bool, error) {
+	if s.warehouse == nil {
+		return true, nil
+	}
+	if !s.warehouse.Exists(ctx, storage.LayerSilver, "observations") {
+		return false, nil
+	}
+	catalogue, err := s.lakeCatalogue(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, d := range catalogue.datasets {
+		if d.DatasetID == id {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// handleDeleteSuggestion withdraws a suggestion: the person who made it, or
+// an administrator. Anybody else gets the same answer as for one that does
+// not exist.
 func (s *Server) handleDeleteSuggestion(w http.ResponseWriter, r *http.Request) {
 	if !s.suggestionsReady(w) {
 		return
 	}
-	if _, ok := s.requireSession(w, r); !ok {
+	session, ok := s.requireSession(w, r)
+	if !ok {
 		return
 	}
-	if err := s.suggestions.Delete(r.Context(), r.PathValue("id")); err != nil {
+	id := r.PathValue("id")
+	found, err := s.suggestions.Get(r.Context(), id)
+	if errors.Is(err, suggestions.ErrNotFound) ||
+		(err == nil && session.User.Role != auth.RoleAdmin && found.RequestedBy != session.User.ID) {
+		notFound(w, "no such suggestion", "")
+		return
+	}
+	if err != nil {
+		internalError(w, s.log, "read suggestion", err)
+		return
+	}
+	if err := s.suggestions.Delete(r.Context(), id); err != nil {
 		if errors.Is(err, suggestions.ErrNotFound) {
 			notFound(w, "no such suggestion", "")
 			return

@@ -240,7 +240,7 @@ func (s *Service) Reject(ctx context.Context, id string) error {
 }
 
 // ResetPassword gives an account a new generated password, returned once,
-// and ends every session it holds.
+// and ends every session and API token it holds.
 func (s *Service) ResetPassword(ctx context.Context, id string) (string, error) {
 	if _, err := s.byID(ctx, id); err != nil {
 		return "", err
@@ -255,7 +255,10 @@ func (s *Service) ResetPassword(ctx context.Context, id string) (string, error) 
 		hash, time.Now().UTC(), id); err != nil {
 		return "", err
 	}
-	return password, s.LogoutEverywhere(ctx, id)
+	if err := s.LogoutEverywhere(ctx, id); err != nil {
+		return "", err
+	}
+	return password, s.revokeTokens(ctx, id)
 }
 
 // UserByID is one account, for the admin's detail page.

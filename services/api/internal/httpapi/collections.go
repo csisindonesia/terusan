@@ -319,6 +319,9 @@ func (s *Server) handleUpdateCollection(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if !s.mayChangeShared(w, r, id, "change") {
+		return
+	}
 	updated, err := s.shelf.Update(r.Context(), s.viewer(r), id, collections.Changes{
 		Name: body.Name, Description: body.Description, API: body.API,
 		Visibility: body.Visibility,
@@ -337,6 +340,9 @@ func (s *Server) handleDeleteCollection(w http.ResponseWriter, r *http.Request) 
 	id := r.PathValue("id")
 	if !shelfIDPattern.MatchString(id) {
 		badRequest(w, "invalid parameter", "id: is not a well-formed collection id")
+		return
+	}
+	if !s.mayChangeShared(w, r, id, "delete") {
 		return
 	}
 	if err := s.shelf.Delete(r.Context(), s.viewer(r), id); err != nil {
@@ -421,6 +427,9 @@ func (s *Server) handleClaimCollection(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !shelfIDPattern.MatchString(id) {
 		badRequest(w, "invalid parameter", "id: is not a well-formed collection id")
+		return
+	}
+	if !s.mayChangeShared(w, r, id, "claim") {
 		return
 	}
 	claimed, err := s.shelf.Claim(r.Context(), s.viewer(r), id)
@@ -560,13 +569,52 @@ func (s *Server) readItems(body collectionBody) ([]collections.Item, error) {
 	return items, nil
 }
 
+// ---- what everyone shares --------------------------------------------------
+
+// Folders and queries from before either had owners belong to nobody, and
+// everyone on the deployment still reads them and files into them. Renaming,
+// deleting, overwriting or claiming one is another matter: it changes what
+// everybody else sees, and a claim takes it away from them. That is an
+// administrator's call, not whichever reader gets there first. A deployment
+// without accounts has nobody to tell apart and keeps the old rule.
+
+func (s *Server) changesShared(r *http.Request) bool {
+	if s.auth == nil {
+		return true
+	}
+	session, err := s.session(r)
+	return err == nil && session.User.Role == auth.RoleAdmin
+}
+
+func (s *Server) mayChangeShared(w http.ResponseWriter, r *http.Request, id, what string) bool {
+	found, err := s.shelf.Get(r.Context(), s.viewer(r), id)
+	if err != nil || found.RoleOf(s.viewer(r)) != collections.RoleShared || s.changesShared(r) {
+		// Not found, not shared, or not this rule's to refuse: the store
+		// answers as it always has.
+		return true
+	}
+	writeError(w, http.StatusForbidden, CodeForbidden,
+		"only an administrator can "+what+" a collection everyone shares", "")
+	return false
+}
+
+func (s *Server) mayChangeSharedQuery(w http.ResponseWriter, r *http.Request, id string) bool {
+	found, err := s.shelf.GetQuery(r.Context(), s.viewer(r), id)
+	if err != nil || found.OwnerID != "" || s.changesShared(r) {
+		return true
+	}
+	writeError(w, http.StatusForbidden, CodeForbidden,
+		"only an administrator can change a saved query everyone shares", "")
+	return false
+}
+
 // ---- saved queries --------------------------------------------------------
 
 func (s *Server) handleSavedQueries(w http.ResponseWriter, r *http.Request) {
 	if !s.collectionsReady(w, false) {
 		return
 	}
-	list, err := s.shelf.Queries(r.Context())
+	list, err := s.shelf.Queries(r.Context(), s.viewer(r))
 	if err != nil {
 		s.shelfError(w, "list queries", err)
 		return
@@ -636,7 +684,10 @@ func (s *Server) handleSaveQuery(w http.ResponseWriter, r *http.Request) {
 		Summary:   strings.TrimSpace(body.Summary),
 		CreatedAt: time.Now().UTC(),
 	}
-	if err := s.shelf.PutQuery(r.Context(), query); err != nil {
+	if !s.mayChangeSharedQuery(w, r, id) {
+		return
+	}
+	if err := s.shelf.PutQuery(r.Context(), s.viewer(r), query); err != nil {
 		s.shelfError(w, "save query", err)
 		return
 	}
@@ -656,7 +707,10 @@ func (s *Server) handleRenameQuery(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &body, 1<<20) {
 		return
 	}
-	updated, err := s.shelf.RenameQuery(r.Context(), id, body.Name)
+	if !s.mayChangeSharedQuery(w, r, id) {
+		return
+	}
+	updated, err := s.shelf.RenameQuery(r.Context(), s.viewer(r), id, body.Name)
 	if err != nil {
 		if errors.Is(err, collections.ErrNotFound) {
 			notFound(w, "no such query", "id: "+id)
@@ -677,7 +731,10 @@ func (s *Server) handleDeleteQuery(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid parameter", "id: is not a well-formed query id")
 		return
 	}
-	if err := s.shelf.DeleteQuery(r.Context(), id); err != nil {
+	if !s.mayChangeSharedQuery(w, r, id) {
+		return
+	}
+	if err := s.shelf.DeleteQuery(r.Context(), s.viewer(r), id); err != nil {
 		if errors.Is(err, collections.ErrNotFound) {
 			notFound(w, "no such query", "id: "+id)
 			return

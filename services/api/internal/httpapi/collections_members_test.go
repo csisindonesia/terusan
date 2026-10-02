@@ -49,7 +49,7 @@ func shelved(t *testing.T) (http.Handler, map[string]string) {
 	}
 	cfg := &config.Config{Auth: config.Auth{Required: true}}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return New(cfg, nil, nil, shelf, accounts, nil, nil, log).Routes(), cookies
+	return New(cfg, nil, nil, shelf, accounts, nil, nil, nil, nil, log).Routes(), cookies
 }
 
 func asViewer(h http.Handler, method, path, cookie, body string) *httptest.ResponseRecorder {

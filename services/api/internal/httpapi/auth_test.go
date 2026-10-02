@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -45,7 +46,7 @@ func gated(t *testing.T) (handler http.Handler, cookie, token string) {
 
 	cfg := &config.Config{Auth: config.Auth{Required: true}}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return New(cfg, nil, nil, nil, accounts, nil, nil, log).Routes(), cookie, token
+	return New(cfg, nil, nil, nil, accounts, nil, nil, nil, nil, log).Routes(), cookie, token
 }
 
 func call(h http.Handler, method, path, cookie, bearer string) *httptest.ResponseRecorder {
@@ -112,7 +113,7 @@ func TestATokenCannotManageItsAccount(t *testing.T) {
 func TestRequiredSignInWithoutAccountsRefusesEverything(t *testing.T) {
 	cfg := &config.Config{Auth: config.Auth{Required: true}}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	h := New(cfg, nil, nil, nil, nil, nil, nil, log).Routes()
+	h := New(cfg, nil, nil, nil, nil, nil, nil, nil, nil, log).Routes()
 	if got := call(h, http.MethodGet, "/v1/indicators", "", "").Code; got != http.StatusServiceUnavailable {
 		t.Errorf("GET /v1/indicators with no accounts = %d, want 503", got)
 	}
@@ -144,7 +145,7 @@ func admin(t *testing.T) (h http.Handler, adminCookie, researcherCookie string) 
 
 	cfg := &config.Config{Auth: config.Auth{Required: true, Registration: true}}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return New(cfg, nil, nil, nil, accounts, nil, nil, log).Routes(), adminCookie, researcherCookie
+	return New(cfg, nil, nil, nil, accounts, nil, nil, nil, nil, log).Routes(), adminCookie, researcherCookie
 }
 
 func send(h http.Handler, method, path, cookie, body string) *httptest.ResponseRecorder {
@@ -227,5 +228,24 @@ func TestAnAdminCannotDemoteThemselves(t *testing.T) {
 	if got := send(h, http.MethodPatch, "/v1/admin/users/"+me.Data.User.ID, boss,
 		`{"role":"researcher"}`).Code; got != http.StatusBadRequest {
 		t.Errorf("self-demotion = %d, want 400", got)
+	}
+}
+
+// Somebody trying a different made-up address each time never trips the
+// per-address lockout, and every attempt still costs a full password hash,
+// so one client address only gets so many.
+func TestOneAddressGetsSoManyLogins(t *testing.T) {
+	h, _, _ := admin(t)
+	for i := range loginsPerWindow {
+		w := send(h, http.MethodPost, "/v1/auth/login", "",
+			fmt.Sprintf(`{"email":"made-up-%d@example.org","password":"a-long-enough-passphrase"}`, i))
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d = %d, want 401: %s", i, w.Code, w.Body)
+		}
+	}
+	w := send(h, http.MethodPost, "/v1/auth/login", "",
+		`{"email":"boss@example.org","password":"a-long-enough-passphrase"}`)
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("attempt past the limit = %d, want 429: %s", w.Code, w.Body)
 	}
 }

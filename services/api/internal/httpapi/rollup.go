@@ -13,6 +13,12 @@ import (
 // commodity, source, collection and unit, with how many figures it stands for
 // and the span they cover.
 //
+// The status is grouped by as well, and the figures whose place was printed but
+// not resolved are counted, so that the data-quality page reads off the rollup
+// what it would otherwise have to scan sixteen million rows for. Neither adds
+// many rows: a series' missing figures sit beside its good ones in the same
+// place and unit.
+//
 // Every summary the catalogue answers — each series' count and coverage, each
 // collection's, each commodity's, the lake's total — is a sum, a min, a max or
 // a distinct count over those columns, so it comes out of the rollup exactly
@@ -39,8 +45,9 @@ func (s *Server) buildRollup(ctx context.Context) error {
 	if _, err := s.warehouse.DB().ExecContext(ctx, fmt.Sprintf(`
 		CREATE OR REPLACE TABLE %s AS
 		SELECT o.indicator_id, o.dataset_id, o.source_id, o.temporal_resolution, o.unit,
-		       o.geo_id, o.commodity_id, o.commodity_name_raw,
+		       o.geo_id, o.commodity_id, o.commodity_name_raw, o.status,
 		       count(*) AS n,
+		       count(*) FILTER (WHERE o.geo_id IS NULL AND o.geo_name_raw IS NOT NULL) AS unplaced,
 		       min(o.period) AS period_start,
 		       max(o.period) AS period_end,
 		       max(o.processed_at) AS processed_at,

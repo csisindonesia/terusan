@@ -103,3 +103,42 @@ func TestTokenBounds(t *testing.T) {
 		t.Fatalf("the limit was not enforced: %v", err)
 	}
 }
+
+// A token minted by whoever knew the old password must not outlive it.
+func TestANewPasswordEndsTheTokens(t *testing.T) {
+	ctx := context.Background()
+	accounts := service(t, Config{})
+	user, err := accounts.PutUser(ctx, "dev@example.org", goodPassword, "Dev", "")
+	if err != nil {
+		t.Fatalf("PutUser: %v", err)
+	}
+	cookie, _, err := accounts.Login(ctx, "dev@example.org", goodPassword, "test", false)
+	if err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+
+	changed, _, err := accounts.CreateToken(ctx, user.ID, "intruder's", 0)
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+	if err := accounts.ChangePassword(ctx, user.ID, goodPassword, goodPassword+"-new", cookie); err != nil {
+		t.Fatalf("ChangePassword: %v", err)
+	}
+	if _, err := accounts.TokenSession(ctx, changed); !errors.Is(err, ErrNoSession) {
+		t.Errorf("a token survived a password change: %v", err)
+	}
+	if _, err := accounts.Session(ctx, cookie); err != nil {
+		t.Errorf("the session that changed the password was ended: %v", err)
+	}
+
+	reset, _, err := accounts.CreateToken(ctx, user.ID, "another", 0)
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+	if _, err := accounts.ResetPassword(ctx, user.ID); err != nil {
+		t.Fatalf("ResetPassword: %v", err)
+	}
+	if _, err := accounts.TokenSession(ctx, reset); !errors.Is(err, ErrNoSession) {
+		t.Errorf("a token survived an admin's reset: %v", err)
+	}
+}

@@ -42,6 +42,7 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -185,6 +186,12 @@ type Service struct {
 	// database do work.
 	mu       sync.Mutex
 	failures map[string]*attempts
+	// A slot per core for hashing a password. Each hash is 600,000 rounds of
+	// SHA-256 on purpose, which makes it slow for whoever guesses and equally
+	// slow for this process: without a cap, a stream of logins for addresses
+	// nobody has (hashed all the same, against the decoy) would hold every
+	// core and starve the requests that read the lake.
+	hashing chan struct{}
 	// When each (account, address, kind) was last written to the access log,
 	// so a busy page is one row per few minutes rather than one per request.
 	touched map[string]time.Time
@@ -193,6 +200,7 @@ type Service struct {
 type attempts struct {
 	count int
 	until time.Time
+	last  time.Time
 }
 
 const schema = `
@@ -238,6 +246,9 @@ var additions = []string{
 	`ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT`,
 	`ALTER TABLE users ADD COLUMN IF NOT EXISTS access_expires_at TIMESTAMP WITH TIME ZONE`,
 	`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMP WITH TIME ZONE`,
+	// The directory identity an account signs in with, where it has one
+	// (see sso.go). Not unique in the schema; LoginExternal keeps it so.
+	`ALTER TABLE users ADD COLUMN IF NOT EXISTS sso_subject TEXT`,
 	// Every account that existed before approval did was an approved one.
 	`UPDATE users SET status = 'active' WHERE status IS NULL`,
 	// "member" was the only non-admin role before there were three.
@@ -267,6 +278,7 @@ func New(db *appdb.DB, cfg Config) (*Service, error) {
 	return &Service{
 		db: db, cfg: cfg.withDefaults(),
 		failures: map[string]*attempts{}, touched: map[string]time.Time{},
+		hashing: make(chan struct{}, max(2, runtime.NumCPU())),
 	}, nil
 }
 
@@ -309,6 +321,8 @@ func (s *Service) HashPassword(password string) (string, error) {
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
 	}
+	s.hashing <- struct{}{}
+	defer func() { <-s.hashing }()
 	key, err := pbkdf2.Key(sha256.New, password, salt, s.cfg.Iterations, 32)
 	if err != nil {
 		return "", err
@@ -517,18 +531,27 @@ func (s *Service) Login(
 	row := s.db.QueryRowContext(ctx,
 		`SELECT `+userColumns+`, u.password_hash FROM users u WHERE u.email = ?`, address)
 	user, err := scanUser(row, &hash)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", Session{}, err
+	}
+	// A request that gives up while waiting for a slot is not hashed at all.
+	select {
+	case s.hashing <- struct{}{}:
+	case <-ctx.Done():
+		return "", Session{}, ctx.Err()
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		// Hashed anyway, against a throwaway encoding, so that "no such
 		// account" and "wrong password" take the same time to answer.
 		verifyPassword(decoyHash, password)
+		<-s.hashing
 		s.failed(address)
 		return "", Session{}, ErrInvalidCredentials
 	}
-	if err != nil {
-		return "", Session{}, err
-	}
+	ok := verifyPassword(hash, password)
+	<-s.hashing
 
-	if !verifyPassword(hash, password) {
+	if !ok {
 		s.failed(address)
 		return "", Session{}, ErrInvalidCredentials
 	}
@@ -690,7 +713,8 @@ func (s *Service) byID(ctx context.Context, userID string) (User, error) {
 // Every other session is ended by it. The reason to change a password is
 // usually that somebody else might know the old one, and leaving their login
 // alive would make the change cosmetic; the session doing the changing is kept
-// so the person is not thrown out of the page they are standing on.
+// so the person is not thrown out of the page they are standing on. Every API
+// token goes too, for the same reason (see revokeTokens).
 func (s *Service) ChangePassword(
 	ctx context.Context, userID, current, next, keepToken string,
 ) error {
@@ -719,9 +743,24 @@ func (s *Service) ChangePassword(
 		encoded, time.Now().UTC(), userID); err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx,
+	if _, err := s.db.ExecContext(ctx,
 		`DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?`,
-		userID, hashToken(keepToken))
+		userID, hashToken(keepToken)); err != nil {
+		return err
+	}
+	return s.revokeTokens(ctx, userID)
+}
+
+// revokeTokens ends every API token a person holds.
+//
+// A token is minted from a signed-in session and then lives on its own for
+// up to a year, so a new password that left them standing would end the
+// intruder's session and keep their token. Whoever changes or resets a
+// password is saying the old one may have been somebody else's, and every
+// token made under it is suspect for the same reason; the owner makes new
+// ones in a minute.
+func (s *Service) revokeTokens(ctx context.Context, userID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM api_tokens WHERE user_id = ?`, userID)
 	return err
 }
 
@@ -787,6 +826,13 @@ func (s *Service) RevokeOthers(ctx context.Context, userID, keepToken string) (i
 const (
 	maxAttempts = 8
 	lockout     = 2 * time.Minute
+	// Wrong passwords further apart than this start the count again: eight
+	// typos over a month are not an attack.
+	attemptWindow = 15 * time.Minute
+	// How many addresses are remembered at once. Every address tried is an
+	// entry, and somebody trying a fresh made-up one each time would
+	// otherwise grow the map until the process ran out of memory.
+	maxTracked = 10_000
 )
 
 func (s *Service) blocked(address string) (bool, time.Duration) {
@@ -806,15 +852,38 @@ func (s *Service) blocked(address string) (bool, time.Duration) {
 func (s *Service) failed(address string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	now := time.Now()
 	entry := s.failures[address]
 	if entry == nil {
+		if len(s.failures) >= maxTracked {
+			s.forgetStale(now)
+		}
 		entry = &attempts{}
 		s.failures[address] = entry
 	}
+	if now.Sub(entry.last) > attemptWindow {
+		entry.count = 0
+	}
+	entry.last = now
 	entry.count++
 	if entry.count >= maxAttempts {
 		entry.until = time.Now().Add(lockout)
 		entry.count = 0
+	}
+}
+
+// forgetStale drops the addresses that are neither waiting out a lockout nor
+// within reach of one. If that frees nothing, everything goes: a flood of
+// made-up addresses is not worth the memory, and the per-IP limit in front of
+// login is what holds that flood back. Called with s.mu held.
+func (s *Service) forgetStale(now time.Time) {
+	for address, entry := range s.failures {
+		if now.After(entry.until) && now.Sub(entry.last) > attemptWindow {
+			delete(s.failures, address)
+		}
+	}
+	if len(s.failures) >= maxTracked {
+		s.failures = map[string]*attempts{}
 	}
 }
 

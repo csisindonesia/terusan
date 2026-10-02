@@ -188,11 +188,11 @@ func TestQueries(t *testing.T) {
 		Search:    json.RawMessage(`{"indicator":["e8gvmhci"]}`),
 		CreatedAt: time.Now().UTC(),
 	}
-	if err := store.PutQuery(ctx, query); err != nil {
+	if err := store.PutQuery(ctx, "ana", query); err != nil {
 		t.Fatalf("PutQuery: %v", err)
 	}
 
-	list, err := store.Queries(ctx)
+	list, err := store.Queries(ctx, "ana")
 	if err != nil || len(list) != 1 {
 		t.Fatalf("Queries = %d, %v; want 1, nil", len(list), err)
 	}
@@ -206,19 +206,63 @@ func TestQueries(t *testing.T) {
 		t.Errorf("search round-tripped as %v", search)
 	}
 
-	if _, err := store.RenameQuery(ctx, "qry-1", "Brent crude"); err != nil {
+	if _, err := store.RenameQuery(ctx, "ana", "qry-1", "Brent crude"); err != nil {
 		t.Fatalf("RenameQuery: %v", err)
 	}
-	renamed, err := store.GetQuery(ctx, "qry-1")
+	renamed, err := store.GetQuery(ctx, "ana", "qry-1")
 	if err != nil || renamed.Name != "Brent crude" {
 		t.Fatalf("GetQuery = %+v, %v", renamed, err)
 	}
 
-	if err := store.DeleteQuery(ctx, "qry-1"); err != nil {
+	if err := store.DeleteQuery(ctx, "ana", "qry-1"); err != nil {
 		t.Fatalf("DeleteQuery: %v", err)
 	}
-	if _, err := store.GetQuery(ctx, "qry-1"); !errors.Is(err, ErrNotFound) {
+	if _, err := store.GetQuery(ctx, "ana", "qry-1"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("GetQuery after delete = %v, want ErrNotFound", err)
+	}
+}
+
+// A saved query is its author's: nobody else sees it, and nobody else can
+// rename, delete or overwrite it by sending its id.
+func TestAQueryIsItsAuthors(t *testing.T) {
+	ctx := context.Background()
+	store := open(t, true)
+	mine := Query{
+		ID: "qry-mine", Name: "Mine", Kind: "observations", Path: "/observations",
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := store.PutQuery(ctx, "ana", mine); err != nil {
+		t.Fatalf("PutQuery: %v", err)
+	}
+
+	if list, err := store.Queries(ctx, "budi"); err != nil || len(list) != 0 {
+		t.Fatalf("another account's Queries = %+v, %v; want none", list, err)
+	}
+	if _, err := store.GetQuery(ctx, "budi", "qry-mine"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("another account's GetQuery = %v, want ErrNotFound", err)
+	}
+	if _, err := store.RenameQuery(ctx, "budi", "qry-mine", "Taken"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("another account's RenameQuery = %v, want ErrNotFound", err)
+	}
+	if err := store.DeleteQuery(ctx, "budi", "qry-mine"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("another account's DeleteQuery = %v, want ErrNotFound", err)
+	}
+	overwrite := mine
+	overwrite.Name = "Overwritten"
+	if err := store.PutQuery(ctx, "budi", overwrite); !errors.Is(err, ErrNotFound) {
+		t.Errorf("another account's PutQuery over the same id = %v, want ErrNotFound", err)
+	}
+	if got, err := store.GetQuery(ctx, "ana", "qry-mine"); err != nil || got.Name != "Mine" {
+		t.Fatalf("the author's query is now %+v, %v; want it untouched", got, err)
+	}
+
+	// One saved before queries had owners is still everybody's.
+	if _, err := store.db.ExecContext(ctx,
+		`UPDATE saved_queries SET owner_id = '' WHERE query_id = 'qry-mine'`); err != nil {
+		t.Fatalf("making it shared: %v", err)
+	}
+	if list, err := store.Queries(ctx, "budi"); err != nil || len(list) != 1 {
+		t.Fatalf("a shared query listed for another account = %d, %v; want 1", len(list), err)
 	}
 }
 

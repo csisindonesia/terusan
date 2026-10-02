@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,6 +42,11 @@ type Config struct {
 	// than a wildcard: restricted datasets should not be readable from any
 	// page a browser happens to load.
 	CORSOrigins []string
+	// Where the portal is served, for the few answers that send a browser back
+	// to it rather than answering in JSON — the end of a Microsoft sign-in.
+	// PORTAL_ORIGIN, or else the first CORS origin, which is the portal on
+	// every deployment this has had.
+	PortalOrigin string
 
 	ReadTimeout     time.Duration
 	WriteTimeout    time.Duration
@@ -112,6 +118,65 @@ type Auth struct {
 	// another proxy is the only way in, since anyone who can reach the API
 	// directly can write those headers.
 	TrustProxy bool
+	// Signing in with a Microsoft 365 work account. Off unless configured.
+	Microsoft Microsoft
+}
+
+// Microsoft is single sign-on against one Microsoft Entra ID tenant — the
+// directory behind an office's Microsoft 365 — through OpenID Connect.
+//
+// One tenant, never "common" or "organizations": those accept every work
+// account in the world, and the point of this is that being in *this* office's
+// directory is what vouches for a person.
+type Microsoft struct {
+	// The directory (tenant) ID of the app registration, a GUID.
+	TenantID string
+	// The application (client) ID and a client secret issued for it.
+	ClientID     string
+	ClientSecret string
+	// Where Microsoft sends the browser back: this API's
+	// /v1/auth/microsoft/callback, exactly as registered in Entra.
+	RedirectURL string
+	// Email domains allowed in, lowercase. Empty lets in anyone the tenant
+	// vouches for, guests invited into it included.
+	Domains []string
+	// What a first sign-in from an address with no account gets: "pending"
+	// (an admin approves it, the default), "active" (a researcher account at
+	// once), or "refuse" (only addresses an admin already created).
+	NewAccounts string
+	// The login host. Only ever changed by tests and sovereign clouds.
+	Authority string
+}
+
+// Enabled reports whether the portal can offer "Log in with Microsoft".
+func (m Microsoft) Enabled() bool { return m.ClientID != "" }
+
+// Endpoint is one of the tenant's OAuth endpoints: "authorize" or "token".
+func (m Microsoft) Endpoint(name string) string {
+	return m.Authority + "/" + m.TenantID + "/oauth2/v2.0/" + name
+}
+
+// Issuer is what this tenant's ID tokens name as their issuer.
+func (m Microsoft) Issuer() string {
+	return m.Authority + "/" + m.TenantID + "/v2.0"
+}
+
+// Allows reports whether an address is on one of the allowed domains, or
+// whether any address the tenant vouches for will do.
+func (m Microsoft) Allows(address string) bool {
+	if len(m.Domains) == 0 {
+		return true
+	}
+	_, domain, found := strings.Cut(address, "@")
+	if !found {
+		return false
+	}
+	for _, allowed := range m.Domains {
+		if strings.EqualFold(domain, allowed) {
+			return true
+		}
+	}
+	return false
 }
 
 // Collections is whether the shelf accepts changes.
@@ -205,6 +270,11 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	corsOrigins := strings.Split(
+		envOr("API_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"), ",")
+	portalOrigin := strings.TrimRight(
+		envOr("PORTAL_ORIGIN", strings.TrimSpace(corsOrigins[0])), "/")
+
 	return &Config{
 		Host:                 envOr("API_HOST", "127.0.0.1"),
 		Port:                 port,
@@ -216,13 +286,12 @@ func Load() (*Config, error) {
 		QueryTimeout:         time.Duration(queryTimeout) * time.Second,
 		RedisURL:             os.Getenv("REDIS_URL"),
 		CacheTTL:             time.Duration(cacheTTL) * time.Second,
-		CORSOrigins: strings.Split(
-			envOr("API_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"), ",",
-		),
-		ReadTimeout:     15 * time.Second,
-		WriteTimeout:    120 * time.Second, // analytical queries are slow by nature
-		ShutdownTimeout: 20 * time.Second,
-		Pipelines:       pipelines,
+		CORSOrigins:          corsOrigins,
+		PortalOrigin:         portalOrigin,
+		ReadTimeout:          15 * time.Second,
+		WriteTimeout:         120 * time.Second, // analytical queries are slow by nature
+		ShutdownTimeout:      20 * time.Second,
+		Pipelines:            pipelines,
 		// COLLECTIONS_DB is the older name for the same file, from when the
 		// shelf was the only thing in it. Still read, because a deployment
 		// that set it should not lose its collections to a rename.
@@ -299,6 +368,11 @@ func loadAuth() (Auth, error) {
 			iterations)
 	}
 
+	microsoft, err := loadMicrosoft()
+	if err != nil {
+		return Auth{}, err
+	}
+
 	return Auth{
 		Required:      required,
 		SecureCookies: secure,
@@ -307,7 +381,53 @@ func loadAuth() (Auth, error) {
 		Iterations:    iterations,
 		Registration:  registration,
 		TrustProxy:    trustProxy,
+		Microsoft:     microsoft,
 	}, nil
+}
+
+// loadMicrosoft reads the Microsoft sign-in, which is all or nothing: half of
+// it configured is a button that fails at the callback, so it is refused at
+// startup instead.
+func loadMicrosoft() (Microsoft, error) {
+	m := Microsoft{
+		TenantID:     strings.TrimSpace(os.Getenv("AUTH_MICROSOFT_TENANT_ID")),
+		ClientID:     strings.TrimSpace(os.Getenv("AUTH_MICROSOFT_CLIENT_ID")),
+		ClientSecret: os.Getenv("AUTH_MICROSOFT_CLIENT_SECRET"),
+		RedirectURL:  strings.TrimSpace(os.Getenv("AUTH_MICROSOFT_REDIRECT_URL")),
+		NewAccounts:  envOr("AUTH_MICROSOFT_NEW_ACCOUNTS", "pending"),
+		Authority: strings.TrimRight(
+			envOr("AUTH_MICROSOFT_AUTHORITY", "https://login.microsoftonline.com"), "/"),
+	}
+	for _, domain := range strings.Split(os.Getenv("AUTH_MICROSOFT_DOMAINS"), ",") {
+		if domain = strings.ToLower(strings.TrimSpace(domain)); domain != "" {
+			m.Domains = append(m.Domains, strings.TrimPrefix(domain, "@"))
+		}
+	}
+	if m.ClientID == "" && m.TenantID == "" && m.ClientSecret == "" {
+		return Microsoft{}, nil
+	}
+	if m.ClientID == "" || m.TenantID == "" || m.ClientSecret == "" || m.RedirectURL == "" {
+		return Microsoft{}, fmt.Errorf("Microsoft sign-in needs all four of " +
+			"AUTH_MICROSOFT_TENANT_ID, AUTH_MICROSOFT_CLIENT_ID, " +
+			"AUTH_MICROSOFT_CLIENT_SECRET and AUTH_MICROSOFT_REDIRECT_URL")
+	}
+	switch strings.ToLower(m.TenantID) {
+	case "common", "organizations", "consumers":
+		return Microsoft{}, fmt.Errorf("AUTH_MICROSOFT_TENANT_ID is %q, which lets in "+
+			"accounts from every tenant; set the office's directory (tenant) ID", m.TenantID)
+	}
+	if u, err := url.Parse(m.RedirectURL); err != nil || u.Scheme == "" || u.Host == "" {
+		return Microsoft{}, fmt.Errorf(
+			"AUTH_MICROSOFT_REDIRECT_URL must be an absolute URL, got %q", m.RedirectURL)
+	}
+	switch m.NewAccounts {
+	case "pending", "active", "refuse":
+	default:
+		return Microsoft{}, fmt.Errorf(
+			"AUTH_MICROSOFT_NEW_ACCOUNTS must be pending, active or refuse, got %q",
+			m.NewAccounts)
+	}
+	return m, nil
 }
 
 // loadPipelines reads the runner's settings.
