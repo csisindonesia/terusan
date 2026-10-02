@@ -51,6 +51,30 @@ func TestASummaryIsComputedOnceAndHeld(t *testing.T) {
 	}
 }
 
+// The summary routes sit over the response cache, so the copy a summary keeps
+// was produced by withCache and carries its X-Cache. That header described the
+// request which computed the summary, not the reads served from it, and a held
+// answer reporting "miss" sent a load test looking for a cache that was not
+// broken.
+func TestAHeldSummaryDoesNotReplayTheCacheHeader(t *testing.T) {
+	s := serverWithCache(newMemory())
+	s.log = slog.New(slog.NewTextHandler(io.Discard, nil))
+	route := s.summary("/v1/datasets", s.withCache(func(w http.ResponseWriter, r *http.Request) {
+		writeData(w, []string{"x"}, nil)
+	}))
+
+	route(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/v1/datasets", nil))
+	held := httptest.NewRecorder()
+	route(held, httptest.NewRequest(http.MethodGet, "/v1/datasets", nil))
+
+	if held.Header().Get("X-Summary") != "held" {
+		t.Errorf("X-Summary = %q, want held", held.Header().Get("X-Summary"))
+	}
+	if got := held.Header().Get("X-Cache"); got != "" {
+		t.Errorf("a held summary reported X-Cache %q", got)
+	}
+}
+
 func TestAStaleSummaryIsServedWhileItIsRecomputed(t *testing.T) {
 	s := summaryServer()
 	var version atomic.Int32

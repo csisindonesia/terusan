@@ -138,6 +138,10 @@ func (s *Server) computeSummary(ctx context.Context, uri string, next http.Handl
 	if !cacheable(status, recorded.body.Bytes()) {
 		return nil
 	}
+	// The route sits over the response cache, whose X-Cache describes this
+	// computation rather than the reads the copy will answer. Replayed, a held
+	// answer said "miss" on every read; X-Summary is what tells those apart.
+	recorded.header.Del("X-Cache")
 	return &summaryEntry{
 		status: status,
 		header: recorded.header,
