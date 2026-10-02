@@ -1028,6 +1028,18 @@ falls between two runs. The reader is `sources/schedule.py`: five fields, no
 than quietly never matching. Schedules are read against the machine's local
 clock, as cron and launchd read them.
 
+**A firing is owed until a run after it succeeds.** The window gives each
+firing one chance, and a daily source whose 07:00 run met a dead network then
+lost the day: PIHPS did, three mornings running, on a laptop waking from sleep.
+So `scheduled.sh` also asks `sources due --catch-up 12`, which adds every source
+that fired in the last twelve hours with no successful ingestion since, by this
+lake's run journal. Each hour asks again until one succeeds. `CATCH_UP_HOURS=0`
+turns it off.
+
+On the NAS there is no launchd: the pipelines container runs
+`scripts/scheduler.sh`, an hourly loop over the same `scheduled.sh`. See
+[nas-deployment.md](nas-deployment.md).
+
 ### What one run does
 
 `scripts/daily.sh` is the run itself — fetch, extract, normalize, then
@@ -1476,6 +1488,74 @@ start after upgrading.
 Beyond account management and a guest's end date, roles grant nothing: every
 account that can sign in sees the same warehouse and the same shelf.
 
+### Microsoft 365 sign-in
+
+The login page offers **Log in with Microsoft** wherever the API is given an
+app registration in the office's Microsoft Entra ID tenant (the directory
+behind Microsoft 365). It is OpenID Connect with PKCE against that one tenant:
+the person signs in on Microsoft's own pages — with whatever MFA or
+conditional access the office enforces — and comes back with an ordinary
+session cookie, exactly as a password login would give them.
+
+**Registering the app** (an Entra admin, once): in the Entra admin centre,
+*App registrations → New registration*.
+
+1. *Supported account types*: **Accounts in this organizational directory
+   only** (single tenant).
+2. *Redirect URI*: platform **Web**, the API's callback —
+   `https://terusan.csis.or.id/v1/auth/microsoft/callback` on the NAS, and
+   `http://localhost:8080/v1/auth/microsoft/callback` for `make dev` (add both
+   if you want both).
+3. From *Overview*, copy the **Directory (tenant) ID** and the **Application
+   (client) ID**.
+4. *Certificates & secrets → New client secret*; copy its **Value** (shown
+   once). It expires — note the date and replace it before then.
+5. *API permissions*: the default `User.Read` is enough; `openid`, `profile`
+   and `email` are what is asked for. Grant admin consent so nobody is shown a
+   consent screen.
+6. Optional, recommended: *Token configuration → Add optional claim → ID →
+   email*, so the token carries the mailbox address rather than only the
+   sign-in name.
+
+**Configuring the API:**
+
+```bash
+AUTH_MICROSOFT_TENANT_ID=<directory (tenant) id>    # a GUID, never "common"
+AUTH_MICROSOFT_CLIENT_ID=<application (client) id>
+AUTH_MICROSOFT_CLIENT_SECRET=<client secret value>
+AUTH_MICROSOFT_REDIRECT_URL=https://terusan.csis.or.id/v1/auth/microsoft/callback
+AUTH_MICROSOFT_DOMAINS=csis.or.id                   # comma-separated; empty = anyone in the tenant
+AUTH_MICROSOFT_NEW_ACCOUNTS=pending                 # pending | active | refuse
+PORTAL_ORIGIN=http://localhost:3000                 # where to land afterwards; defaults to the first API_CORS_ORIGINS entry
+```
+
+All four of the first lines or none: half a configuration refuses to start.
+On the NAS they go in the stack's `.env` (see `infra/nas/env.nas.example`).
+
+**Who gets in.** The tenant must vouch for the person, and their address must
+be on one of `AUTH_MICROSOFT_DOMAINS`. Then:
+
+- An address that already has an account here signs into that account, which
+  is linked to the person's directory object from then on. Later sign-ins find
+  it by that object, so a renamed mailbox still reaches the same account, and
+  a *different* person who is later given the same address is refused rather
+  than handed the old owner's account.
+- An address with no account follows `AUTH_MICROSOFT_NEW_ACCOUNTS`: `pending`
+  (the API's default) creates a pending researcher that an admin approves on
+  the Users page, the same as `/register`; `active` (what the NAS sets) creates
+  a researcher account at once; `refuse` lets in only addresses an admin
+  already created.
+- Under `active`, an account still *pending* — a `/register` request, or a
+  first sign-in made while the policy was `pending` — is approved by the
+  person's Microsoft sign-in. Nothing else is overridden: a role an admin set
+  stays, and a disabled account stays disabled.
+- Disabled, pending and lapsed-guest accounts are refused here exactly as at
+  the password form.
+
+An account created this way has no usable password; an admin can give it one
+from the Users page if it needs the password form as well. Signing out of the
+portal ends the portal's session only, not the person's Microsoft session.
+
 ### The account page
 
 The three dots beside your name at the foot of the sidebar open it —
@@ -1520,6 +1600,121 @@ maintainer says why. Filing one needs a session — a request nobody can ask a
 follow-up question about is a dead end — and it lives in the same application
 database as the shelf, so a deployment without `APP_DB` shows the reader the
 contact address instead of a form that would swallow their message.
+
+## The Portal: work built on the data
+
+**Discover → Portal** lists the dashboards, articles and reports that use the
+warehouse's data, each linking to the work itself and to the datasets it draws
+on. Every dataset page an entry names shows it under **Used in**, so a reader
+who has found a dataset can see who else has used it.
+
+Only an administrator can add, edit or remove an entry, from the portal or
+with their API token, so the list can be curated from a script.
+An entry is the warehouse vouching that a piece of work stands on its figures,
+and a list anyone could add to would be a list nobody could cite. Reading
+follows the deployment like every other read.
+
+```bash
+curl localhost:8080/v1/showcase                       # newest first
+curl localhost:8080/v1/showcase?kind=dashboard        # dashboard, article, report, other
+curl localhost:8080/v1/showcase?dataset=urn5cu46      # what the dataset page asks
+curl -X POST localhost:8080/v1/showcase \
+  -H "Authorization: Bearer $TOKEN" -d @entry.json     # admin only
+curl localhost:8080/v1/articles/<slug>                # an article, figures evaluated
+```
+
+A dataset must be one the lake holds when it is added, so every link on a
+dataset page leads somewhere. One retired later stays on the entry, marked as
+no longer held, rather than vanishing from the claim the entry makes. The list
+lives in the application database beside the shelf, so without `APP_DB` the
+page says there is nowhere to keep it.
+
+## Writing an article for the Portal
+
+An administrator can write an article in the portal: **Portal → Write an
+article**, or `/portal/edit/new`. The page is the editor. The title and
+standfirst are typed where they will be read, and every block shows as a
+reader will see it until it is clicked.
+
+- **+** in the left margin, or **/** typed on an empty line, opens the block
+  menu: text, heading, subheading, quote, callout, footnote, divider, chart,
+  table, built chart, regulation and dataset.
+- The handle beside it drags a block to a new place, or opens its menu: turn
+  into another kind of prose, duplicate, move, delete.
+- Prose is markdown. Enter starts the next block and Shift+Enter a new line;
+  Backspace on an empty block removes it. At the start of a line `# ` makes a
+  heading, `## ` a subheading, `> ` a quote, `! ` a callout, and `---` then
+  Enter a divider.
+- A chart, table, regulation or dataset block is set up in a panel under it
+  while it is selected. A chart's series are found by name or copied from a
+  saved Data Explorer query, and kept on the chart, so deleting the saved query
+  later does not blank the article. A regulation or a dataset is searched for
+  and shown as a card that opens it. Table cells take markdown and figure
+  tokens.
+- Footnotes are listed under the article in the order they appear, and cited
+  in the prose as `[^1]`, `[^2]`.
+- ⌘S saves. Raw HTML in the markdown is shown as text and only http(s), mail
+  and the portal's own links are kept, because this markdown comes from a form.
+
+Saved as a draft, it is seen by administrators only. **Publish** files it on
+the Portal, with the datasets its charts draw worked out from their series;
+**Unpublish** takes it off again.
+
+### Dashboards
+
+**Portal → Build a dashboard** (or an article switched to *A dashboard* in its
+page settings) lays the same blocks out as tiles on a bento grid of four
+columns. Hovering a tile offers its handle, to drag it to another place, its
+size, picked on a small copy of the grid (1 to 4 columns by 1 to 3 rows), and
+delete. Clicking it opens its settings in a panel at the side, where it updates
+in place. The last cell adds a tile.
+
+A **Stat** tile is the dashboard's headline number: what it is, the figure
+(usually one token, `Rp{{latest indicator=… geo=IDN commodity=…}}`), and a
+line beneath it that may carry its own tokens, such as a change on a year ago.
+A published dashboard is filed on the Portal as a dashboard. On a phone the
+grid is two columns: a stat keeps half of it and every other tile takes the
+row.
+
+### Figures in the prose
+
+A number in the text can be written as the question that produces it, and is
+filled in from the lake each time the article is read:
+
+```text
+{{latest indicator=6yugbox8 geo=ID-31 commodity=rice-medium-grade-1}}
+{{value indicator=6yugbox8 geo=ID-31 period=2026-08}}
+{{change indicator=6yugbox8 geo=IDN from=2023-07 to=2024-03}}
+{{median indicator=6yugbox8 commodity=rice-medium-grade-1 period=2026-08}}
+{{rank indicator=6yugbox8 geo=ID-31 period=2026-08 order=desc}}
+```
+
+The measures are a closed list (`GET /v1/articles/measures`): `value`,
+`latest`, `latest-period`, `change`, `mean`, `median`, `min`, `max` and
+`rank`. Periods are `YYYY`, `YYYY-MM` or `YYYY-MM-DD`, and a value over a
+period is the mean of the figures in it. The across-place measures leave out
+the national row unless `geo_type=` names a kind of place. `digits=` sets the
+decimals. The editor's **Insert a figure** writes the token from fields. A
+token that cannot be answered prints *figure unavailable* with its reason on
+hover, never a blank and never zero.
+
+### Analyses built in code
+
+What a token cannot say, such as a correlation across provinces or a drought
+ranked against forty years, is an analysis, and is written in code:
+
+1. a module in `pipelines/src/terusan_pipelines/articles/`, whose `build()`
+   reads the lake and returns the figures;
+2. `terusan articles build <slug>`, which writes them to
+   `apps/portal/src/articles/<slug>.json`, committed with the article;
+3. the article's page in `apps/portal/src/articles/`, registered in its
+   `index.ts`, served at `/portal/<slug>`.
+
+Its charts are exported by name, and an article written in the portal can
+borrow them as **Built chart** blocks, and its figures with
+`{{figure article=<slug> key=<path>}}`, such as `key=y2023.rho`. File it on the
+Portal as a link to `/portal/<slug>`. Rebuild the figures after the pipelines
+have run; a rebuild that turns a finding around needs the words changed too.
 
 ## How the assistant finds a regulation
 

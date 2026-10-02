@@ -419,6 +419,26 @@ ojk-spi-silver: ## Land every archived SPI edition (to June 2025), extract and n
 	cd pipelines && uv run terusan warehouse extract statistics ojk-banking-spi
 	@./scripts/normalize-ojk-spi.sh
 
+.PHONY: ojk-fintech-silver
+ojk-fintech-silver: ## Land OJK's latest fintech lending workbook, extract and normalize its province tables into Silver
+	cd pipelines && uv run terusan sources run ojk-fintech-p2p
+	cd pipelines && uv run terusan warehouse extract statistics ojk-fintech-p2p
+	@./scripts/normalize-ojk-fintech.sh
+
+.PHONY: kpk-silver
+kpk-silver: ## Land KPK's enforcement statistics page, extract and normalize its tables into Silver
+	cd pipelines && uv run terusan sources run kpk-penindakan
+	cd pipelines && uv run terusan warehouse extract government kpk-penindakan
+	@./scripts/normalize-kpk.sh
+
+.PHONY: bi-surveys-silver
+bi-surveys-silver: ## Land Bank Indonesia's consumer and retail sales surveys, extract and normalize into Silver
+	cd pipelines && uv run terusan sources run bi-consumer-survey
+	cd pipelines && uv run terusan sources run bi-retail-sales-survey
+	cd pipelines && uv run terusan warehouse extract statistics bi-consumer-survey
+	cd pipelines && uv run terusan warehouse extract statistics bi-retail-sales-survey
+	@./scripts/normalize-bi-surveys.sh
+
 .PHONY: kemkes-silver
 kemkes-silver: ## Land the SATUSEHAT workforce planning dashboard, extract and normalize into Silver
 	cd pipelines && uv run terusan sources run kemkes-sdmk-planning

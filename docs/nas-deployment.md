@@ -12,7 +12,7 @@ it — so the figures and the server that reads them are never a network apart.
                             │  docker network
               ┌─────────────┴─────────────┐
            portal:3000                 api:8080 ── postgres:5432
-                                          │
+                                          │  └─────── redis:6379
                                    /volume2/terusan/lake   (bind mount)
 ```
 
@@ -94,17 +94,27 @@ bring up the API and the portal and silently skip the catalog and the
 connector.
 
 The other: `docker compose run --rm pipelines ...` is not available, so the
-pipelines container runs idle (`sleep infinity`) and a pipeline is started
-inside it instead:
+pipelines container stays up and keeps the schedule itself. Its entrypoint is
+`scripts/scheduler.sh`, an hourly loop over `scripts/scheduled.sh`: the same
+run the laptop's launchd agent fires, asking each source's cron what is due
+and carrying it through fetch, extract and normalize. A firing whose run
+fails stays owed for twelve hours (`CATCH_UP_HOURS`) and is asked for again
+each hour until a run succeeds. Nothing needs setting up in UGOS's Task
+Scheduler, and a deploy brings the schedule with the code.
+
+A pipeline can still be started by hand inside it:
 
 ```bash
 docker exec terusan-pipelines-1 terusan sources run bnpb-disaster
 ```
 
-from the container's terminal in the UGOS UI, or from a UGOS scheduled task —
-both of which run as root. That is also how the daily ingestion should be
-scheduled here: **Control Panel → Task Scheduler**, rather than the launchd
-agent `make schedule-install` writes on a laptop.
+What the loop did:
+
+```bash
+docker logs --tail 50 terusan-pipelines-1          # one line per pass
+tail -f /volume2/terusan/lake/temporary/logs/daily-$(date +%F).log
+docker exec terusan-pipelines-1 terusan runs          # the run journal
+```
 
 ## Afterwards
 
@@ -147,7 +157,7 @@ make nas-deploy NAS_HOST=192.168.1.50 NAS_DIR=/volume1/terusan
 ## What the overlay changes
 
 `infra/nas/compose.nas.yaml` is an overlay on `compose.yaml`, not a second
-copy of it. Five differences:
+copy of it. Six differences:
 
 - **The connector.** `cloudflared` runs beside the services and reaches them
   by container name, so nothing has to be published on the LAN for the
@@ -166,9 +176,19 @@ copy of it. Five differences:
   and the pipelines container is given its URL, because a scheduled ingestion
   that cannot record its history is how a pipeline stops for three weeks
   without anyone noticing.
-- **The pipelines container waits instead of running.** `sleep infinity` and a
-  restart policy, because `compose run` needs a socket nobody here has; see
-  above.
+- **The response cache is not optional either.** Redis runs under the `cache`
+  profile and the API is given `REDIS_URL=redis://redis:6379/0`. Without it
+  every request is a DuckDB query, and a load test on a laptop faster than
+  this box saw the heavy pages (observations, the news outlets) top out
+  between five and twenty requests a second; from Redis they answered
+  thousands. It is capped at `REDIS_MAXMEMORY` (256 MB) and evicts the least
+  recently used entries, since all of it can be rebuilt from the lake. It is
+  not published on the LAN: it has no password, and only the API needs it.
+  The API refuses to start when a configured Redis does not answer, so it
+  waits on Redis's healthcheck.
+- **The pipelines container keeps the schedule.** It runs
+  `scripts/scheduler.sh` under a restart policy instead of being run a command
+  at a time, because nothing else on the box fires the hourly run; see above.
 
 Logs are capped at 10 MB × 5 per container. A container left running for a
 year on an 8 GB box should not be able to fill the volume with its own output.

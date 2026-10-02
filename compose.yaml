@@ -126,8 +126,15 @@ services:
       # just be mounted into the init directory.
       - ./db/migrations:/migrations:ro
       - ./infra/docker/postgres-init.sh:/docker-entrypoint-initdb.d/10-migrate.sh:ro
+    # On the loopback only. The default password is kept so that .env.example's
+    # DATABASE_URL works out of the box, and a well-known password is only
+    # harmless on a port nothing else on the network can reach. The other
+    # containers do not need this at all: they reach `postgres:5432` over the
+    # compose network. An overlay that wants the catalog on the LAN replaces
+    # this list with `ports: !override` rather than adding to it: compose keeps
+    # both entries, and the second bind of the same host port fails.
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-terusan}"]
       interval: 10s
@@ -139,8 +146,10 @@ services:
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # On the loopback only: this Redis has no password, and anyone who can
+    # reach it can read or poison the API's cached responses.
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     profiles: ["cache"]
     restart: unless-stopped
 

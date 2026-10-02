@@ -35,10 +35,10 @@ STACK_DIR="$NAS_DIR/stack"
 REMOTE="$NAS_USER@$NAS_HOST"
 SSH_OPTS=(-p "$NAS_PORT" -o ConnectTimeout=10)
 
-PROFILES=(--profile catalog --profile tunnel)
+PROFILES=(--profile catalog --profile cache --profile tunnel)
 for arg in "$@"; do
   case "$arg" in
-    --no-tunnel) PROFILES=(--profile catalog) ;;
+    --no-tunnel) PROFILES=(--profile catalog --profile cache) ;;
     *) echo "unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
@@ -134,7 +134,7 @@ MSG
 fi
 
 # `--profile tools` as well, so the pipelines container is in the file; the
-# NAS runs it idle and starts pipelines with `docker exec` (see the overlay).
+# NAS keeps it running as the hourly scheduler (see the overlay).
 #
 # Then the profile markers come back out. `config` keeps them, and a UGOS
 # project starts a file the plain way — which, with the markers left in,

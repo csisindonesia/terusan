@@ -67,5 +67,7 @@ Per-source end-to-end targets exist (`make adb-silver`, `bps-silver`, `pihps-sil
 
 ## Conventions
 
+- **Getting data is not done until it shows on http://localhost:3000/datasets.** Landing, extracting or normalizing alone does not count: carry every new or refreshed source through `sources run` → `warehouse extract` → the normalize script, then confirm its dataset is listed there, with a declared title (`datasets.py`) and rows. The API needs a session (`AUTH_REQUIRED` defaults on) and the running `make dev` API holds the lock on `.data/app.duckdb`, so to check from a terminal, build and run a second copy without auth against the same lake: `cd services/api && go build -o /tmp/api-check ./cmd/api && API_PORT=8099 AUTH_REQUIRED=false APP_DB= /tmp/api-check`, then `curl localhost:8099/v1/datasets`. The catalogue rebuilds itself when Silver changes; no restart is needed.
+
 - Commits: Conventional Commits with a scope, e.g. `feat(portal): ...`, `fix(bps): ...`.
 - Comments and docs explain *why* in full prose sentences; match that style.

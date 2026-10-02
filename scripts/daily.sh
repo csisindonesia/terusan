@@ -113,8 +113,19 @@ trap 'rmdir "$lock" 2>/dev/null || true' EXIT
   # `--trigger schedule` is what tells the run history this was the scheduler
   # rather than someone at a terminal, which is the difference between "nobody
   # has run this in a week" and "nobody needed to".
-  uv --project pipelines run terusan sources run "${sources[@]}" \
-    --trigger schedule ${since[@]+"${since[@]}"} ${catalog[@]+"${catalog[@]}"}
+  #
+  # `sources run` exits non-zero when any one source fails, and under `set -e`
+  # that ended the hour before extraction: a 07:00 that owed PIHPS, BMKG and
+  # GDELT, with PIHPS unreachable, landed BMKG and GDELT in RAW and never
+  # extracted or normalized them. The other sources' files are already landed
+  # by then, so the run goes on and the failure is reported at the end. A
+  # source that failed stays owed and is asked for again next hour.
+  failures=()
+  if ! uv --project pipelines run terusan sources run "${sources[@]}" \
+    --trigger schedule ${since[@]+"${since[@]}"} ${catalog[@]+"${catalog[@]}"}; then
+    echo "!!! ingestion failed for at least one source — continuing with what landed"
+    failures+=("ingest")
+  fi
 
   # Extraction walks a RAW subtree, and RAW is laid out `category/slug`. Given
   # no subtree it walks the whole lake — sixteen thousand documents visited to
@@ -135,7 +146,6 @@ trap 'rmdir "$lock" 2>/dev/null || true' EXIT
   # own; the failures are collected and the run still exits non-zero at the
   # end, so nothing is hidden and nothing else is lost.
   echo "=== $(date '+%Y-%m-%d %H:%M:%S') extract ==="
-  failures=()
   while read -r category slug; do
     echo "--- extract: $category/$slug"
     if ! uv --project pipelines run terusan warehouse extract "$category" "$slug"; then
@@ -171,6 +181,16 @@ SUBTREES
         failures+=("normalize:$source")
       fi
     }
+    # Sources a machine fetches and extracts but cannot normalize, as a
+    # space-separated list. The NAS lists PIHPS: its four series are 8.7
+    # million observations, the normalizer holds a series in memory, and on
+    # eight gigabytes earlyoom killed it (and could as well have chosen the
+    # API). Its Bronze stays current there; Silver comes from a machine that
+    # can hold it, until normalization streams.
+    if [[ " ${SKIP_NORMALIZE:-} " == *" $source "* ]]; then
+      echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize skipped here: $source (SKIP_NORMALIZE) ==="
+      continue
+    fi
     case "$source" in
       tradingeconomics-indonesia)
         echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: $source ==="

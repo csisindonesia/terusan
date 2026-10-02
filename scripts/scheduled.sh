@@ -40,6 +40,13 @@ cd "$(dirname "$0")/.."
 
 WINDOW="${WINDOW:-60}"
 
+# A firing is owed until a run after it succeeds, for up to this many hours.
+# Without it each firing had one chance: PIHPS, due at 07:00, met a laptop
+# waking into a dead network three mornings running and lost all three days.
+# Twelve hours covers a night asleep or a box restarting, and is short enough
+# that a source that is plainly broken stops being retried by evening.
+CATCH_UP_HOURS="${CATCH_UP_HOURS:-12}"
+
 list_only=0
 if [ "${1:-}" = "--list" ]; then
   list_only=1
@@ -52,7 +59,7 @@ fi
 due=()
 while read -r slug; do
   due+=("$slug")
-done < <(uv --project pipelines run terusan sources due --window "$WINDOW" "$@")
+done < <(uv --project pipelines run terusan sources due --window "$WINDOW" --catch-up "$CATCH_UP_HOURS" "$@")
 
 if [ ${#due[@]} -eq 0 ]; then
   echo "$(date '+%Y-%m-%d %H:%M:%S') nothing due"
