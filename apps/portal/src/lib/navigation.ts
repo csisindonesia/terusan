@@ -20,6 +20,7 @@ import {
   IconCompass,
   IconDatabase,
   IconDatabaseCog,
+  IconDatabasePlus,
   IconDeviceDesktopAnalytics,
   IconDownload,
   IconFileText,
@@ -32,6 +33,7 @@ import {
   IconLock,
   IconMapPin,
   IconNews,
+  IconPresentationAnalytics,
   IconRoute,
   IconSchema,
   IconSearch,
@@ -43,7 +45,6 @@ import {
   IconStack2,
   IconTags,
   IconTimeline,
-  IconTopologyStar3,
   IconUsers,
   IconVersions,
   type Icon,
@@ -101,6 +102,9 @@ export const NAVIGATION: NavSection[] = [
           },
           { label: "Regulations", icon: IconGavel, to: "/regulations" },
           { label: "Topics", icon: IconTags, to: "/topics" },
+          // What has been built on the data, beside what the data is. A reader
+          // who has found a dataset next asks who else has used it.
+          { label: "Portal", icon: IconPresentationAnalytics, to: "/portal" },
         ],
       },
       {
@@ -111,7 +115,6 @@ export const NAVIGATION: NavSection[] = [
           { label: "Geography", icon: IconMapPin, to: "/geography" },
           { label: "Commodities", icon: IconBox, to: "/commodities" },
           { label: "Organizations", icon: IconBuilding, to: "/organizations" },
-          { label: "Entities", icon: IconTopologyStar3 },
         ],
       },
       {
@@ -122,6 +125,9 @@ export const NAVIGATION: NavSection[] = [
           { label: "Assistant", icon: IconSparkles, to: "/assistant" },
           { label: "Collections", icon: IconFolders, to: "/collections" },
           { label: "Saved Queries", icon: IconClipboardList, to: "/saved-queries" },
+          // Under Research rather than Administration: the people coming back
+          // to it are mostly the ones who asked, looking for the answer.
+          { label: "Data Requests", icon: IconDatabasePlus, to: "/suggestions" },
         ],
       },
       {
@@ -142,20 +148,24 @@ export const NAVIGATION: NavSection[] = [
         label: "Data Management",
         icon: IconDatabaseCog,
         items: [
-          { label: "Datasets", icon: IconDatabase },
-          { label: "Ingestion", icon: IconRoute },
-          { label: "Pipelines", icon: IconSitemap },
+          { label: "Datasets", icon: IconDatabase, to: "/admin/datasets" },
+          { label: "Ingestion", icon: IconRoute, to: "/admin/ingestion" },
+          { label: "Pipelines", icon: IconSitemap, to: "/admin/pipelines" },
         ],
       },
       {
         label: "Data Governance",
         icon: IconShieldCheck,
         items: [
-          { label: "Data Quality", icon: IconListCheck },
-          { label: "Schemas", icon: IconSchema },
-          { label: "Classifications", icon: IconBinaryTree },
-          { label: "Lineage", icon: IconTimeline },
-          { label: "Versions", icon: IconVersions },
+          { label: "Data Quality", icon: IconListCheck, to: "/governance/quality" },
+          { label: "Schemas", icon: IconSchema, to: "/governance/schemas" },
+          {
+            label: "Classifications",
+            icon: IconBinaryTree,
+            to: "/governance/classifications",
+          },
+          { label: "Lineage", icon: IconTimeline, to: "/governance/lineage" },
+          { label: "Versions", icon: IconVersions, to: "/governance/versions" },
         ],
       },
       {

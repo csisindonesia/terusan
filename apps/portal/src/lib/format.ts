@@ -134,6 +134,17 @@ export function formatRelative(value?: string | null): string | undefined {
   return `${years} year${years === 1 ? "" : "s"} ago`;
 }
 
+/**
+ * A part of a whole as a percentage. A share too small to show at one decimal
+ * says so rather than rounding to a zero that reads as "none".
+ */
+export function formatShare(part: number, whole: number): string {
+  if (!whole) return "—";
+  const share = (part / whole) * 100;
+  if (part > 0 && share < 0.1) return "<0.1%";
+  return `${share.toFixed(share >= 10 || share === 0 ? 0 : 1)}%`;
+}
+
 /** A signed percentage, for a change that can go either way. */
 export function formatPercent(value: number | null, digits = 1): string {
   if (value === null || !Number.isFinite(value)) return "—";

@@ -11,6 +11,18 @@ const BASE_URL =
 /** Where the API lives, for pages that show a reader how to call it. */
 export const apiBaseUrl = BASE_URL;
 
+/**
+ * Where "Log in with Microsoft" goes. A link, not a fetch: the sign-in is a
+ * walk through Microsoft's own pages, and the API answers it with redirects
+ * that end back on the page named here.
+ */
+export function microsoftLoginUrl(redirect: string, remember: boolean): string {
+  const url = new URL("/v1/auth/microsoft/start", BASE_URL);
+  url.searchParams.set("redirect", redirect);
+  if (remember) url.searchParams.set("remember", "1");
+  return url.toString();
+}
+
 /** The picture taken of an article when it was collected. */
 export function newsScreenshotUrl(documentId: string): string {
   return new URL(
@@ -761,6 +773,132 @@ export type PipelineRun = {
   host?: string;
 };
 
+/**
+ * The run journal folded to one row per pipeline: how it last went and how it
+ * has been going. What the administration pages read to find the broken one
+ * among several hundred, which the run list can only answer a page at a time.
+ */
+export type Pipeline = {
+  pipeline: string;
+  /** ingest | extract | normalize. */
+  kind: string;
+  source_id?: string;
+  dataset?: string;
+  indicator_id?: string;
+  runs: number;
+  failures: number;
+  /**
+   * Failures since the last run that succeeded for real. Zero for a healthy
+   * pipeline; for a broken one, how long it has been broken.
+   */
+  failing_streak: number;
+  last_run_id: string;
+  last_status: string;
+  last_trigger: string;
+  last_dry_run: boolean;
+  last_started_at: string;
+  last_duration_seconds: number;
+  last_records_out: number;
+  /** Absent where it has never landed anything other than in a dry run. */
+  last_succeeded_at?: string;
+  /** What the newest failure said, whether or not it has recovered since. */
+  last_error?: string;
+};
+
+/** One physical table and its columns, as the files declare them. */
+export type TableSchema = {
+  slug: string;
+  layer: string;
+  dataset: string;
+  name: string;
+  columns: { name: string; type: string }[];
+};
+
+/**
+ * One series' figures, counted by what normalization made of them. Each count
+ * is a decision normalization refused to guess at.
+ */
+export type SeriesQuality = {
+  indicator_id: string;
+  name?: string;
+  dataset_id?: string;
+  source_id?: string;
+  figures: number;
+  /** Figures by status: `ok`, and every marker printed instead of a number. */
+  statuses: Record<string, number>;
+  /** Figures whose place was printed but did not resolve to the registry. */
+  unplaced: number;
+  superseded_by?: string;
+  superseded_by_name?: string;
+  /** Share of overlapping periods on which the two series agree, 0–1. */
+  match_share?: number;
+};
+
+/** One controlled vocabulary and how much of the lake each term classifies. */
+export type Classification = {
+  scheme: string;
+  label: string;
+  table: string;
+  column: string;
+  /** What `count` counts: series, figures, places, sources. */
+  unit: string;
+  values: { value: string; count: number }[];
+  /** How many carry no term at all. */
+  unclassified: number;
+};
+
+/** The path one dataset's figures took, from source to Silver. */
+export type Lineage = {
+  dataset_id: string;
+  slug?: string;
+  source_id?: string;
+  documents: {
+    document_id: string;
+    source_url?: string;
+    raw_path?: string;
+    content_hash?: string;
+    retrieved_at?: string;
+    figures: number;
+    series: string[];
+  }[];
+  documents_total: number;
+  extractions: { parser_version: string; documents: number; records: number }[];
+  series: { indicator_id: string; name?: string; figures: number }[];
+  pipelines: Pipeline[];
+};
+
+/** Which code versions produced what is in the lake. */
+export type Versions = {
+  /** The newest parser version found in Bronze. */
+  latest_parser?: string;
+  tables: {
+    layer: string;
+    dataset: string;
+    column: string;
+    version?: string;
+    rows: number;
+  }[];
+  sources: {
+    source_id: string;
+    documents: number;
+    current: number;
+    behind: number;
+    versions: string[];
+    rows: number;
+    /** Rows a newer extraction of the same document has replaced. */
+    superseded_rows: number;
+  }[];
+  /** Addresses that have served more than one content. */
+  republished: {
+    source_id?: string;
+    source_url: string;
+    versions: number;
+    first_retrieved: string;
+    last_retrieved: string;
+  }[];
+  republished_total: number;
+};
+
 export type RunQuery = {
   source?: string[];
   pipeline?: string[];
@@ -805,8 +943,15 @@ export type Capabilities = {
   auth_required: boolean;
   /** Whether the login page can offer "request access". */
   registration?: boolean;
+  /**
+   * Whether the login page can offer "Log in with Microsoft", the office's
+   * Microsoft 365 single sign-on. Absent from an API older than it.
+   */
+  microsoft_login?: boolean;
   /** Whether readers can ask for a source to be collected. */
   suggestions: boolean;
+  /** Whether the deployment keeps a list of work built on its data. */
+  showcase?: boolean;
   /** Whether `POST /v1/assistant/chat` has a model behind it. */
   assistant?: boolean;
   /**
@@ -814,6 +959,117 @@ export type Capabilities = {
    * URL opens it anywhere. Without it they live in the browser.
    */
   assistant_history?: boolean;
+};
+
+/**
+ * A dashboard, article or report built on the warehouse's data.
+ *
+ * Kept by administrators, because each entry is the warehouse vouching that the
+ * work stands on its figures. A dataset without a `title` is one the lake no
+ * longer holds; the link is kept and shown as such.
+ */
+export type ShowcaseEntry = {
+  id: string;
+  title: string;
+  /** dashboard, article, report or other. */
+  kind: string;
+  url: string;
+  publisher?: string;
+  /** YYYY-MM-DD, absent for a dashboard that has no one date. */
+  published_on?: string;
+  description?: string;
+  datasets: { dataset_id: string; title?: string }[];
+  created_by_email: string;
+  created_at: string;
+  updated_at: string;
+};
+
+/** What a chart block in an article draws: the observations series filters. */
+export type ArticleQuery = {
+  indicator: string[];
+  geo?: string[];
+  geo_type?: string[];
+  commodity?: string[];
+  period_start?: string;
+  period_end?: string;
+  dimension?: string;
+  members?: number;
+};
+
+/**
+ * One part of an article written in the portal: prose that may carry figure
+ * tokens, a chart of warehouse series, or a chart a code-built article exports.
+ */
+/** On a dashboard, how many grid columns (1–4) and rows (1–3) a tile spans. */
+export type TileSize = { width?: number; height?: number };
+
+export type ArticleBlock = (
+  | { type: "text"; markdown: string }
+  | { type: "heading"; markdown: string; level: 2 | 3 }
+  | { type: "quote"; markdown: string; note?: string }
+  | { type: "callout"; markdown: string }
+  | { type: "footnote"; markdown: string }
+  | { type: "divider" }
+  | { type: "chart"; title?: string; note?: string; query: ArticleQuery }
+  | { type: "embed"; title?: string; note?: string; article: string; chart: string }
+  | { type: "table"; title?: string; note?: string; header?: boolean; rows: string[][] }
+  | { type: "regulation"; key: string }
+  | { type: "dataset"; dataset: string }
+  | { type: "stat"; markdown: string; title?: string; note?: string }
+) &
+  TileSize;
+
+export type ArticleBlockType = ArticleBlock["type"];
+
+export type ArticleStatus = "draft" | "published";
+
+export type Article = {
+  id: string;
+  slug: string;
+  title: string;
+  dek?: string;
+  publisher?: string;
+  /** YYYY-MM-DD. */
+  published_on?: string;
+  status: ArticleStatus;
+  /** An article reads top to bottom; a dashboard lays its blocks out as tiles. */
+  layout: "article" | "dashboard";
+  blocks: ArticleBlock[];
+  showcase_id?: string;
+  created_by_email: string;
+  created_at: string;
+  updated_at: string;
+};
+
+/** A figure token's answer: what to print, or why there is nothing to print. */
+export type ArticleFigure = {
+  display?: string;
+  value?: string;
+  period?: string;
+  error?: string;
+};
+
+export type ArticleWithFigures = Article & {
+  /** Every token in the prose, keyed by the token as written. */
+  figures: Record<string, ArticleFigure>;
+  /** The datasets its charts draw. */
+  datasets: string[];
+};
+
+export type ArticleInput = Omit<
+  Article,
+  "id" | "showcase_id" | "created_by_email" | "created_at" | "updated_at"
+>;
+
+/** What an administrator sends to add or change an entry. */
+export type ShowcaseInput = {
+  title: string;
+  kind: string;
+  url: string;
+  publisher?: string;
+  published_on?: string;
+  description?: string;
+  datasets: string[];
 };
 
 /**
@@ -830,14 +1086,32 @@ export type Suggestion = {
   /** daily, weekly, monthly, quarterly, annual, irregular, one-off, unknown. */
   cadence: string;
   description?: string;
-  /** open, planned, ingested or declined. */
+  /** open, planned (accepted), ingested or declined. */
   status: string;
+  /** Why it was declined: already-collected, out-of-scope, unreachable, other. */
+  reason?: string;
+  /**
+   * The dataset that answers it — the one it was already in, when declined as
+   * already collected, or the one it became, once ingested.
+   */
+  dataset_id?: string;
   /** What a maintainer said when they moved it. */
   note?: string;
   requested_by: string;
   requested_by_email: string;
+  /** The administrator who last moved it, absent while nobody has. */
+  reviewed_by_email?: string;
+  reviewed_at?: string;
   created_at: string;
   updated_at: string;
+};
+
+/** An administrator's decision on a request. */
+export type SuggestionDecision = {
+  status: string;
+  reason?: string;
+  dataset_id?: string;
+  note?: string;
 };
 
 /**
@@ -1314,6 +1588,15 @@ export const api = {
     request<PipelineRun[]>(`/v1/indicators/${encodeURIComponent(id)}/runs`, params),
   /** The whole run history, newest first. */
   runs: (params?: RunQuery) => request<PipelineRun[]>("/v1/runs", params),
+  /** The same journal, a row per pipeline, most recently run first. */
+  pipelines: (params?: { kind?: string[]; source?: string[] }) =>
+    request<Pipeline[]>("/v1/pipelines", params),
+  schemas: () => request<TableSchema[]>("/v1/schemas"),
+  quality: () => request<SeriesQuality[]>("/v1/quality"),
+  classifications: () => request<Classification[]>("/v1/classifications"),
+  lineage: (datasetId: string) =>
+    request<Lineage>(`/v1/lineage/${encodeURIComponent(datasetId)}`),
+  versions: () => request<Versions>("/v1/versions"),
   /** What one series was read out of — the question a reader of a figure has. */
   indicatorDocuments: (id: string) =>
     request<Document[]>(`/v1/indicators/${encodeURIComponent(id)}/documents`),
@@ -1383,14 +1666,36 @@ export const api = {
     cadence: string;
     description?: string;
   }) => send<Suggestion>("POST", "/v1/suggestions", body),
-  /** Move a request through the queue — open, planned, ingested, declined. */
-  updateSuggestion: (id: string, status: string, note?: string) =>
-    send<Suggestion>("PATCH", `/v1/suggestions/${encodeURIComponent(id)}`, {
-      status,
-      note,
-    }),
+  /** Move a request through the queue — an administrator's call. */
+  updateSuggestion: (id: string, decision: SuggestionDecision) =>
+    send<Suggestion>("PATCH", `/v1/suggestions/${encodeURIComponent(id)}`, decision),
   deleteSuggestion: (id: string) =>
     send<{ deleted: boolean }>("DELETE", `/v1/suggestions/${encodeURIComponent(id)}`),
+
+  /** The work built on the data, narrowed to one kind or one dataset. */
+  showcase: (params: { kind?: string; dataset?: string } = {}) =>
+    request<ShowcaseEntry[]>("/v1/showcase", params),
+  createShowcase: (body: ShowcaseInput) =>
+    send<ShowcaseEntry>("POST", "/v1/showcase", body),
+  updateShowcase: (id: string, body: ShowcaseInput) =>
+    send<ShowcaseEntry>("PATCH", `/v1/showcase/${encodeURIComponent(id)}`, body),
+  deleteShowcase: (id: string) =>
+    send<{ deleted: boolean }>("DELETE", `/v1/showcase/${encodeURIComponent(id)}`),
+
+  /** The Portal's articles written in the portal; drafts too, for an admin. */
+  articles: () => request<Article[]>("/v1/articles"),
+  article: (slug: string) =>
+    request<ArticleWithFigures>(`/v1/articles/${encodeURIComponent(slug)}`),
+  createArticle: (body: ArticleInput) =>
+    send<ArticleWithFigures>("POST", "/v1/articles", body),
+  updateArticle: (slug: string, body: ArticleInput) =>
+    send<ArticleWithFigures>("PATCH", `/v1/articles/${encodeURIComponent(slug)}`, body),
+  deleteArticle: (slug: string) =>
+    send<{ deleted: boolean }>("DELETE", `/v1/articles/${encodeURIComponent(slug)}`),
+  /** Evaluate the figure tokens in text being written, for the preview. */
+  articleFigures: (texts: string[]) =>
+    send<Record<string, ArticleFigure>>("POST", "/v1/articles/figures", { texts }),
+  articleMeasures: () => request<Record<string, string>>("/v1/articles/measures"),
 
   logins: () => request<LoginRecord[]>("/v1/auth/sessions"),
   endLogin: (id: string) =>

@@ -9,8 +9,8 @@ import preview from "~/assets/portal-preview.png";
  *
  * Two halves, and the right one is not decoration: somebody arriving at a bare
  * form on an internal tool often cannot tell which internal tool it is. The
- * name, the one-line claim and a picture of the thing itself answer that
- * before anyone types an address.
+ * name beside the form, the one-line claim and a picture of the thing itself
+ * answer that before anyone types an address.
  */
 export function AuthShell({
   children,
@@ -45,14 +45,9 @@ export function AuthShell({
           aria-hidden
           className="absolute inset-0 bg-[radial-gradient(120%_120%_at_10%_0%,color-mix(in_oklab,var(--primary),white_18%)_0%,var(--primary)_45%,color-mix(in_oklab,var(--primary),black_25%)_100%)]"
         />
+        {/* No name or logo of its own: the form's half already carries them,
+            and saying it twice side by side reads as filler. */}
         <div className="relative flex h-full flex-col gap-10 p-10 xl:p-14">
-          <div className="flex items-center gap-2.5">
-            <img src={logo} alt="" className="size-9 rounded-full bg-white/90 p-1" />
-            <span className="font-heading text-2xl font-semibold tracking-tight text-primary-foreground">
-              Terusan
-            </span>
-          </div>
-
           <div className="max-w-md">
             <h2 className="font-heading text-4xl leading-tight font-semibold text-primary-foreground xl:text-5xl">
               Every figure, back to its source

@@ -153,7 +153,10 @@ function RootComponent() {
         >
           <TopNav />
 
-          <div className="flex w-full flex-1">
+          {/* The navbar is fixed, so it takes no room in the flow: without
+              this padding the breadcrumb row starts at the top of the window
+              and sits hidden underneath it. */}
+          <div className="flex w-full flex-1 pt-(--app-header)">
             <AppSidebar />
             <SidebarInset>
               {/* The row spans the window; what is in it lines up with the

@@ -1,0 +1,1203 @@
+{
+  "slug": "rice-after-the-dry-season",
+  "built_at": "2026-09-30T06:22:49Z",
+  "datasets": ["uv7fqbgj", "nbrxezkf"],
+  "latest_day": "2026-09-25",
+  "missing_share": 4.3,
+  "national": [
+    {
+      "period": "2018-01",
+      "mean": 12091,
+      "low": 9927,
+      "high": 14250,
+      "provinces": 34
+    },
+    {
+      "period": "2018-02",
+      "mean": 12218,
+      "low": 10000,
+      "high": 14592,
+      "provinces": 34
+    },
+    {
+      "period": "2018-03",
+      "mean": 12048,
+      "low": 9312,
+      "high": 14250,
+      "provinces": 34
+    },
+    {
+      "period": "2018-04",
+      "mean": 11901,
+      "low": 8719,
+      "high": 14286,
+      "provinces": 34
+    },
+    {
+      "period": "2018-05",
+      "mean": 11827,
+      "low": 8680,
+      "high": 14250,
+      "provinces": 34
+    },
+    {
+      "period": "2018-06",
+      "mean": 11830,
+      "low": 8747,
+      "high": 14250,
+      "provinces": 34
+    },
+    {
+      "period": "2018-07",
+      "mean": 11818,
+      "low": 8659,
+      "high": 14250,
+      "provinces": 34
+    },
+    {
+      "period": "2018-08",
+      "mean": 11767,
+      "low": 8714,
+      "high": 14111,
+      "provinces": 34
+    },
+    {
+      "period": "2018-09",
+      "mean": 11745,
+      "low": 9366,
+      "high": 13950,
+      "provinces": 34
+    },
+    {
+      "period": "2018-10",
+      "mean": 11764,
+      "low": 9659,
+      "high": 13885,
+      "provinces": 34
+    },
+    {
+      "period": "2018-11",
+      "mean": 11801,
+      "low": 9548,
+      "high": 14636,
+      "provinces": 34
+    },
+    {
+      "period": "2018-12",
+      "mean": 11863,
+      "low": 9750,
+      "high": 14592,
+      "provinces": 34
+    },
+    {
+      "period": "2019-01",
+      "mean": 11952,
+      "low": 9750,
+      "high": 14676,
+      "provinces": 34
+    },
+    {
+      "period": "2019-02",
+      "mean": 12024,
+      "low": 9750,
+      "high": 14582,
+      "provinces": 34
+    },
+    {
+      "period": "2019-03",
+      "mean": 11903,
+      "low": 9268,
+      "high": 14500,
+      "provinces": 34
+    },
+    {
+      "period": "2019-04",
+      "mean": 11770,
+      "low": 8779,
+      "high": 14500,
+      "provinces": 34
+    },
+    {
+      "period": "2019-05",
+      "mean": 11755,
+      "low": 8655,
+      "high": 14500,
+      "provinces": 34
+    },
+    {
+      "period": "2019-06",
+      "mean": 11771,
+      "low": 8679,
+      "high": 14500,
+      "provinces": 34
+    },
+    {
+      "period": "2019-07",
+      "mean": 11784,
+      "low": 8763,
+      "high": 14500,
+      "provinces": 34
+    },
+    {
+      "period": "2019-08",
+      "mean": 11793,
+      "low": 8977,
+      "high": 14500,
+      "provinces": 34
+    },
+    {
+      "period": "2019-09",
+      "mean": 11788,
+      "low": 9031,
+      "high": 14500,
+      "provinces": 34
+    },
+    {
+      "period": "2019-10",
+      "mean": 11799,
+      "low": 9220,
+      "high": 14500,
+      "provinces": 34
+    },
+    {
+      "period": "2019-11",
+      "mean": 11779,
+      "low": 9250,
+      "high": 14500,
+      "provinces": 34
+    },
+    {
+      "period": "2019-12",
+      "mean": 11816,
+      "low": 9250,
+      "high": 14375,
+      "provinces": 34
+    },
+    {
+      "period": "2020-01",
+      "mean": 11869,
+      "low": 9489,
+      "high": 14250,
+      "provinces": 34
+    },
+    {
+      "period": "2020-02",
+      "mean": 11892,
+      "low": 9450,
+      "high": 14250,
+      "provinces": 34
+    },
+    {
+      "period": "2020-03",
+      "mean": 11916,
+      "low": 9491,
+      "high": 14245,
+      "provinces": 34
+    },
+    {
+      "period": "2020-04",
+      "mean": 11998,
+      "low": 9095,
+      "high": 14239,
+      "provinces": 34
+    },
+    {
+      "period": "2020-05",
+      "mean": 11963,
+      "low": 8397,
+      "high": 14237,
+      "provinces": 34
+    },
+    {
+      "period": "2020-06",
+      "mean": 11884,
+      "low": 8257,
+      "high": 14040,
+      "provinces": 34
+    },
+    {
+      "period": "2020-07",
+      "mean": 11863,
+      "low": 8675,
+      "high": 13950,
+      "provinces": 34
+    },
+    {
+      "period": "2020-08",
+      "mean": 11872,
+      "low": 9139,
+      "high": 13950,
+      "provinces": 34
+    },
+    {
+      "period": "2020-09",
+      "mean": 11860,
+      "low": 9150,
+      "high": 13905,
+      "provinces": 34
+    },
+    {
+      "period": "2020-10",
+      "mean": 11842,
+      "low": 9245,
+      "high": 13900,
+      "provinces": 34
+    },
+    {
+      "period": "2020-11",
+      "mean": 11842,
+      "low": 9329,
+      "high": 13938,
+      "provinces": 34
+    },
+    {
+      "period": "2020-12",
+      "mean": 11825,
+      "low": 9200,
+      "high": 14039,
+      "provinces": 34
+    },
+    {
+      "period": "2021-01",
+      "mean": 11818,
+      "low": 9275,
+      "high": 14078,
+      "provinces": 34
+    },
+    {
+      "period": "2021-02",
+      "mean": 11810,
+      "low": 9350,
+      "high": 14192,
+      "provinces": 34
+    },
+    {
+      "period": "2021-03",
+      "mean": 11805,
+      "low": 9209,
+      "high": 14187,
+      "provinces": 34
+    },
+    {
+      "period": "2021-04",
+      "mean": 11787,
+      "low": 8631,
+      "high": 14150,
+      "provinces": 34
+    },
+    {
+      "period": "2021-05",
+      "mean": 11774,
+      "low": 8600,
+      "high": 14112,
+      "provinces": 34
+    },
+    {
+      "period": "2021-06",
+      "mean": 11755,
+      "low": 8755,
+      "high": 14189,
+      "provinces": 34
+    },
+    {
+      "period": "2021-07",
+      "mean": 11726,
+      "low": 8850,
+      "high": 13962,
+      "provinces": 34
+    },
+    {
+      "period": "2021-08",
+      "mean": 11686,
+      "low": 8850,
+      "high": 13902,
+      "provinces": 34
+    },
+    {
+      "period": "2021-09",
+      "mean": 11691,
+      "low": 8600,
+      "high": 13850,
+      "provinces": 34
+    },
+    {
+      "period": "2021-10",
+      "mean": 11690,
+      "low": 8350,
+      "high": 13850,
+      "provinces": 34
+    },
+    {
+      "period": "2021-11",
+      "mean": 11680,
+      "low": 8350,
+      "high": 13864,
+      "provinces": 34
+    },
+    {
+      "period": "2021-12",
+      "mean": 11707,
+      "low": 8557,
+      "high": 13920,
+      "provinces": 34
+    },
+    {
+      "period": "2022-01",
+      "mean": 11778,
+      "low": 8790,
+      "high": 13967,
+      "provinces": 34
+    },
+    {
+      "period": "2022-02",
+      "mean": 11815,
+      "low": 8850,
+      "high": 13994,
+      "provinces": 34
+    },
+    {
+      "period": "2022-03",
+      "mean": 11812,
+      "low": 8743,
+      "high": 14000,
+      "provinces": 34
+    },
+    {
+      "period": "2022-04",
+      "mean": 11807,
+      "low": 8450,
+      "high": 14255,
+      "provinces": 34
+    },
+    {
+      "period": "2022-05",
+      "mean": 11778,
+      "low": 8447,
+      "high": 14400,
+      "provinces": 34
+    },
+    {
+      "period": "2022-06",
+      "mean": 11762,
+      "low": 8221,
+      "high": 14462,
+      "provinces": 34
+    },
+    {
+      "period": "2022-07",
+      "mean": 11776,
+      "low": 8200,
+      "high": 14500,
+      "provinces": 34
+    },
+    {
+      "period": "2022-08",
+      "mean": 11871,
+      "low": 8770,
+      "high": 14541,
+      "provinces": 34
+    },
+    {
+      "period": "2022-09",
+      "mean": 12039,
+      "low": 9302,
+      "high": 14532,
+      "provinces": 34
+    },
+    {
+      "period": "2022-10",
+      "mean": 12172,
+      "low": 9438,
+      "high": 14921,
+      "provinces": 34
+    },
+    {
+      "period": "2022-11",
+      "mean": 12265,
+      "low": 9600,
+      "high": 14927,
+      "provinces": 34
+    },
+    {
+      "period": "2022-12",
+      "mean": 12515,
+      "low": 9627,
+      "high": 14957,
+      "provinces": 34
+    },
+    {
+      "period": "2023-01",
+      "mean": 12776,
+      "low": 10027,
+      "high": 15200,
+      "provinces": 34
+    },
+    {
+      "period": "2023-02",
+      "mean": 13109,
+      "low": 10252,
+      "high": 15950,
+      "provinces": 34
+    },
+    {
+      "period": "2023-03",
+      "mean": 13289,
+      "low": 9567,
+      "high": 16189,
+      "provinces": 34
+    },
+    {
+      "period": "2023-04",
+      "mean": 13469,
+      "low": 9984,
+      "high": 16920,
+      "provinces": 34
+    },
+    {
+      "period": "2023-05",
+      "mean": 13507,
+      "low": 9900,
+      "high": 17750,
+      "provinces": 34
+    },
+    {
+      "period": "2023-06",
+      "mean": 13574,
+      "low": 9932,
+      "high": 18627,
+      "provinces": 34
+    },
+    {
+      "period": "2023-07",
+      "mean": 13570,
+      "low": 9950,
+      "high": 18650,
+      "provinces": 34
+    },
+    {
+      "period": "2023-08",
+      "mean": 13687,
+      "low": 10343,
+      "high": 18650,
+      "provinces": 34
+    },
+    {
+      "period": "2023-09",
+      "mean": 14205,
+      "low": 11940,
+      "high": 18676,
+      "provinces": 34
+    },
+    {
+      "period": "2023-10",
+      "mean": 14623,
+      "low": 11957,
+      "high": 19200,
+      "provinces": 34
+    },
+    {
+      "period": "2023-11",
+      "mean": 14716,
+      "low": 11961,
+      "high": 19200,
+      "provinces": 34
+    },
+    {
+      "period": "2023-12",
+      "mean": 14753,
+      "low": 12000,
+      "high": 18995,
+      "provinces": 34
+    },
+    {
+      "period": "2024-01",
+      "mean": 14821,
+      "low": 12000,
+      "high": 18861,
+      "provinces": 34
+    },
+    {
+      "period": "2024-02",
+      "mean": 15422,
+      "low": 12000,
+      "high": 18921,
+      "provinces": 34
+    },
+    {
+      "period": "2024-03",
+      "mean": 16017,
+      "low": 12000,
+      "high": 19729,
+      "provinces": 34
+    },
+    {
+      "period": "2024-04",
+      "mean": 15793,
+      "low": 11282,
+      "high": 19500,
+      "provinces": 34
+    },
+    {
+      "period": "2024-05",
+      "mean": 15512,
+      "low": 11659,
+      "high": 19483,
+      "provinces": 34
+    },
+    {
+      "period": "2024-06",
+      "mean": 15410,
+      "low": 12025,
+      "high": 19020,
+      "provinces": 34
+    },
+    {
+      "period": "2024-07",
+      "mean": 15437,
+      "low": 12307,
+      "high": 18487,
+      "provinces": 34
+    },
+    {
+      "period": "2024-08",
+      "mean": 15416,
+      "low": 12200,
+      "high": 18500,
+      "provinces": 34
+    },
+    {
+      "period": "2024-09",
+      "mean": 15413,
+      "low": 12248,
+      "high": 18438,
+      "provinces": 34
+    },
+    {
+      "period": "2024-10",
+      "mean": 15365,
+      "low": 12700,
+      "high": 18220,
+      "provinces": 34
+    },
+    {
+      "period": "2024-11",
+      "mean": 15307,
+      "low": 12686,
+      "high": 18200,
+      "provinces": 34
+    },
+    {
+      "period": "2024-12",
+      "mean": 15292,
+      "low": 12600,
+      "high": 18200,
+      "provinces": 34
+    },
+    {
+      "period": "2025-01",
+      "mean": 15294,
+      "low": 12839,
+      "high": 18113,
+      "provinces": 34
+    },
+    {
+      "period": "2025-02",
+      "mean": 15307,
+      "low": 12900,
+      "high": 17935,
+      "provinces": 34
+    },
+    {
+      "period": "2025-03",
+      "mean": 15354,
+      "low": 12900,
+      "high": 18068,
+      "provinces": 34
+    },
+    {
+      "period": "2025-04",
+      "mean": 15384,
+      "low": 12900,
+      "high": 18200,
+      "provinces": 34
+    },
+    {
+      "period": "2025-05",
+      "mean": 15421,
+      "low": 12900,
+      "high": 18200,
+      "provinces": 34
+    },
+    {
+      "period": "2025-06",
+      "mean": 15598,
+      "low": 13019,
+      "high": 18200,
+      "provinces": 34
+    },
+    {
+      "period": "2025-07",
+      "mean": 15906,
+      "low": 13226,
+      "high": 18350,
+      "provinces": 34
+    },
+    {
+      "period": "2025-08",
+      "mean": 16050,
+      "low": 13555,
+      "high": 18893,
+      "provinces": 34
+    },
+    {
+      "period": "2025-09",
+      "mean": 16038,
+      "low": 13650,
+      "high": 19145,
+      "provinces": 34
+    },
+    {
+      "period": "2025-10",
+      "mean": 15966,
+      "low": 13465,
+      "high": 19180,
+      "provinces": 34
+    },
+    {
+      "period": "2025-11",
+      "mean": 15883,
+      "low": 13650,
+      "high": 19188,
+      "provinces": 34
+    },
+    {
+      "period": "2025-12",
+      "mean": 15895,
+      "low": 13650,
+      "high": 19163,
+      "provinces": 34
+    },
+    {
+      "period": "2026-01",
+      "mean": 15903,
+      "low": 13650,
+      "high": 19168,
+      "provinces": 34
+    },
+    {
+      "period": "2026-02",
+      "mean": 15933,
+      "low": 13650,
+      "high": 19170,
+      "provinces": 34
+    },
+    {
+      "period": "2026-03",
+      "mean": 15970,
+      "low": 13650,
+      "high": 19200,
+      "provinces": 34
+    },
+    {
+      "period": "2026-04",
+      "mean": 16069,
+      "low": 13650,
+      "high": 19123,
+      "provinces": 34
+    },
+    {
+      "period": "2026-05",
+      "mean": 16141,
+      "low": 13650,
+      "high": 19136,
+      "provinces": 34
+    },
+    {
+      "period": "2026-06",
+      "mean": 16261,
+      "low": 13650,
+      "high": 19268,
+      "provinces": 34
+    },
+    {
+      "period": "2026-07",
+      "mean": 16376,
+      "low": 13650,
+      "high": 19272,
+      "provinces": 34
+    },
+    {
+      "period": "2026-08",
+      "mean": 16482,
+      "low": 13650,
+      "high": 19881,
+      "provinces": 34
+    },
+    {
+      "period": "2026-09",
+      "mean": 16582,
+      "low": 13650,
+      "high": 19924,
+      "provinces": 34
+    }
+  ],
+  "windows": [
+    {
+      "year": 2018,
+      "change": 0.7
+    },
+    {
+      "year": 2019,
+      "change": 1.1
+    },
+    {
+      "year": 2020,
+      "change": -0.5
+    },
+    {
+      "year": 2021,
+      "change": 0.7
+    },
+    {
+      "year": 2022,
+      "change": 12.8
+    },
+    {
+      "year": 2023,
+      "change": 18.0
+    },
+    {
+      "year": 2024,
+      "change": -0.5
+    },
+    {
+      "year": 2025,
+      "change": 0.4
+    }
+  ],
+  "provinces": [
+    {
+      "geo_id": "ID-11",
+      "name": "Aceh",
+      "core": false,
+      "rain_normal": 1277,
+      "rain": 1401,
+      "rain_change": 9.7,
+      "rice_before": 11707,
+      "rice_after": 13643,
+      "rice_change": 16.5,
+      "chili_change": 7.2
+    },
+    {
+      "geo_id": "ID-12",
+      "name": "Sumatera Utara",
+      "core": false,
+      "rain_normal": 1229,
+      "rain": 1335,
+      "rain_change": 8.6,
+      "rice_before": 12633,
+      "rice_after": 13993,
+      "rice_change": 10.8,
+      "chili_change": 10.9
+    },
+    {
+      "geo_id": "ID-13",
+      "name": "Sumatera Barat",
+      "core": false,
+      "rain_normal": 1356,
+      "rain": 1193,
+      "rain_change": -12.0,
+      "rice_before": 14900,
+      "rice_after": 17493,
+      "rice_change": 17.4,
+      "chili_change": 20.0
+    },
+    {
+      "geo_id": "ID-14",
+      "name": "Riau",
+      "core": false,
+      "rain_normal": 949,
+      "rain": 953,
+      "rain_change": 0.4,
+      "rice_before": 14515,
+      "rice_after": 15850,
+      "rice_change": 9.2,
+      "chili_change": 14.6
+    },
+    {
+      "geo_id": "ID-15",
+      "name": "Jambi",
+      "core": false,
+      "rain_normal": 937,
+      "rain": 700,
+      "rain_change": -25.3,
+      "rice_before": 13850,
+      "rice_after": 15914,
+      "rice_change": 14.9,
+      "chili_change": 10.2
+    },
+    {
+      "geo_id": "ID-16",
+      "name": "Sumatera Selatan",
+      "core": false,
+      "rain_normal": 705,
+      "rain": 436,
+      "rain_change": -38.2,
+      "rice_before": 13185,
+      "rice_after": 15610,
+      "rice_change": 18.4,
+      "chili_change": 14.6
+    },
+    {
+      "geo_id": "ID-17",
+      "name": "Bengkulu",
+      "core": false,
+      "rain_normal": 1285,
+      "rain": 929,
+      "rain_change": -27.7,
+      "rice_before": 13400,
+      "rice_after": 15798,
+      "rice_change": 17.9,
+      "chili_change": 9.0
+    },
+    {
+      "geo_id": "ID-18",
+      "name": "Lampung",
+      "core": false,
+      "rain_normal": 628,
+      "rain": 398,
+      "rain_change": -36.6,
+      "rice_before": 12307,
+      "rice_after": 14498,
+      "rice_change": 17.8,
+      "chili_change": 29.0
+    },
+    {
+      "geo_id": "ID-19",
+      "name": "Kepulauan Bangka Belitung",
+      "core": false,
+      "rain_normal": 740,
+      "rain": 473,
+      "rain_change": -36.0,
+      "rice_before": 13471,
+      "rice_after": 16583,
+      "rice_change": 23.1,
+      "chili_change": 16.2
+    },
+    {
+      "geo_id": "ID-21",
+      "name": "Kepulauan Riau",
+      "core": false,
+      "rain_normal": 938,
+      "rain": 942,
+      "rain_change": 0.4,
+      "rice_before": 13583,
+      "rice_after": 14643,
+      "rice_change": 7.8,
+      "chili_change": 13.2
+    },
+    {
+      "geo_id": "ID-31",
+      "name": "DKI Jakarta",
+      "core": true,
+      "rain_normal": 404,
+      "rain": 204,
+      "rain_change": -49.6,
+      "rice_before": 14862,
+      "rice_after": 16150,
+      "rice_change": 8.7,
+      "chili_change": 21.4
+    },
+    {
+      "geo_id": "ID-32",
+      "name": "Jawa Barat",
+      "core": true,
+      "rain_normal": 606,
+      "rain": 288,
+      "rain_change": -52.5,
+      "rice_before": 12569,
+      "rice_after": 16000,
+      "rice_change": 27.3,
+      "chili_change": 24.3
+    },
+    {
+      "geo_id": "ID-33",
+      "name": "Jawa Tengah",
+      "core": true,
+      "rain_normal": 468,
+      "rain": 195,
+      "rain_change": -58.4,
+      "rice_before": 13055,
+      "rice_after": 15829,
+      "rice_change": 21.2,
+      "chili_change": 39.4
+    },
+    {
+      "geo_id": "ID-34",
+      "name": "DI Yogyakarta",
+      "core": true,
+      "rain_normal": 348,
+      "rain": 105,
+      "rain_change": -69.8,
+      "rice_before": 13614,
+      "rice_after": 15881,
+      "rice_change": 16.6,
+      "chili_change": 42.9
+    },
+    {
+      "geo_id": "ID-35",
+      "name": "Jawa Timur",
+      "core": true,
+      "rain_normal": 281,
+      "rain": 106,
+      "rain_change": -62.4,
+      "rice_before": 12060,
+      "rice_after": 15167,
+      "rice_change": 25.8,
+      "chili_change": 21.3
+    },
+    {
+      "geo_id": "ID-36",
+      "name": "Banten",
+      "core": true,
+      "rain_normal": 575,
+      "rain": 289,
+      "rain_change": -49.8,
+      "rice_before": 13693,
+      "rice_after": 16357,
+      "rice_change": 19.5,
+      "chili_change": 34.5
+    },
+    {
+      "geo_id": "ID-51",
+      "name": "Bali",
+      "core": true,
+      "rain_normal": 301,
+      "rain": 155,
+      "rain_change": -48.6,
+      "rice_before": 12429,
+      "rice_after": 15367,
+      "rice_change": 23.6,
+      "chili_change": 13.0
+    },
+    {
+      "geo_id": "ID-52",
+      "name": "Nusa Tenggara Barat",
+      "core": true,
+      "rain_normal": 176,
+      "rain": 87,
+      "rain_change": -50.7,
+      "rice_before": 9950,
+      "rice_after": 12000,
+      "rice_change": 20.6,
+      "chili_change": 13.0
+    },
+    {
+      "geo_id": "ID-53",
+      "name": "Nusa Tenggara Timur",
+      "core": true,
+      "rain_normal": 165,
+      "rain": 119,
+      "rain_change": -27.5,
+      "rice_before": 13390,
+      "rice_after": 15640,
+      "rice_change": 16.8,
+      "chili_change": -15.7
+    },
+    {
+      "geo_id": "ID-61",
+      "name": "Kalimantan Barat",
+      "core": false,
+      "rain_normal": 1153,
+      "rain": 1081,
+      "rain_change": -6.2,
+      "rice_before": 14400,
+      "rice_after": 16557,
+      "rice_change": 15.0,
+      "chili_change": -2.9
+    },
+    {
+      "geo_id": "ID-62",
+      "name": "Kalimantan Tengah",
+      "core": false,
+      "rain_normal": 941,
+      "rain": 745,
+      "rain_change": -20.8,
+      "rice_before": 16150,
+      "rice_after": 18529,
+      "rice_change": 14.7,
+      "chili_change": 8.3
+    },
+    {
+      "geo_id": "ID-63",
+      "name": "Kalimantan Selatan",
+      "core": false,
+      "rain_normal": 648,
+      "rain": 452,
+      "rain_change": -30.3,
+      "rice_before": 18650,
+      "rice_after": 19729,
+      "rice_change": 5.8,
+      "chili_change": 6.6
+    },
+    {
+      "geo_id": "ID-64",
+      "name": "Kalimantan Timur",
+      "core": false,
+      "rain_normal": 993,
+      "rain": 870,
+      "rain_change": -12.3,
+      "rice_before": 14452,
+      "rice_after": 16829,
+      "rice_change": 16.4,
+      "chili_change": -6.3
+    },
+    {
+      "geo_id": "ID-65",
+      "name": "Kalimantan Utara",
+      "core": false,
+      "rain_normal": 1256,
+      "rain": 1389,
+      "rain_change": 10.6,
+      "rice_before": 14750,
+      "rice_after": 16995,
+      "rice_change": 15.2,
+      "chili_change": -12.7
+    },
+    {
+      "geo_id": "ID-71",
+      "name": "Sulawesi Utara",
+      "core": false,
+      "rain_normal": 1123,
+      "rain": 787,
+      "rain_change": -29.9,
+      "rice_before": 12676,
+      "rice_after": 15938,
+      "rice_change": 25.7,
+      "chili_change": 14.8
+    },
+    {
+      "geo_id": "ID-72",
+      "name": "Sulawesi Tengah",
+      "core": false,
+      "rain_normal": 1160,
+      "rain": 846,
+      "rain_change": -27.1,
+      "rice_before": 12950,
+      "rice_after": 16298,
+      "rice_change": 25.9,
+      "chili_change": 8.2
+    },
+    {
+      "geo_id": "ID-73",
+      "name": "Sulawesi Selatan",
+      "core": false,
+      "rain_normal": 812,
+      "rain": 534,
+      "rain_change": -34.2,
+      "rice_before": 11814,
+      "rice_after": 14679,
+      "rice_change": 24.2,
+      "chili_change": 14.8
+    },
+    {
+      "geo_id": "ID-74",
+      "name": "Sulawesi Tenggara",
+      "core": false,
+      "rain_normal": 702,
+      "rain": 484,
+      "rain_change": -31.1,
+      "rice_before": 12807,
+      "rice_after": 16207,
+      "rice_change": 26.5,
+      "chili_change": -2.8
+    },
+    {
+      "geo_id": "ID-75",
+      "name": "Gorontalo",
+      "core": false,
+      "rain_normal": 1075,
+      "rain": 680,
+      "rain_change": -36.8,
+      "rice_before": 12886,
+      "rice_after": 17133,
+      "rice_change": 33.0,
+      "chili_change": 18.4
+    },
+    {
+      "geo_id": "ID-76",
+      "name": "Sulawesi Barat",
+      "core": false,
+      "rain_normal": 1467,
+      "rain": 1175,
+      "rain_change": -19.9,
+      "rice_before": 11417,
+      "rice_after": 15114,
+      "rice_change": 32.4,
+      "chili_change": 26.8
+    },
+    {
+      "geo_id": "ID-81",
+      "name": "Maluku",
+      "core": false,
+      "rain_normal": 849,
+      "rain": 538,
+      "rain_change": -36.7,
+      "rice_before": 14900,
+      "rice_after": 16668,
+      "rice_change": 11.9,
+      "chili_change": -12.7
+    },
+    {
+      "geo_id": "ID-82",
+      "name": "Maluku Utara",
+      "core": false,
+      "rain_normal": 1142,
+      "rain": 957,
+      "rain_change": -16.2,
+      "rice_before": 14400,
+      "rice_after": 17000,
+      "rice_change": 18.1,
+      "chili_change": -31.9
+    }
+  ],
+  "y2023": {
+    "provinces": 32,
+    "rain_median": -30.1,
+    "drier": 27,
+    "rice_median": 17.8,
+    "rho": -0.44,
+    "rho_outside_core": -0.46,
+    "outside_core": 23,
+    "rho_chili": -0.57,
+    "dry_count": 16,
+    "dry_rice_median": 20.9,
+    "rest_count": 16,
+    "rest_rice_median": 16.5
+  },
+  "y2019": {
+    "provinces": 32,
+    "rain_median": -25.2,
+    "drier": 31,
+    "rice_median": 0.8,
+    "rho": -0.36,
+    "rho_outside_core": 0.14,
+    "outside_core": 23,
+    "rho_chili": 0.44,
+    "dry_count": 15,
+    "dry_rice_median": 1.3,
+    "rest_count": 17,
+    "rest_rice_median": 0.0
+  },
+  "core_rank_2023": 9,
+  "core_rank_2019": 1,
+  "core_years": 45,
+  "core_first_year": 1981,
+  "driest_year": 2019,
+  "rice_jul_2023": 13570,
+  "rice_mar_2024": 16017,
+  "rice_change": 18.0,
+  "latest_period": "2026-09",
+  "latest_mean": 16582,
+  "latest_change": 22.0
+}

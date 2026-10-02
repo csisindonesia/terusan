@@ -22,8 +22,9 @@ import {
   InputGroupButton,
   InputGroupInput,
 } from "~/components/ui/input-group";
-import { ApiRequestError, api } from "~/lib/api";
+import { ApiRequestError, api, microsoftLoginUrl } from "~/lib/api";
 import { SESSION_KEY, capabilitiesQuery, useSessionState } from "~/lib/session";
+import { portalPath } from "~/lib/paths";
 import { asText, textParam } from "~/lib/search-params";
 /**
  * The way in.
@@ -39,6 +40,8 @@ import { asText, textParam } from "~/lib/search-params";
 const searchSchema = z.object({
   /** Where to go once in — the page that sent them here. */
   redirect: textParam,
+  /** Why a Microsoft sign-in came back without a session (see sso.go). */
+  sso_error: textParam,
 });
 
 export const Route = createFileRoute("/login")({
@@ -51,7 +54,10 @@ function Login() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { session, hasAuth, isLoading, isUnreachable } = useSessionState();
-  const registration = useQuery(capabilitiesQuery).data?.registration ?? false;
+  const capabilities = useQuery(capabilitiesQuery).data;
+  const registration = capabilities?.registration ?? false;
+  const microsoft = capabilities?.microsoft_login ?? false;
+  const ssoError = ssoErrorMessage(asText(search.sso_error));
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -211,6 +217,13 @@ function Login() {
             </Field>
           </FieldGroup>
 
+          {ssoError && !login.isError ? (
+            <Alert variant="destructive">
+              <IconAlertTriangle />
+              <AlertDescription>{ssoError}</AlertDescription>
+            </Alert>
+          ) : null}
+
           {login.isError ? (
             <Alert variant="destructive">
               <IconAlertTriangle />
@@ -252,20 +265,37 @@ function Login() {
             <span className="h-px flex-1 bg-border" />
           </div>
 
-          {/* Listed and disabled, like the unbuilt pages in the sidebar:
-                  showing the shape of the thing is honest, wiring a button to
-                  nothing is not. */}
-          <Button
-            type="button"
-            variant="outline"
-            size="lg"
-            className="h-11 w-full"
-            disabled
-            title="No identity provider is configured for this deployment"
-          >
-            <IconKey className="size-4" />
-            Log in with single sign-on
-          </Button>
+          {microsoft ? (
+            // A plain link: the browser has to leave for Microsoft's pages,
+            // and the "remember" box above applies to this way in too.
+            <Button
+              variant="outline"
+              size="lg"
+              className="h-11 w-full"
+              nativeButton={false}
+              render={<a href={microsoftLoginUrl(target, remember)} />}
+            >
+              <MicrosoftLogo />
+              Log in with Microsoft 365
+            </Button>
+          ) : (
+            // Listed and disabled, like the unbuilt pages in the sidebar:
+            // showing the shape of the thing is honest, wiring a button to
+            // nothing is not. Branded all the same, so a reader recognises
+            // the office login they were told to expect and can see it is
+            // switched off here rather than missing.
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              className="h-11 w-full"
+              disabled
+              title="Microsoft 365 sign-in is not configured for this deployment"
+            >
+              <MicrosoftLogo />
+              Log in with Microsoft 365
+            </Button>
+          )}
         </form>
       )}
     </AuthShell>
@@ -288,12 +318,63 @@ function loginError(error: unknown): string {
 }
 
 /**
+ * What to say when a Microsoft sign-in came back without a session.
+ *
+ * The API sends one of a fixed set of words rather than any text of its own or
+ * Microsoft's, so what a reader sees here is only ever what is written below —
+ * a link somebody crafted cannot put words on this page.
+ */
+function ssoErrorMessage(code: string | undefined): string | null {
+  switch (code) {
+    case undefined:
+    case "":
+      return null;
+    case "cancelled":
+      return "The Microsoft sign-in was cancelled.";
+    case "expired":
+      return "That sign-in took too long or was started in another browser. Try again.";
+    case "domain":
+      return "That Microsoft account is not on one of this office's domains.";
+    case "pending":
+      return "Your account has been requested and is waiting for an administrator to approve it.";
+    case "not_invited":
+      return "There is no account here for that address yet. Ask whoever administers this deployment.";
+    case "disabled":
+      return "This account is disabled. Ask whoever administers this deployment.";
+    case "access_ended":
+      return "This account's access period has ended. Ask whoever administers this deployment.";
+    case "conflict":
+      return "This address is already linked to a different Microsoft account. Ask an administrator to check it.";
+    case "queue_full":
+      return "Too many requests for access are waiting. Try again later.";
+    case "unavailable":
+      return "Microsoft sign-in is not configured on this deployment.";
+    case "refused":
+      return "Microsoft refused the sign-in. Your office may need to grant this application access.";
+    default:
+      return "The Microsoft sign-in did not complete. Try again, or use your password.";
+  }
+}
+
+/** The four squares, in Microsoft's own colours, which is what people look for. */
+function MicrosoftLogo() {
+  return (
+    <svg viewBox="0 0 21 21" className="size-4" aria-hidden="true">
+      <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+      <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+      <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+      <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+    </svg>
+  );
+}
+
+/**
  * A redirect target that cannot leave the portal.
  *
- * Anything that is not a plain path — a full URL, a protocol-relative `//host`
- * — is dropped and the reader lands on the overview instead.
+ * Anything that is not a plain path — a full URL, a protocol-relative `//host`,
+ * a `/\host` a browser reads the same way — is dropped and the reader lands on
+ * the overview instead.
  */
 function safeRedirect(value: string | undefined): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) return "/";
-  return value;
+  return portalPath(value);
 }

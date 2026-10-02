@@ -233,6 +233,62 @@
   .markdown.chat-reply li {
     @apply text-foreground;
   }
+  /* A Portal article: read start to finish rather than consulted, so its
+     prose is set in the text colour, and its figures sit in the same rhythm. */
+  .markdown.article p,
+  .markdown.article li {
+    @apply text-foreground;
+  }
+  .markdown.article figure,
+  .markdown.article details {
+    @apply my-6;
+  }
+  /* The surface a chart, table or card sits on inside an article: a step off
+     the page rather than a box around it, since these carry no border. Mixed
+     from the page's own colours, so it keeps its distance in either theme. */
+  .markdown.article {
+    --article-surface: color-mix(in oklab, var(--muted) 55%, var(--background));
+  }
+  .markdown.article .article-card {
+    @apply rounded-lg p-4;
+    background: var(--article-surface);
+  }
+  .markdown.article a.article-card {
+    @apply px-4 py-3 transition-colors;
+  }
+  .markdown.article a.article-card:hover {
+    background: color-mix(in oklab, var(--muted) 85%, var(--background));
+  }
+  /* A dashboard's tile carries the surface itself, so what sits in it (a
+     chart's own card, a regulation's) lies flat on it rather than stacking a
+     second surface; and a tile is a cell of a grid, not a run of prose, so
+     nothing in it keeps the prose rhythm's margins. */
+  .markdown.article.dashboard > * + * {
+    @apply mt-0;
+  }
+  .markdown.article .dashboard-tile {
+    @apply flex flex-col rounded-lg p-4;
+    background: var(--article-surface);
+  }
+  .markdown.article .dashboard-tile .article-card {
+    @apply p-0;
+    background: transparent;
+  }
+  .markdown.article.dashboard h2,
+  .markdown.article.dashboard h3 {
+    @apply mt-4 border-0 pb-0;
+  }
+  .markdown.article.dashboard hr {
+    @apply my-2;
+  }
+  /* A figure a token asked the lake for, and one it could not give. The gap
+     is marked and carries its reason, so it never reads as a number. */
+  .markdown.article .article-figure {
+    @apply font-medium text-foreground tabular-nums;
+  }
+  .markdown.article .article-figure-missing {
+    @apply cursor-help rounded-sm border border-dashed border-destructive/50 px-1 text-sm text-destructive;
+  }
   /* A record the model named that the catalogue does not hold: its words,
      without the link that would vouch for it. */
   .markdown.chat-reply .unverified-link {

@@ -16,6 +16,7 @@
 import { Marked, type Tokens } from "marked";
 
 import { ApiRequestError, apiBaseUrl, type ApiError } from "~/lib/api";
+import { isPortalPath } from "~/lib/paths";
 import type { NewItem } from "~/lib/workspace";
 
 export type ChatRole = "user" | "assistant";
@@ -529,7 +530,7 @@ const markdown = new Marked({
     ) {
       const label = this.parser.parseInline(token.tokens);
       const href = token.href.trim();
-      if (!href.startsWith("/") || href.startsWith("//")) return label;
+      if (!isPortalPath(href)) return label;
       const record = recordOf(href);
       if (record && allowedRecords && !allowedRecords.has(record)) {
         return `<span class="unverified-link" title="Not found in the catalogue">${label}</span>`;

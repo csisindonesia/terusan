@@ -46,7 +46,19 @@ export function describeSchedule(cron: string | undefined | null): string | null
     string,
   ];
 
-  // Only a fixed time of day is translated. A minute-wise or hourly schedule
+  // Hourly, at a fixed minute: the realtime feeds, which are polled rather
+  // than waited for.
+  if (
+    /^\d+$/.test(minute) &&
+    hour === "*" &&
+    dayOfMonth === "*" &&
+    month === "*" &&
+    dayOfWeek === "*"
+  ) {
+    return `every hour at :${minute.padStart(2, "0")}`;
+  }
+
+  // Otherwise only a fixed time of day is translated. A minute-wise schedule
   // would need different words and this registry has none.
   if (!/^\d+$/.test(minute) || !/^\d+$/.test(hour) || month !== "*") return cron;
   const at = `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`;
@@ -55,6 +67,14 @@ export function describeSchedule(cron: string | undefined | null): string | null
 
   if (dayOfMonth === "*" && /^\d$/.test(dayOfWeek)) {
     return `${at} every ${DAYS[Number(dayOfWeek)] ?? dayOfWeek}`;
+  }
+
+  // A run of weekdays: the exchanges, which trade Monday to Friday and so
+  // have nothing new to fetch at the weekend.
+  if (dayOfMonth === "*" && /^\d-\d$/.test(dayOfWeek)) {
+    if (dayOfWeek === "1-5") return `${at} on weekdays`;
+    const [first, last] = dayOfWeek.split("-").map(Number) as [number, number];
+    return `${at} ${DAYS[first] ?? first} to ${DAYS[last] ?? last}`;
   }
 
   if (dayOfWeek === "*" && /^\d+$/.test(dayOfMonth)) {

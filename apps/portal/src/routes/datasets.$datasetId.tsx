@@ -16,6 +16,7 @@ import { TablePagination } from "~/components/table-pagination";
 import { TimeSeriesChart } from "~/components/time-series-chart";
 import { PageHeader } from "~/components/page-header";
 import { RowActions, copyToClipboard } from "~/components/row-actions";
+import { ShowcaseCard } from "~/components/showcase-card";
 import { BELOW_STICKY_HEADER, StickyHeader } from "~/components/sticky-header";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -28,6 +29,7 @@ import { TagList } from "~/components/tag-list";
 import { datasetLabel, indicatorLabel, titleFromId } from "~/lib/labels";
 import { toggle } from "~/lib/multi";
 import { asText, asTextList, listParam, textParam } from "~/lib/search-params";
+import { capabilitiesQuery } from "~/lib/session";
 
 const searchSchema = z.object({
   // Which series the reader is looking for. In the URL, like every other
@@ -632,9 +634,49 @@ function DatasetDetail() {
               </div>
             )}
           </section>
+
+          <UsedIn datasetId={datasetId} />
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * The work built on this dataset, from the Portal list.
+ *
+ * Absent rather than empty where nothing is listed: most datasets have no
+ * entry yet, and a heading over nothing on every one of them would read as a
+ * gap in the data rather than in the list.
+ */
+function UsedIn({ datasetId }: { datasetId: string }) {
+  const capabilities = useQuery(capabilitiesQuery);
+  const entries = useQuery({
+    queryKey: ["showcase", { dataset: datasetId }],
+    queryFn: () => api.showcase({ dataset: datasetId }),
+    enabled: capabilities.data?.showcase === true,
+  });
+  const list = entries.data?.data ?? [];
+  if (!list.length) return null;
+
+  return (
+    <section className="space-y-3">
+      <div className="space-y-1">
+        <h2 className="font-heading text-lg font-semibold tracking-tight">Used in</h2>
+        <p className="max-w-2xl text-sm text-muted-foreground">
+          Dashboards, articles and reports that draw on this dataset.{" "}
+          <Link to="/portal" className="underline underline-offset-4">
+            See everything on the Portal
+          </Link>
+          .
+        </p>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        {list.map((entry) => (
+          <ShowcaseCard key={entry.id} entry={entry} hideDataset={datasetId} />
+        ))}
+      </div>
+    </section>
   );
 }
 

@@ -53,7 +53,7 @@ import { capabilitiesQuery, useSessionState } from "~/lib/session";
  * be able to see that somebody already did — which is what the list at the
  * bottom of this dialog is for.
  */
-export function SuggestData() {
+export function SuggestData({ trigger }: { trigger?: React.ReactElement } = {}) {
   const [open, setOpen] = useState(false);
   const { session, hasAuth } = useSessionState();
   const capabilities = useQuery(capabilitiesQuery);
@@ -63,30 +63,37 @@ export function SuggestData() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
+      {/* A page that offers the form names its own button; the bar's pair
+          below is for everywhere else. */}
+      {trigger ? <DialogTrigger render={trigger} /> : null}
       {/* A word rather than a glyph: there is no icon anybody reads as "ask
           us to collect a source", and a tooltip nobody hovers is a label
           nobody sees. */}
-      <DialogTrigger
-        render={
-          <Button variant="ghost" size="sm" className="hidden sm:inline-flex">
-            <IconDatabasePlus className="size-4" />
-            Suggest data
-          </Button>
-        }
-      />
+      {trigger ? null : (
+        <DialogTrigger
+          render={
+            <Button variant="ghost" size="sm" className="hidden sm:inline-flex">
+              <IconDatabasePlus className="size-4" />
+              Suggest data
+            </Button>
+          }
+        />
+      )}
       {/* On a phone the bar has no room for the word. */}
-      <DialogTrigger
-        render={
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Suggest data"
-            className="sm:hidden"
-          >
-            <IconDatabasePlus />
-          </Button>
-        }
-      />
+      {trigger ? null : (
+        <DialogTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Suggest data"
+              className="sm:hidden"
+            >
+              <IconDatabasePlus />
+            </Button>
+          }
+        />
+      )}
 
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
@@ -127,7 +134,7 @@ export function SuggestData() {
           <SuggestForm onDone={() => setOpen(false)} />
         )}
 
-        {available ? <RecentSuggestions /> : null}
+        {available ? <RecentSuggestions onLeave={() => setOpen(false)} /> : null}
       </DialogContent>
     </Dialog>
   );
@@ -272,12 +279,12 @@ function SuggestForm({ onDone }: { onDone: () => void }) {
 /**
  * What has already been asked for.
  *
- * Here rather than on a page of its own because its job is to be read *while*
+ * Here as well as on its own page because its job is to be read *while*
  * filling the form: the second request for the same source costs a maintainer
  * a duplicate to close, and costs the asker the answer they could have had
- * from the status.
+ * from the status. The page is where the answers are read in full.
  */
-function RecentSuggestions() {
+function RecentSuggestions({ onLeave }: { onLeave: () => void }) {
   const suggestions = useQuery({
     queryKey: ["suggestions"],
     queryFn: async () => (await api.suggestions(8)).data,
@@ -289,7 +296,16 @@ function RecentSuggestions() {
 
   return (
     <div className="space-y-2 border-t pt-4">
-      <p className="text-xs font-medium text-muted-foreground">Already asked for</p>
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-xs font-medium text-muted-foreground">Already asked for</p>
+        <Link
+          to="/suggestions"
+          onClick={onLeave}
+          className="text-xs underline-offset-4 hover:underline"
+        >
+          Every request and its answer
+        </Link>
+      </div>
       <ul className="divide-y rounded-lg border">
         {rows.map((row) => (
           <SuggestionRow key={row.id} suggestion={row} />

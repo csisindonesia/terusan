@@ -36,13 +36,41 @@ export function cadenceLabel(value: string): string {
   return CADENCE_LABELS[value] ?? value;
 }
 
+/**
+ * Where a request has got to, in the order a request moves through them.
+ *
+ * "planned" is said as "Accepted" because that is the decision a reader is
+ * waiting to hear: an administrator has agreed to collect it, and the work has
+ * not landed yet.
+ */
+export const STATUSES = ["open", "planned", "ingested", "declined"] as const;
+
 const STATUS_LABELS: Record<string, string> = {
-  open: "Open",
-  planned: "Planned",
+  open: "Waiting for review",
+  planned: "Accepted",
   ingested: "Ingested",
   declined: "Declined",
 };
 
 export function statusLabel(value: string): string {
   return STATUS_LABELS[value] ?? value;
+}
+
+/** Why a request was declined. The API refuses a declined request without one. */
+export const REASONS = [
+  "already-collected",
+  "out-of-scope",
+  "unreachable",
+  "other",
+] as const;
+
+const REASON_LABELS: Record<string, string> = {
+  "already-collected": "Already in the warehouse",
+  "out-of-scope": "Outside what this warehouse collects",
+  unreachable: "Cannot be collected automatically",
+  other: "Other",
+};
+
+export function reasonLabel(value: string): string {
+  return REASON_LABELS[value] ?? value;
 }

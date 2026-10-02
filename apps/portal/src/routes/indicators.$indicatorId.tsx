@@ -882,6 +882,115 @@ function IndicatorDetail() {
     />
   );
 
+  // Which place and which commodity — the narrowing a request is most often
+  // copied for. Built once and shown on both the Data tab and the API tab, so
+  // choosing a province beside the request rewrites the request and the table
+  // alike: they read the same URL parameters.
+  const hasMemberChips =
+    Boolean(axis && axisOptions.length > 1) || secondaryOptions.length > 1;
+  const memberChips = (
+    <>
+      {/* Beside Status rather than above the page: narrowing to
+      one commodity is the same kind of act as narrowing to
+      one status, and the page shows everything until asked. */}
+      {axis && axisOptions.length > 1 ? (
+        <FilterChip
+          label={dimensionLabel(axis)}
+          value={summariseChip(chosenSeries)}
+          onClear={() =>
+            navigate({
+              search: (prev) => ({
+                ...prev,
+                series: undefined,
+                page: 0,
+              }),
+            })
+          }
+        >
+          <ChoiceList
+            options={axisOptions.map((entry) => ({
+              value: entry.key,
+              label: entry.label,
+              // What a reader needs to choose between members is
+              // how much of each there is.
+              hint: `${formatCount(entry.count)}`,
+            }))}
+            selected={chosenSeries}
+            searchPlaceholder={`Search ${dimensionLabel(axis).toLowerCase()}`}
+            onToggle={(value) =>
+              navigate({
+                search: (prev) => ({
+                  ...prev,
+                  series: toggle(chosenSeries, value),
+                  page: 0,
+                }),
+              })
+            }
+            onClear={() =>
+              navigate({
+                search: (prev) => ({
+                  ...prev,
+                  series: undefined,
+                  page: 0,
+                }),
+              })
+            }
+          />
+        </FilterChip>
+      ) : null}
+
+      {/* The other axis, where there is one. Thirty-one foods
+      priced in every province: without this the only way to ask
+      for shallots is to pick them out of a list of every
+      province-and-commodity pairing there is. The same holds for
+      a table published for every province, whose rows get this
+      control instead. */}
+      {secondaryOptions.length > 1 ? (
+        <FilterChip
+          label={dimensionLabel(secondaryParam)}
+          value={summariseChip(chosenSecondary)}
+          onClear={() =>
+            navigate({
+              search: (prev) => ({
+                ...prev,
+                [secondaryParam]: undefined,
+                page: 0,
+              }),
+            })
+          }
+        >
+          <ChoiceList
+            options={secondaryOptions.map((entry) => ({
+              value: entry.key,
+              label: entry.label,
+              hint: `${formatCount(entry.count)}`,
+            }))}
+            selected={chosenSecondary}
+            searchPlaceholder={`Search ${dimensionLabel(secondaryParam).toLowerCase()}`}
+            onToggle={(value) =>
+              navigate({
+                search: (prev) => ({
+                  ...prev,
+                  [secondaryParam]: toggle(chosenSecondary, value),
+                  page: 0,
+                }),
+              })
+            }
+            onClear={() =>
+              navigate({
+                search: (prev) => ({
+                  ...prev,
+                  [secondaryParam]: undefined,
+                  page: 0,
+                }),
+              })
+            }
+          />
+        </FilterChip>
+      ) : null}
+    </>
+  );
+
   if (indicator.isError) {
     return (
       <div className="space-y-4">
@@ -1634,104 +1743,7 @@ function IndicatorDetail() {
                       </FilterChip>
                     ) : null}
 
-                    {/* Beside Status rather than above the page: narrowing to
-                    one commodity is the same kind of act as narrowing to
-                    one status, and the page shows everything until asked. */}
-                    {axis && axisOptions.length > 1 ? (
-                      <FilterChip
-                        label={dimensionLabel(axis)}
-                        value={summariseChip(chosenSeries)}
-                        onClear={() =>
-                          navigate({
-                            search: (prev) => ({
-                              ...prev,
-                              series: undefined,
-                              page: 0,
-                            }),
-                          })
-                        }
-                      >
-                        <ChoiceList
-                          options={axisOptions.map((entry) => ({
-                            value: entry.key,
-                            label: entry.label,
-                            // What a reader needs to choose between members is
-                            // how much of each there is.
-                            hint: `${formatCount(entry.count)}`,
-                          }))}
-                          selected={chosenSeries}
-                          searchPlaceholder={`Search ${dimensionLabel(axis).toLowerCase()}`}
-                          onToggle={(value) =>
-                            navigate({
-                              search: (prev) => ({
-                                ...prev,
-                                series: toggle(chosenSeries, value),
-                                page: 0,
-                              }),
-                            })
-                          }
-                          onClear={() =>
-                            navigate({
-                              search: (prev) => ({
-                                ...prev,
-                                series: undefined,
-                                page: 0,
-                              }),
-                            })
-                          }
-                        />
-                      </FilterChip>
-                    ) : null}
-
-                    {/* The other axis, where there is one. Thirty-one foods
-                    priced in every province: without this the only way to ask
-                    for shallots is to pick them out of a list of every
-                    province-and-commodity pairing there is. The same holds for
-                    a table published for every province, whose rows get this
-                    control instead. */}
-                    {secondaryOptions.length > 1 ? (
-                      <FilterChip
-                        label={dimensionLabel(secondaryParam)}
-                        value={summariseChip(chosenSecondary)}
-                        onClear={() =>
-                          navigate({
-                            search: (prev) => ({
-                              ...prev,
-                              [secondaryParam]: undefined,
-                              page: 0,
-                            }),
-                          })
-                        }
-                      >
-                        <ChoiceList
-                          options={secondaryOptions.map((entry) => ({
-                            value: entry.key,
-                            label: entry.label,
-                            hint: `${formatCount(entry.count)}`,
-                          }))}
-                          selected={chosenSecondary}
-                          searchPlaceholder={`Search ${dimensionLabel(secondaryParam).toLowerCase()}`}
-                          onToggle={(value) =>
-                            navigate({
-                              search: (prev) => ({
-                                ...prev,
-                                [secondaryParam]: toggle(chosenSecondary, value),
-                                page: 0,
-                              }),
-                            })
-                          }
-                          onClear={() =>
-                            navigate({
-                              search: (prev) => ({
-                                ...prev,
-                                [secondaryParam]: undefined,
-                                page: 0,
-                              }),
-                            })
-                          }
-                        />
-                      </FilterChip>
-                    ) : null}
+                    {memberChips}
 
                     {/* Only where there is a choice to make: a series that
                     sits in one year offers nothing to narrow. */}
@@ -1915,6 +1927,7 @@ function IndicatorDetail() {
             sample={sample}
             dimension={dimension}
             hiddenCount={hidden.length}
+            filters={hasMemberChips ? memberChips : null}
           />
         </TabsContent>
 
@@ -2217,6 +2230,7 @@ function ApiTab({
   sample,
   dimension,
   hiddenCount,
+  filters,
 }: {
   indicatorId: string;
   query: ApiQuery;
@@ -2225,6 +2239,11 @@ function ApiTab({
   dimension: Dimension;
   /** Series muted from the legend — a browser-side filter with no API twin. */
   hiddenCount: number;
+  /**
+   * The place and commodity chips, the same ones the Data tab shows. Absent
+   * for a series with nothing to choose between.
+   */
+  filters?: React.ReactNode;
 }) {
   const [language, setLanguage] = useState<Language>("python");
 
@@ -2249,14 +2268,17 @@ function ApiTab({
           title="The request"
           description={
             <>
-              The call that returns what is on screen. Narrowing with the filters above
-              rewrites it, so a reader can select what they want here and copy the
-              request for it rather than translating a filter into query parameters by
-              hand.
+              The call that returns what is on screen. Choosing a place or a commodity
+              here — or any filter on the Data tab — rewrites the URL and every snippet
+              below, so a reader can pick what they want and copy the request for it
+              rather than translating a filter into query parameters by hand.
             </>
           }
         >
           <div className="space-y-3">
+            {filters ? (
+              <div className="flex flex-wrap items-center gap-2">{filters}</div>
+            ) : null}
             <Snippet label="Endpoint" value={url} />
 
             {/* One language at a time. A page that stacks five snippets makes
