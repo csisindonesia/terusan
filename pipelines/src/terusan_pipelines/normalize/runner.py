@@ -17,6 +17,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pyarrow as pa
 import structlog
@@ -1025,18 +1026,69 @@ class SilverRunner:
         into a dict — and BPS's catalogue is six million of them, which is
         more memory than the machine this runs on has.
         """
-        root = Path(self._resolver.resolve(Layer.BRONZE, "records"))
-        if not any(root.rglob("*.parquet")):
+        query = self._bronze_query("*", dataset=dataset, source_id=source_id, include=include)
+        if query is None:
             return []
 
+        with Warehouse(self._resolver) as warehouse:
+            # Via Arrow rather than fetchall(): DuckDB converts timestamptz to
+            # Python through pytz, which is an extra dependency for no gain,
+            # and Arrow carries the timezone itself.
+            return warehouse.query(*query).arrow().read_all().to_pylist()
+
+    def bronze_values(
+        self,
+        column: str,
+        *,
+        dataset: str | None = None,
+        source_id: str | None = None,
+        include: Mapping[str, tuple[str, ...]] | None = None,
+    ) -> list[str]:
+        """The distinct values one Bronze column holds, as printed.
+
+        What lets a source be normalized a slice at a time: the values are
+        listed in the scan, without a row becoming a dict, and each slice is
+        then read with `include` on this column. PIHPS is four hundred
+        thousand rows a run, and holding them all as dicts took the NAS past
+        its eight gigabytes.
+        """
+        query = self._bronze_query(
+            "DISTINCT columns[?] AS value",
+            dataset=dataset,
+            source_id=source_id,
+            include=include,
+            select_params=[column],
+        )
+        if query is None:
+            return []
+
+        with Warehouse(self._resolver) as warehouse:
+            rows = warehouse.query(*query).fetchall()
+        return sorted(str(value) for (value,) in rows if value is not None)
+
+    def _bronze_query(
+        self,
+        select: str,
+        *,
+        dataset: str | None,
+        source_id: str | None,
+        include: Mapping[str, tuple[str, ...]] | None,
+        select_params: list[Any] | None = None,
+    ) -> tuple[str, list[Any]] | None:
+        """The scan `read_bronze` and `bronze_values` share, or None with no Bronze."""
+        root = Path(self._resolver.resolve(Layer.BRONZE, "records"))
+        if not any(root.rglob("*.parquet")):
+            return None
+
         pattern = self._resolver.glob(Layer.BRONZE, "records")
-        sql = "SELECT * FROM read_parquet(?, union_by_name=true, hive_partitioning=true)"
+        sql = f"SELECT {select} FROM read_parquet(?, union_by_name=true, hive_partitioning=true)"
         # Re-extracting under a new parser version appends rows rather than
         # replacing them, which is what makes a partition traceable to the code
         # that produced it (program.md §17). The cost is that a read has to say
         # which version it wants: without this, improving a parser silently
         # doubles every observation downstream.
-        conditions, params = ["parser_version = ?"], [pattern, PARSER_VERSION]
+        conditions = ["parser_version = ?"]
+        params: list[Any] = [*(select_params or []), pattern, PARSER_VERSION]
         if dataset:
             conditions.append("dataset = ?")
             params.append(dataset)
@@ -1046,14 +1098,8 @@ class SilverRunner:
         for column, values in (include or {}).items():
             conditions.append(f"columns[?] IN ({', '.join('?' for _ in values)})")
             params.extend([column, *values])
-        if conditions:
-            sql += " WHERE " + " AND ".join(conditions)
-
-        with Warehouse(self._resolver) as warehouse:
-            # Via Arrow rather than fetchall(): DuckDB converts timestamptz to
-            # Python through pytz, which is an extra dependency for no gain,
-            # and Arrow carries the timezone itself.
-            return warehouse.query(sql, params).arrow().read_all().to_pylist()
+        sql += " WHERE " + " AND ".join(conditions)
+        return sql, params
 
     def _identity(self, declared: str, source_id: str | None) -> tuple[str | None, str]:
         """The slug and the identifier a declared indicator key resolves to.

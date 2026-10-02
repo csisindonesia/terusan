@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator, Mapping
 from datetime import datetime, timedelta
 from typing import Annotated
 
@@ -46,6 +47,7 @@ from terusan_pipelines.warehouse import (
     RunRecord,
     Warehouse,
     compact_layer,
+    last_succeeded,
     read_runs,
 )
 from terusan_pipelines.warehouse.runlog import now as _now
@@ -57,12 +59,16 @@ warehouse_app = typer.Typer(help="Extract, compact and query the lake.", no_args
 catalog_app = typer.Typer(help="Inspect and sync the PostgreSQL catalog.", no_args_is_help=True)
 silver_app = typer.Typer(help="Normalize Bronze into Silver.", no_args_is_help=True)
 news_app = typer.Typer(help="Cluster and score the news monitoring corpus.", no_args_is_help=True)
+articles_app = typer.Typer(
+    help="Build the figures behind the portal's articles.", no_args_is_help=True
+)
 app.add_typer(storage_app, name="storage")
 app.add_typer(sources_app, name="sources")
 app.add_typer(warehouse_app, name="warehouse")
 app.add_typer(catalog_app, name="catalog")
 app.add_typer(silver_app, name="silver")
 app.add_typer(news_app, name="news")
+app.add_typer(articles_app, name="articles")
 
 
 def _resolver() -> StorageResolver:
@@ -202,6 +208,16 @@ def sources_due(
             "--at", formats=["%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M"], help="Pretend it is now."
         ),
     ] = None,
+    catch_up_hours: Annotated[
+        int,
+        typer.Option(
+            "--catch-up",
+            help=(
+                "Also print sources that fired in this many hours and have had no "
+                "successful ingestion since, by this lake's run journal. 0 turns it off."
+            ),
+        ),
+    ] = 0,
     frequency: Annotated[
         str | None,
         typer.Option("--frequency", help="Only sources declaring this update frequency."),
@@ -219,13 +235,22 @@ def sources_due(
 
     `--at` makes it answerable without waiting for the clock — what a schedule
     does on a Friday evening is a question, not an experiment.
+
+    `--catch-up` gives a firing more than one chance. Without it, a daily
+    source whose run failed (a dead network at 07:00, a box restarting) is
+    not asked for again until tomorrow, and that day's figure is lost.
     """
     reg = _registry()
     # Local time, not UTC. These expressions are written against the wall clock
     # of the machine that runs them — `0 18 * * 1-5` is 18:00 WIB, after the
     # Jakarta close — which is how cron and launchd read a schedule too. Asking
     # `_now()` here would put the Jakarta close at one in the morning.
-    sources = reg.due(at or datetime.now(), timedelta(minutes=window_minutes))
+    moment = at or datetime.now()
+    window = timedelta(minutes=window_minutes)
+    if catch_up_hours > 0:
+        sources = reg.owed(moment, window, timedelta(hours=catch_up_hours), last_succeeded())
+    else:
+        sources = reg.due(moment, window)
 
     if frequency:
         sources = [s for s in sources if str(s.meta.update_frequency) == frequency]
@@ -650,10 +675,32 @@ def _about(describing: dict | None, rows: list[dict], column: str | None) -> str
     return _first(rows, column)
 
 
-def _sole_source(records: list[dict]) -> str | None:
-    """The source every record came from, or None where they disagree."""
-    sources = {record.get("source_id") for record in records}
-    return next(iter(sources)) if len(sources) == 1 else None  # type: ignore[return-value]
+def _slices(
+    runner: SilverRunner,
+    by: str,
+    indicators: list[str],
+    variants: Mapping[str, list[str]],
+    *,
+    batch: int,
+    dataset: str | None,
+    source: str | None,
+    inclusions: Mapping[str, tuple[str, ...]],
+) -> Iterator[tuple[str, list[dict]]]:
+    """Each indicator with its Bronze rows, read `batch` indicators at a time."""
+    size = max(batch, 1)
+    for start in range(0, len(indicators), size):
+        chunk = indicators[start : start + size]
+        wanted = tuple(value for key in chunk for value in variants[key])
+        records = runner.read_bronze(
+            dataset=dataset, source_id=source, include={**inclusions, by: wanted}
+        )
+        groups: dict[str, list[dict]] = {}
+        for record in records:
+            groups.setdefault((_column(record, by) or "").strip(), []).append(record)
+        del records
+        for indicator in chunk:
+            if rows := groups.pop(indicator, None):
+                yield indicator, rows
 
 
 def _column(record: dict, name: str) -> str | None:
@@ -1001,6 +1048,13 @@ def silver_normalize_each(
         int | None,
         typer.Option("--limit", help="Stop after this many indicators, for a smoke run."),
     ] = None,
+    batch: Annotated[
+        int,
+        typer.Option(
+            "--batch",
+            help="Indicators read from Bronze at a time. Lower it where memory is short.",
+        ),
+    ] = 200,
     dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
 ) -> None:
     """Normalize one indicator per distinct value of a Bronze column.
@@ -1030,10 +1084,20 @@ def silver_normalize_each(
     started = _now()
     exclusions = _where_clauses("--exclude", exclude)
     inclusions = _where_clauses("--include", include)
-    # Inclusions narrow the scan itself, so a source too large to hold in
-    # memory can be normalized a slice at a time (scripts/normalize-bps.sh).
-    records = runner.read_bronze(dataset=dataset, source_id=source, include=inclusions)
-    if not records:
+    # The indicators first, then their rows a slice at a time. Read whole, a
+    # source's Bronze becomes one Python dict per row, and PIHPS — four
+    # hundred thousand rows a run — took the NAS's eight gigabytes and was
+    # killed. Listing the `--by` values happens in the scan, and each slice is
+    # read with an inclusion on that column, so memory follows `--batch`
+    # rather than the size of the source. Inclusions narrow both reads.
+    present = runner.bronze_values(by, dataset=dataset, source_id=source, include=inclusions)
+    # Several printings of one identifier (a trailing space) are one series,
+    # and must land in one slice: two would each replace the other's rows.
+    variants: dict[str, list[str]] = {}
+    for value in present:
+        if key := value.strip():
+            variants.setdefault(key, []).append(value)
+    if not variants:
         # Recorded rather than only printed: a normalization that finds no
         # Bronze is how an extraction that quietly stopped becomes visible.
         RunLog(_resolver()).record(
@@ -1045,10 +1109,10 @@ def silver_normalize_each(
                 finished_at=_now(),
                 source_id=source,
                 dataset=dataset,
-                error_message="no Bronze records match; nothing to normalize",
+                error_message=f"no Bronze records carry {by!r}; nothing to normalize",
             )
         )
-        typer.echo("no Bronze records match; nothing to normalize", err=True)
+        typer.echo(f"no Bronze records carry {by!r}; nothing to normalize", err=True)
         raise typer.Exit(code=1)
 
     # One describing row per indicator, where a second dataset holds them.
@@ -1068,27 +1132,28 @@ def silver_normalize_each(
         )
         raise typer.Exit(code=1)
 
-    groups: dict[str, list[dict]] = {}
-    for record in records:
-        indicator = (_column(record, by) or "").strip()
-        if not indicator:
-            # A row that does not say which indicator it belongs to cannot be
-            # normalized into one, and guessing would file it under a
-            # neighbour's series.
-            continue
-        groups.setdefault(indicator, []).append(record)
-
-    if not groups:
-        typer.echo(f"no Bronze record carries a {by!r} column; nothing to normalize", err=True)
-        raise typer.Exit(code=1)
-
     observations = 0
+    records_in = 0
+    sources_seen: set[str | None] = set()
     failures: dict[str, str] = {}
     normalized: list[str] = []
     described: list[dict] = []
 
-    for indicator in sorted(groups)[: limit if limit is not None else None]:
-        rows = groups[indicator]
+    # A row that does not say which indicator it belongs to is never read: it
+    # cannot be normalized into one, and guessing would file it under a
+    # neighbour's series.
+    for indicator, rows in _slices(
+        runner,
+        by,
+        sorted(variants)[: limit if limit is not None else None],
+        variants,
+        batch=batch,
+        dataset=dataset,
+        source=source,
+        inclusions=inclusions,
+    ):
+        records_in += len(rows)
+        sources_seen.update(row.get("source_id") for row in rows)
         mapping = ColumnMapping(
             indicator_id=indicator,
             period_column=period_column,
@@ -1156,7 +1221,7 @@ def silver_normalize_each(
         # One source at a time, and only where the caller named the source:
         # the table is replaced per source, and replacing it under a guessed
         # name would delete another source's indicators.
-        source_id = source or _sole_source(records)
+        source_id = source or (next(iter(sources_seen)) if len(sources_seen) == 1 else None)
         if source_id is None:
             typer.echo(
                 "--name-column needs --source: the indicators table is replaced "
@@ -1187,15 +1252,17 @@ def silver_normalize_each(
             finished_at=_now(),
             source_id=source,
             dataset=dataset,
-            records_in=len(records),
+            records_in=records_in,
             records_out=observations,
             dry_run=dry_run,
             error_message=(
-                f"{len(failures)} of {len(groups)} series failed to normalize" if failures else None
+                f"{len(failures)} of {len(variants)} series failed to normalize"
+                if failures
+                else None
             ),
             detail={
                 "by": by,
-                "series_seen": len(groups),
+                "series_seen": len(variants),
                 "series_normalized": len(normalized),
                 "indicators_named": indicators_written,
                 "failures": dict(list(failures.items())[:20]),
@@ -1814,3 +1881,26 @@ def news_coverage(
             f"kept={seen.get('recorded', 0):>3}"
         )
     typer.echo(f"\n{len(rows)} outlets")
+
+
+@articles_app.command("build")
+def articles_build(
+    slug: Annotated[str, typer.Argument(help="The article, by the slug the portal routes on.")],
+) -> None:
+    """Rebuild an article's figures from the lake, into the portal's source tree.
+
+    Written beside the article's page as `apps/portal/src/articles/<slug>.json`,
+    and committed with it: the article is a dated piece of writing, so the
+    figures it was written from are kept rather than fetched when it is read.
+    """
+    from terusan_pipelines.articles import ARTICLES
+    from terusan_pipelines.storage.root import project_root
+
+    if slug not in ARTICLES:
+        typer.echo(f"no article {slug!r}; known: {', '.join(sorted(ARTICLES))}", err=True)
+        raise typer.Exit(2)
+    figures = ARTICLES[slug]()
+    target = project_root() / "apps" / "portal" / "src" / "articles" / f"{slug}.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(figures, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    typer.echo(f"wrote {target}")

@@ -19,6 +19,8 @@ from typing import Any
 
 import structlog
 
+from ..http import UnsafeURLError, ensure_public_url
+
 log = structlog.get_logger(__name__)
 
 #: Long enough for a news page's own scripts to settle, short enough that a
@@ -74,6 +76,8 @@ class Browser:
 
     def render(self, url: str, *, settle_ms: int = DEFAULT_SETTLE_MS) -> tuple[int, str]:
         """Fetch a page as a browser would. Returns the status and the HTML."""
+        if not _allowed(url):
+            return 0, ""
         page = self._ready().new_page()
         try:
             response = page.goto(url, timeout=DEFAULT_TIMEOUT_MS, wait_until="domcontentloaded")
@@ -92,6 +96,8 @@ class Browser:
         does not show what the article said, which is the only reason to keep
         one.
         """
+        if not _allowed(url):
+            return None
         page = self._ready().new_page()
         try:
             page.goto(url, timeout=DEFAULT_TIMEOUT_MS, wait_until="domcontentloaded")
@@ -111,6 +117,23 @@ class Browser:
             except Exception:  # noqa: BLE001, S110 - shutdown must not fail a run
                 pass
         self._context = self._browser = self._playwright = None
+
+
+def _allowed(url: str) -> bool:
+    """Whether the browser may be pointed at `url`, by the same rule as plain HTTP.
+
+    The browser is what a 403 falls back to, so without this a URL the HTTP
+    client would refuse could be handed to Chromium instead. Only the address
+    asked for is checked; a redirect Chromium follows by itself is not, which
+    is acceptable because every URL reaching here has first been fetched over
+    plain HTTP, whose client checks each hop.
+    """
+    try:
+        ensure_public_url(url)
+    except UnsafeURLError as error:
+        log.warning("news.browser.refused", error=str(error)[:200])
+        return False
+    return True
 
 
 def shared() -> Browser:

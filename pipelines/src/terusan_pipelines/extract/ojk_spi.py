@@ -9,7 +9,7 @@ the whole workbook stays queryable. Beside the cells this reader produces
 June 2025, read one figure per row so `scripts/normalize-ojk-spi.sh` can take
 them into Silver.
 
-Four tables, all commercial banks, all by province:
+Four commercial bank tables, all by province:
 
 - **Composition of deposits** (1.33.a; 1.45.a before 2020): giro, savings and
   time deposits, each in Rupiah and in foreign exchange.
@@ -18,6 +18,14 @@ Four tables, all commercial banks, all by province:
 - **Branch offices** (1.43.a; 1.57 and 1.57.a before).
 - **Credit to micro, small and medium enterprises** (3.22.a; 3.28.a and 4.31
   before), by where the project is.
+
+And two rural bank (BPR) tables, also by province, which the SJK cubes this
+pipeline reads do not carry:
+
+- **Rural banks and their offices** (2.14; 3.14 before): head offices, which
+  is the number of rural banks, branch offices and cash offices.
+- **Rural bank credit** (3.18.a; 3.20.a, 3.24.a and 4.27 before), by where
+  the lending bank is.
 
 The sheets are found by the name before the table number, which has not
 changed while the numbers have. The columns are found by their headers rather
@@ -34,16 +42,22 @@ after it means the figure is the one OJK printed as that month's.
 
 The edition's month is read from the edition's own title
 (`Statistik Perbankan Indonesia - November 2022`). A composition block states
-its month in its title, and a block for another month is skipped. A time-series
+its month in its title, and a block for another month is skipped — save
+where the January to March 2025 editions kept the previous year in their
+titles, which `_block_for` explains. A time-series
 table's rightmost month column is the edition's; one that ends on another month
 has not been brought up to date, and is skipped rather than filed under the
 edition.
 
 A province is qualified with `Provinsi`, as the SJK reader does, and the SPI's
 Papua and Papua Barat are the provinces before the 2022 split, labelled as that
-territory (program.md §11). The country is the table's own `Total` or `Jumlah`
-row, not a sum: rows OJK could not place (`Lainnya`, `Tidak Teridentifikasi`)
-are in it and in no province.
+territory (program.md §11) — unless the table also lists a province the split
+created. The rural bank tables of the 2025 editions list all thirty-eight, and
+there Papua is what is left of it after the split.
+
+The country is the table's own `Total` or `Jumlah` row, not a sum: rows OJK
+could not place (`Lainnya`, `Tidak Teridentifikasi`) are in it and in no
+province.
 
 Figures stay as OJK wrote them, in billions of Rupiah, except where a series is
 a sum of printed cells: a deposit type is its Rupiah and its foreign-exchange
@@ -64,6 +78,7 @@ from typing import Any
 
 import structlog
 
+from .archives import read_member
 from .base import ExtractionError, Extractor, Landed
 from .workbooks import ARCHIVE_SUFFIXES, WORKBOOK_SUFFIXES, _load, _sheet_rows
 
@@ -81,10 +96,11 @@ NATIONAL = "Indonesia"
 BILLIONS = "IDR billion"
 OFFICES = "offices"
 
-#: How far across a sheet to read. The older composition sheets hold two years
-#: of monthly tables side by side, fifteen columns each; the generic reader's
-#: eighty columns stop in the middle of the second year.
-MAX_COLUMNS = 600
+#: How far across a sheet to read. The older composition sheets hold every
+#: month since December 2017 side by side, fifteen columns each — more than
+#: forty tables by 2021, and the generic reader's eighty columns stop at the
+#: sixth.
+MAX_COLUMNS = 2000
 MAX_ROWS = 300
 
 MONTHS = {
@@ -115,6 +131,10 @@ PRE_2022_PAPUA = {
     "irian jaya barat": "Papua Barat (wilayah sebelum pemekaran 2022)",
 }
 
+#: The provinces the 2022 split created. A table listing any of them has
+#: already divided Papua, so its Papua is the province of that name today.
+POST_2022_PAPUA = ("papua selatan", "papua tengah", "papua pegunungan", "papua barat daya")
+
 
 @dataclass(frozen=True, slots=True)
 class Part:
@@ -122,11 +142,17 @@ class Part:
 
     top: str
     sub: str | None = None
+    #: Whether `sub` is the whole header rather than its beginning. The rural
+    #: bank office table heads its columns `KP`, `KC` and `KPK`, and `KP` begins
+    #: `KPK`.
+    exact: bool = False
 
     def matches(self, top: str, sub: str) -> bool:
         if not _folded(top).startswith(self.top):
             return False
-        return self.sub is None or _folded(sub).startswith(self.sub)
+        if self.sub is None:
+            return True
+        return _folded(sub) == self.sub if self.exact else _folded(sub).startswith(self.sub)
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,6 +167,7 @@ class Series:
     total: Part | None = None
     #: Whether the figures are the non-performing row beneath each province.
     npl: bool = False
+    unit: str = BILLIONS
 
 
 #: Each deposit type is printed twice, in Rupiah and in foreign exchange.
@@ -197,6 +224,22 @@ COMPOSITIONS: dict[str, tuple[Series, ...]] = {
             npl=True,
         ),
     ),
+    # No SJK cube counts rural bank offices, so the categories are named for
+    # what the SPI's abbreviations stand for. A rural bank has one head office,
+    # so the first category is also the number of rural banks.
+    "juml bpr per lok": (
+        Series(
+            "ojk_spi_bpr_offices",
+            "Rural banks and rural bank offices (SPI)",
+            (
+                ("1. Kantor Pusat", (Part("bpr", "kp", exact=True),)),
+                ("2. Kantor Cabang", (Part("bpr", "kc", exact=True),)),
+                ("3. Kantor Pelayanan Kas", (Part("bpr", "kpk", exact=True),)),
+            ),
+            Part("total"),
+            unit=OFFICES,
+        ),
+    ),
 }
 
 
@@ -224,6 +267,11 @@ TIMELINES: dict[str, Timeline] = {
         "Commercial bank credit to micro, small and medium enterprises by project location (SPI)",
         BILLIONS,
         section=lambda label: _folded(label).startswith(("umkm", "usaha mikro")),
+    ),
+    "kredit bpr per lok": Timeline(
+        "ojk_spi_bpr_credit",
+        "Rural bank credit by bank location (SPI)",
+        BILLIONS,
     ),
 }
 
@@ -291,7 +339,7 @@ def _workbooks(landed: Landed) -> Iterator[tuple[str | None, bytes]]:
         if not members:
             raise ExtractionError(str(landed.path), "archive holds no workbook")
         for member in members:
-            yield member, archive.read(member)
+            yield member, read_member(archive, member, str(landed.path))
 
 
 def edition_month(landed: Landed) -> str | None:
@@ -326,20 +374,43 @@ def composition_figures(
     name: str, sheet: str, grid: list[list[str]], edition: str
 ) -> Iterator[dict[str, str]]:
     """A composition table's figures, from the block for the edition's month."""
-    for start, end in _blocks(grid):
-        title = _cell(grid, _title_row(grid, start), start)
-        if month_of(title.split("\n(")[0]) != edition:
-            continue
-        header = _header_row(grid, start, end)
-        if header is None:
-            log.warning("ojk_spi.no_header", sheet=sheet, edition=edition)
-            return
-        columns = _column_labels(grid, header, start + 2, end)
-        places = _places(grid, header + 2, start, start + 1)
-        for series in COMPOSITIONS[name]:
-            yield from _series_figures(series, sheet, edition, columns, places)
+    block = _block_for(grid, sheet, edition)
+    if block is None:
+        log.info("ojk_spi.month_not_in_sheet", sheet=sheet, edition=edition)
         return
-    log.info("ojk_spi.month_not_in_sheet", sheet=sheet, edition=edition)
+    start, end = block
+    header = _header_row(grid, start, end)
+    if header is None:
+        log.warning("ojk_spi.no_header", sheet=sheet, edition=edition)
+        return
+    columns = _column_labels(grid, header, start + 2, end)
+    places = _places(grid, header + 2, start, start + 1)
+    for series in COMPOSITIONS[name]:
+        yield from _series_figures(series, sheet, edition, columns, places)
+
+
+def _block_for(grid: list[list[str]], sheet: str, edition: str) -> tuple[int, int] | None:
+    """The block whose title names the edition's month.
+
+    Or, where none does, the newest block when its title names the edition's
+    month a year early. The January, February and March 2025 editions title
+    their tables 2024: the year was not changed, the figures were — each one's
+    total is the edition's month in the time-series tables beside it, 1.34.a
+    and 3.13.a, and not the same month of 2024. The archive ends in June 2025,
+    so this is those three editions and no others.
+    """
+    blocks = _blocks(grid)
+    months = [
+        month_of(_cell(grid, _title_row(grid, start), start).split("\n(")[0]) for start, _ in blocks
+    ]
+    for block, month in zip(blocks, months, strict=True):
+        if month == edition:
+            return block
+    year_early = f"{int(edition[:4]) - 1}{edition[4:]}"
+    if blocks and months[-1] == year_early:
+        log.info("ojk_spi.title_year_stale", sheet=sheet, edition=edition, title=months[-1])
+        return blocks[-1]
+    return None
 
 
 def _series_figures(
@@ -375,7 +446,7 @@ def _series_figures(
             if value == "":
                 continue
             yield _figure(
-                series.indicator, series.name, sheet, edition, place, label, value, BILLIONS
+                series.indicator, series.name, sheet, edition, place, label, value, series.unit
             )
 
 
@@ -430,6 +501,10 @@ def _places(
     notes, or a second section.
     """
     out: list[tuple[str, dict[int, str], dict[int, str]]] = []
+    split = any(
+        _place_name(_cell(grid, row, name_column)).lower() in POST_2022_PAPUA
+        for row in range(first, len(grid))
+    )
     for row in range(first, len(grid)):
         number = _cell(grid, row, number_column)
         name = _cell(grid, row, name_column)
@@ -446,7 +521,7 @@ def _places(
         if _NUMBERED.match(number) and name:
             if out and out[-1][0] == NATIONAL:
                 break
-            place = province(name)
+            place = province(name, split=split)
             out.append((place or "", values, {}))
             continue
         if out and out[-1][0] == NATIONAL and not _folded(name).startswith("npl"):
@@ -454,17 +529,26 @@ def _places(
     return [entry for entry in out if entry[0]]
 
 
-def province(label: str) -> str | None:
-    """A table's province as the geography registry should read it."""
-    name = " ".join(label.split("/")[0].split())
+def province(label: str, *, split: bool = False) -> str | None:
+    """A table's province as the geography registry should read it.
+
+    `split` says the table lists the provinces the 2022 split created, so its
+    Papua and Papua Barat are the provinces of those names today.
+    """
+    name = _place_name(label)
     folded = name.lower()
     if not name or folded.startswith(UNPLACED):
         return None
-    if folded in PRE_2022_PAPUA:
+    if folded in PRE_2022_PAPUA and not split:
         return PRE_2022_PAPUA[folded]
     if folded.startswith("provinsi "):
         return name
     return f"Provinsi {name}"
+
+
+def _place_name(label: str) -> str:
+    """A row's place as printed, without its English half or stray spaces."""
+    return " ".join(label.split("/")[0].split())
 
 
 def _figure(
@@ -542,7 +626,12 @@ def _column_labels(
     grid: list[list[str]], header: int, start: int, end: int
 ) -> dict[int, tuple[str, str]]:
     """Each column's header and the one beneath it, the header carried across the
-    columns its merged cell spans."""
+    columns its merged cell spans.
+
+    A column with neither is not part of the table. The rural bank office
+    table of the 2025 editions ends on `Total` with blank columns after it,
+    and `Total` carried across them would name four columns rather than one.
+    """
     labels: dict[int, tuple[str, str]] = {}
     top = ""
     for column in range(start, end):
@@ -550,7 +639,9 @@ def _column_labels(
         if _folded(text).startswith(("location", "lokasi")):
             break
         top = text or top
-        labels[column] = (top, _cell(grid, header + 1, column))
+        sub = _cell(grid, header + 1, column)
+        if text or sub:
+            labels[column] = (top, sub)
     return labels
 
 

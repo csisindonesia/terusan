@@ -10,12 +10,24 @@ our code is wrong, and retrying only hammers someone else's server.
 
 Every request passes the shared per-host limiter first, so a source with its own
 client still queues behind every other source hitting that host.
+
+Two safety rules sit here too, because this is the one place every source's
+traffic goes through. URLs are redacted before they are logged, since BPS and
+others put their API key in the URL itself and an error message quotes the URL
+in full. And a client opened by `fetcher` refuses to talk to anything but a
+public host, on the first request and on every redirect after it: a sitemap or
+a portal that redirects to `http://postgres:5432/` or `169.254.169.254` must not
+turn the pipelines container into a probe of the network it runs in.
 """
 
 from __future__ import annotations
 
+import ipaddress
+import re
+import socket
 from collections.abc import Iterator
 from contextlib import contextmanager
+from functools import lru_cache
 from typing import Any
 
 import httpx
@@ -43,6 +55,127 @@ DEFAULT_TIMEOUT_SECONDS = 60.0
 
 USER_AGENT = "terusan/0.1 (research data collection)"
 
+#: What stands in for a secret in a logged URL.
+REDACTED = "REDACTED"
+
+#: A query parameter whose value is a credential: `key`, `apikey`, `api_key`,
+#: `access_token`, `client_secret` and the like. Anchored on the whole name, so
+#: `keyword` or `tokens_per_page` keep their values and stay useful in a log.
+_SECRET_PARAM = re.compile(
+    r"(?i)([?&;](?:[\w.-]*[_-])?(?:api[_-]?key|key|token|secret|password|passwd|signature|sig)=)"
+    r"[^&#;\s'\"]*"
+)
+
+#: A credential carried as a path segment, the way BPS writes `.../key/<key>/`.
+_SECRET_SEGMENT = re.compile(r"(?i)(/(?:api[_-]?key|key|token|secret)/)[^/?#\s'\"]+")
+
+
+def redact(text: str) -> str:
+    """`text` — a URL, or an error message quoting one — with its secrets blanked.
+
+    A pattern over the whole string rather than a URL parser, because what
+    gets logged is usually not a URL but an httpx message with the URL inside
+    it, and a secret is just as leaked from the middle of a sentence.
+    """
+    text = _SECRET_SEGMENT.sub(rf"\1{REDACTED}", text)
+    return _SECRET_PARAM.sub(rf"\1{REDACTED}", text)
+
+
+def _describe(exc: BaseException | None, limit: int = 200) -> str | None:
+    """An exception as a log field: redacted first, then cut to length.
+
+    Redacting before cutting matters. Cut first, and a key that straddles the
+    cut leaves its first half in the log, where no pattern recognises it.
+    """
+    return redact(str(exc))[:limit] if exc is not None else None
+
+
+class UnsafeURLError(httpx.RequestError):
+    """A request to a host that is not on the public internet, refused unsent.
+
+    A `RequestError` so every caller that already treats a failed fetch as a
+    failed fetch — `try_get`, the news crawl, the portal engines — does so here
+    too. Deliberately not a `TransportError`: that would make it transient, and
+    retrying a refusal five times with backoff only wastes a run.
+    """
+
+
+def _public_ip(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    # An IPv4 address written as IPv6 (`::ffff:127.0.0.1`) is judged as the
+    # IPv4 address it is, or it slips past every IPv4 rule below.
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        address = address.ipv4_mapped
+    return address.is_global and not (
+        address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_multicast
+        or address.is_reserved
+        or address.is_unspecified
+    )
+
+
+@lru_cache(maxsize=1024)
+def _resolved_public(host: str) -> bool:
+    """Whether every address `host` resolves to is public.
+
+    Every address, not the first: a name with one public and one private
+    record is a name httpx may connect to on the private one. Cached because a
+    crawl asks the same few hosts thousands of times; a lookup that fails
+    raises instead, and an exception is not cached, so a DNS blip is retried
+    on the next request rather than remembered.
+    """
+    infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+    return all(_public_ip(ipaddress.ip_address(info[4][0].split("%", 1)[0])) for info in infos)
+
+
+def ensure_public_url(url: httpx.URL | str) -> None:
+    """Raise `UnsafeURLError` unless `url` is http(s) to a public host.
+
+    Refused: any other scheme; a bare single-label name such as `api`,
+    `postgres` or `redis`, which on the NAS are the other containers on the
+    compose network; and a host that is, or resolves to, a private, loopback,
+    link-local, multicast, reserved or unspecified address. A name that does not
+    resolve at all is let through, so that it fails the way it always has — as
+    a transient connection error httpx raises and the retry policy handles.
+
+    This checks the name, not the connection, so a host that answers its DNS
+    lookup one way here and another way when httpx connects is not caught. That
+    attack needs a hostile DNS server rather than a hostile page, and closing it
+    would mean pinning the address inside the transport.
+    """
+    try:
+        parsed = httpx.URL(url) if isinstance(url, str) else url
+    except httpx.InvalidURL as exc:
+        raise UnsafeURLError(f"refused a malformed URL: {exc}") from exc
+    shown = redact(str(parsed))
+    if parsed.scheme not in ("http", "https"):
+        raise UnsafeURLError(f"refused {shown}: only http and https are fetched")
+    host = parsed.host.rstrip(".").lower()
+    try:
+        literal = ipaddress.ip_address(host)
+    except ValueError:
+        literal = None
+    if literal is not None:
+        if not _public_ip(literal):
+            raise UnsafeURLError(f"refused {shown}: {host} is not a public address")
+        return
+    if "." not in host:
+        raise UnsafeURLError(f"refused {shown}: {host!r} is not a public host name")
+    try:
+        public = _resolved_public(host)
+    except (OSError, UnicodeError):
+        return
+    if not public:
+        raise UnsafeURLError(f"refused {shown}: {host} resolves to a non-public address")
+
+
+def _refuse_private(request: httpx.Request) -> None:
+    # An httpx request hook runs before the first request and again before
+    # every redirect hop, which is the point: a public page that answers with
+    # a redirect to an internal one is the usual shape of this attack.
+    ensure_public_url(request.url)
+
 
 def is_transient(exc: BaseException) -> bool:
     if isinstance(exc, httpx.HTTPStatusError):
@@ -59,7 +192,7 @@ def _log_retry(state: RetryCallState) -> None:
         "http.retry",
         attempt=state.attempt_number,
         sleep_seconds=round(state.idle_for, 1),
-        error=str(exc)[:200] if exc else None,
+        error=_describe(exc),
     )
 
 
@@ -154,7 +287,7 @@ class Fetcher:
         try:
             return self.get(url, **kwargs)
         except (httpx.HTTPError, OSError) as exc:
-            log.warning("http.failed", url=url, error=str(exc)[:200])
+            log.warning("http.failed", url=redact(url), error=_describe(exc))
             return None
 
 
@@ -167,11 +300,19 @@ def fetcher(
     attempts: int = DEFAULT_ATTEMPTS,
     **client_kwargs: Any,
 ) -> Iterator[Fetcher]:
-    """Open a Fetcher and close its connections afterwards."""
+    """Open a Fetcher and close its connections afterwards.
+
+    The client refuses non-public hosts (see `ensure_public_url`). A test that
+    wants to point a source at a stub builds its own `Fetcher` around a client
+    with a mock transport, as the suite does throughout, rather than this.
+    """
+    hooks = dict(client_kwargs.pop("event_hooks", None) or {})
+    hooks["request"] = [_refuse_private, *hooks.get("request", ())]
     with httpx.Client(
         timeout=timeout,
         headers={"User-Agent": USER_AGENT, **(headers or {})},
         follow_redirects=True,
+        event_hooks=hooks,
         **client_kwargs,
     ) as client:
         yield Fetcher(client, limiter=limiter, attempts=attempts)

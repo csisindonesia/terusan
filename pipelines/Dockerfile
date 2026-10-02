@@ -45,15 +45,42 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY pipelines/ ./
 COPY reference/ /app/reference/
 
+# The project root, said outright. `project_root()` finds a checkout by the
+# Makefile beside `pipelines/` and `reference/`, and the image carries no
+# Makefile, so it fell back to the working directory, /app/pipelines. Files
+# found from the root were then looked for where they are not: the news
+# keyword dictionary among them, which made every article extracted here
+# carry no coding at all.
+ENV TERUSAN_ROOT=/app
+
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --all-extras
+
+# The browser SP2KP's crosstab is downloaded through. The `browser` extra
+# brings the Playwright package; the browser itself is a separate download,
+# and without it the source failed every hour once the NAS kept a schedule.
+# The headless shell only, which is all a download needs, and its system
+# libraries with it. Put outside any home directory, since the uid that runs
+# this is the host's choice.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN playwright install --with-deps --only-shell chromium \
+    && rm -rf /var/lib/apt/lists/*
+
+# The scheduled run and the normalize scripts it calls, so the container can
+# keep its own schedule (scripts/scheduler.sh) rather than wait for a host
+# that has none. They call `uv --project pipelines run ...`, as on a laptop;
+# UV_NO_SYNC makes that run straight from /opt/venv instead of trying to sync
+# an environment that belongs to root while this runs as someone else.
+# /app/.cache, made writable below, holds daily.sh's lock and default logs.
+COPY scripts/ /app/scripts/
+ENV UV_NO_SYNC=1
 
 # Same reasoning as the API: spill and staging stay on the container's disk,
 # never on the share.
 # 1777 for the reason services/api/Dockerfile gives: the uid this runs as is
 # the host's business, not the image's.
 RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin terusan \
-    && mkdir -p /scratch && chmod 1777 /scratch
+    && mkdir -p /scratch /app/.cache && chmod 1777 /scratch /app/.cache
 USER terusan
 
 ENV SCRATCH_DIR=/scratch

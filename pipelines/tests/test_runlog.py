@@ -21,7 +21,7 @@ from terusan_pipelines.sources import (
     SourceType,
 )
 from terusan_pipelines.storage import StorageConfig, StorageResolver
-from terusan_pipelines.warehouse import read_runs
+from terusan_pipelines.warehouse import last_succeeded, read_runs
 
 
 @pytest.fixture
@@ -164,3 +164,19 @@ def test_a_normalization_that_lands_observations_succeeds(resolver):
     run = read_runs(resolver)[0]
     assert run["status"] == "succeeded"
     assert run["records_out"] == 12
+
+
+def test_the_last_success_per_source_ignores_failures_and_dry_runs(resolver):
+    runner = Runner(resolver, reporter=JournalReporter(resolver))
+    runner.run_one(_Works())
+    runner.run_one(_Broken())
+    runner.run_one(_Broken(), ScrapeContext(dry_run=True))
+
+    succeeded = last_succeeded(resolver)
+
+    assert set(succeeded) == {"journal-works"}
+    assert succeeded["journal-works"].tzinfo is not None
+
+
+def test_no_journal_is_no_successes(resolver):
+    assert last_succeeded(resolver) == {}

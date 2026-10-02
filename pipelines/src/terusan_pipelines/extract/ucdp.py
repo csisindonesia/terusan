@@ -44,6 +44,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from .archives import read_member
 from .base import ExtractionError, Extractor, Landed
 from .tabular import decode
 
@@ -244,7 +245,9 @@ class UcdpOrganizedViolenceExtractor(Extractor):
 
         with archive:
             member = _member(archive)
-            reader = csv.DictReader(io.StringIO(decode(archive.read(member))))
+            reader = csv.DictReader(
+                io.StringIO(decode(read_member(archive, member, str(landed.path))))
+            )
             self._check_columns(landed, reader.fieldnames)
 
             number = 0

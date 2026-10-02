@@ -253,6 +253,36 @@ def read_runs(
     return runs
 
 
+def last_succeeded(
+    resolver: StorageResolver | None = None, *, kind: str = "ingest"
+) -> dict[str, datetime]:
+    """Each source's latest successful run of `kind`, as a UTC start time.
+
+    What the scheduler's catch-up compares a firing against. Dry runs do not
+    count: a fetch that landed nothing has not collected the day's figure.
+    Read from this lake's own journal on purpose — a laptop and the NAS each
+    keep one, and what the laptop collected is not in the NAS's lake.
+    """
+    from pathlib import Path
+
+    from .query import warehouse
+
+    resolver = resolver or StorageResolver()
+    if not any(Path(resolver.resolve(LAYER, DATASET)).rglob("*.parquet")):
+        return {}
+
+    with warehouse(resolver) as db:
+        rows = db.query(
+            f"SELECT source_id, epoch_ms(max(started_at)) "
+            f"FROM {db.source(LAYER, DATASET)} "
+            f"WHERE kind = ? AND status = 'succeeded' AND NOT coalesce(dry_run, false) "
+            f"AND source_id IS NOT NULL GROUP BY source_id",
+            [kind],
+        ).fetchall()
+
+    return {slug: datetime.fromtimestamp(ms / 1000, UTC) for slug, ms in rows}
+
+
 def _utc(value: datetime) -> datetime:
     """A timezone-aware UTC instant. A naive one is read as local time."""
     return value.astimezone(UTC) if value.tzinfo else value.replace(tzinfo=UTC)

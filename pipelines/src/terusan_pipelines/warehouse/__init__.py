@@ -13,7 +13,7 @@ from .compaction import (
     find_partitions,
 )
 from .query import Warehouse, warehouse
-from .runlog import RunLog, RunRecord, read_runs
+from .runlog import RunLog, RunRecord, last_succeeded, read_runs
 from .schema import (
     BRONZE_DOCUMENTS,
     BRONZE_PROVENANCE_FIELDS,
@@ -54,6 +54,7 @@ __all__ = [
     "conform",
     "empty",
     "find_partitions",
+    "last_succeeded",
     "read_runs",
     "table_from_rows",
     "warehouse",

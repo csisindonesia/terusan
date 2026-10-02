@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from terusan_pipelines.sources.schedule import BadSchedule, due, parse_cron
+from terusan_pipelines.sources.schedule import BadSchedule, due, last_firing, parse_cron
 
 # -- fields ------------------------------------------------------------------
 
@@ -132,6 +132,15 @@ def test_a_negative_window_is_refused() -> None:
         due("* * * * *", datetime(2026, 9, 23, 9, 0), timedelta(minutes=-1))
 
 
+def test_the_last_firing_is_the_latest_in_the_window() -> None:
+    """What catching up compares a run against: when the schedule last fired,
+    not only whether it did."""
+    at = datetime(2026, 10, 1, 9, 30, 12)
+    assert last_firing("0 7 * * *", at, timedelta(hours=12)) == datetime(2026, 10, 1, 7, 0)
+    assert last_firing("7 * * * *", at, timedelta(hours=12)) == datetime(2026, 10, 1, 9, 7)
+    assert last_firing("0 7 * * *", at, timedelta(hours=2)) is None
+
+
 # -- against the registry ----------------------------------------------------
 
 
@@ -182,3 +191,41 @@ def test_no_scheduled_source_is_one_that_cannot_run() -> None:
             unrunnable.append(source.meta.slug)
 
     assert unrunnable == []
+
+
+def test_a_firing_no_success_followed_stays_owed() -> None:
+    """PIHPS fires at 07:00. A laptop waking into a dead network failed it
+    three mornings running, and since it is due once a day each failure lost
+    that day's prices. With a catch-up, 09:00 still owes it."""
+    from terusan_pipelines.sources import registry
+
+    registry.ensure_loaded()
+    at = datetime(2026, 10, 1, 9, 0)
+    hour, catch_up = timedelta(hours=1), timedelta(hours=12)
+
+    def owed(journal: dict[str, datetime]) -> set[str]:
+        return {s.meta.slug for s in registry.owed(at, hour, catch_up, journal)}
+
+    assert "bi-pihps-food-prices" not in {s.meta.slug for s in registry.due(at, hour)}
+    assert "bi-pihps-food-prices" in owed({})
+    # Yesterday's success does not settle this morning's firing.
+    assert "bi-pihps-food-prices" in owed(
+        {"bi-pihps-food-prices": datetime(2026, 9, 30, 7, 5).astimezone()}
+    )
+    # A run that started after the firing does.
+    assert "bi-pihps-food-prices" not in owed(
+        {"bi-pihps-food-prices": datetime(2026, 10, 1, 7, 40).astimezone()}
+    )
+
+
+def test_catching_up_does_not_reach_past_its_window() -> None:
+    """A source that last fired before the catch-up began is left to its next
+    firing, however long ago it succeeded: the catch-up retries a miss, it
+    does not backfill a week."""
+    from terusan_pipelines.sources import registry
+
+    registry.ensure_loaded()
+    at = datetime(2026, 10, 1, 21, 0)
+    slugs = {s.meta.slug for s in registry.owed(at, timedelta(hours=1), timedelta(hours=12), {})}
+
+    assert "bi-pihps-food-prices" not in slugs  # 07:00 is fourteen hours back

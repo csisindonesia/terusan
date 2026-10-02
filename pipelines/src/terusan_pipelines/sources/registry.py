@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import importlib
 import pkgutil
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from datetime import datetime, timedelta
 
 from .base import Source, SourceMeta
-from .schedule import DEFAULT_WINDOW, due
+from .schedule import DEFAULT_WINDOW, due, last_firing
 
 
 class DuplicateSourceSlug(ValueError):
@@ -107,6 +107,41 @@ class Registry:
         return [
             source for source in self.scheduled() if due(str(source.meta.schedule), now, window)
         ]
+
+    def owed(
+        self,
+        now: datetime,
+        window: timedelta,
+        catch_up: timedelta,
+        last_succeeded: Mapping[str, datetime],
+    ) -> list[type[Source]]:
+        """What is due, plus every firing in `catch_up` that no success followed.
+
+        `due` alone gives each firing one chance. A daily source whose 07:00
+        run met a dead network, or a machine asleep or restarting at 07:00,
+        then waits a whole day, and the day's figure is never collected. This
+        keeps such a firing owed for `catch_up` hours: each hour it is asked
+        again until a run succeeds, and a source that has not fired within the
+        catch-up is left alone however long ago it last succeeded.
+
+        `last_succeeded` maps a slug to the start of its latest successful
+        ingestion, as the run journal records it. A run that started after
+        the firing settles it; one that started before does not. A naive
+        firing time is local wall clock, which is how schedules are read.
+        """
+        owed = self.due(now, window)
+        seen = {source.meta.slug for source in owed}
+        for source in self.scheduled():
+            slug = source.meta.slug
+            if slug in seen:
+                continue
+            fired = last_firing(str(source.meta.schedule), now, catch_up)
+            if fired is None:
+                continue
+            succeeded = last_succeeded.get(slug)
+            if succeeded is None or succeeded < fired.astimezone():
+                owed.append(source)
+        return owed
 
     def __len__(self) -> int:
         self.ensure_loaded()

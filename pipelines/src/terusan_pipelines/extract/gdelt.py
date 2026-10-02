@@ -37,6 +37,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
+from .archives import read_member
 from .base import ExtractionError, Extractor, Landed
 from .tabular import decode
 
@@ -143,7 +144,7 @@ def _read_archive(path: Path) -> list[list[str]]:
         ]
         if not members:
             raise ExtractionError(str(path), "archive holds no CSV")
-        text = decode(archive.read(members[0]))
+        text = decode(read_member(archive, members[0], str(path)))
 
     # GDELT does not quote; a stray quote in a name must not swallow the rows
     # after it.

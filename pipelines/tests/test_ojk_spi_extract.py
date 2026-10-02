@@ -98,6 +98,19 @@ def test_a_sheet_without_the_editions_month_gives_nothing() -> None:
     assert not _figures("Komp DPK per Lok_1.45.a.", _dpk_block("Mei 2018"), "2018-08")
 
 
+def test_the_newest_block_titled_a_year_early_is_the_editions() -> None:
+    # January to March 2025 kept 2024 in their titles; their totals are 2025's.
+    got = _figures("Komp DPK per Lok_1.33.a.", _dpk_block("Januari 2024"), "2025-01")
+
+    assert got[("ojk_spi_bu_dpk", "Indonesia", "")] == "84"
+
+
+def test_an_older_block_titled_a_year_early_is_not_taken() -> None:
+    grid = _side_by_side(_dpk_block("Januari 2024"), _dpk_block("Desember 2024"))
+
+    assert not _figures("Komp DPK per Lok_1.33.a.", grid, "2025-01")
+
+
 CREDIT = [
     ["", "Tabel 3.12.a. \nKredit ... per Lokasi Dati I - Juni 2025\n(Credit ... for June 2025)"],
     ["", "Lokasi / Location", "", "Modal Kerja\n(Working Capital)", "Investasi\n(Investment)",
@@ -165,6 +178,57 @@ def test_the_msme_table_stops_at_its_first_section() -> None:
     assert got == {
         ("ojk_spi_bu_credit_msme", "Provinsi Jawa Barat", ""): "191",
         ("ojk_spi_bu_credit_msme", "Indonesia", ""): "1001",
+    }
+
+
+RURAL_OFFICES = [
+    ["", "Tabel 2.14\nPerkembangan Jumlah BPR dan Kantor BPR Berdasarkan Lokasi -- Juni 2025\n"
+         "(Growth of Total Rural Bank and Rural Banks Offices Based on Location - June 2025)"],
+    ["", "Lokasi / Location", "", "BPR (Rural Bank)", "", "", "Total", "", ""],
+    ["", "", "", "KP", "KC", "KPK", "", "", ""],
+    ["", "1.", "Jawa Barat", "216", "374", "286", "876", "", ""],
+    ["", "32.", "Papua", "6", "12", "3", "21", "", ""],
+    ["", "35.", "Papua Barat Daya", "2", "3", "0", "5", "", ""],
+    ["", "39.", "Lainnya / Others", "0", "0", "0", "0", "", ""],
+    ["", "             Total", "", "1339", "1964", "2609", "5912", "", ""],
+]  # fmt: skip
+
+
+def test_the_rural_bank_office_table_gives_each_kind_of_office() -> None:
+    got = _figures("Juml BPR per Lok_2.14", RURAL_OFFICES, "2025-06")
+
+    # `KP` is read as itself, not as the beginning of `KPK` beside it; and the
+    # blank columns after `Total` are not more of it.
+    assert got[("ojk_spi_bpr_offices", "Provinsi Jawa Barat", "1. Kantor Pusat")] == "216"
+    assert got[("ojk_spi_bpr_offices", "Provinsi Jawa Barat", "3. Kantor Pelayanan Kas")] == "286"
+    assert got[("ojk_spi_bpr_offices", "Indonesia", "")] == "5912"
+
+
+def test_a_table_listing_the_new_provinces_keeps_papua_as_todays() -> None:
+    got = _figures("Juml BPR per Lok_2.14", RURAL_OFFICES, "2025-06")
+
+    assert got[("ojk_spi_bpr_offices", "Provinsi Papua", "")] == "21"
+    assert got[("ojk_spi_bpr_offices", "Provinsi Papua Barat Daya", "")] == "5"
+    assert not any("pemekaran" in geo for _, geo, _ in got)
+
+
+RURAL_CREDIT = [
+    ["", "Tabel 3.18.a.\nKredit Bank Perekonomian Rakyat Berdasarkan Lokasi Bank Penyalur\n"
+         "(Credit of Rural Banks Based on Banks Location)\nMiliar Rp (Billion Rp)"],
+    ["", "Lokasi / Location", "", "2024", "", "2025"],
+    ["", "", "", "Des", "Jan", "Feb"],
+    ["", "1.", "Jawa Barat", "17713.4", "17618.7", "17981.2"],
+    ["", "39", "Lainnya / Others", "0", "0", "0"],
+    ["", " Total", "", "150000", "151000", "152000"],
+]  # fmt: skip
+
+
+def test_rural_bank_credit_is_a_time_series_table() -> None:
+    got = _figures("Kredit BPR per Lok_3.18.a.", RURAL_CREDIT, "2025-02")
+
+    assert got == {
+        ("ojk_spi_bpr_credit", "Provinsi Jawa Barat", ""): "17981.2",
+        ("ojk_spi_bpr_credit", "Indonesia", ""): "152000",
     }
 
 

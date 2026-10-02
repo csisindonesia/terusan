@@ -142,7 +142,12 @@ from typing import Any
 #:     deposits, credit, non-performing credit, branches and MSME credit by
 #:     province, each edition for its own month — and the SJK cubes gain
 #:     deposits and credit by bank group, and credit by sector and currency.
-PARSER_VERSION = "25"
+#: 26: The SPI editions also give their rural bank tables — rural banks and
+#:     their offices, and rural bank credit, by province — and a table that
+#:     lists the provinces the 2022 split created keeps its Papua as today's.
+#:     OJK's fintech lending workbook is read into `ojk-fintech-figures`
+#:     beside its cells: nine province tables, every month each one holds.
+PARSER_VERSION = "26"
 
 
 class ExtractionError(Exception):

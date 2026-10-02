@@ -1192,9 +1192,48 @@ DATASETS: tuple[DatasetMeta, ...] = (
             "in July 2025: commercial bank deposits by type and currency, "
             "credit and non-performing credit by purpose, credit by "
             "orientation, credit to micro, small and medium enterprises, and "
-            "branch offices — in billions of Rupiah, as the SPI printed them."
+            "branch offices — in billions of Rupiah, as the SPI printed them. "
+            "And the rural bank tables no SJK cube carries: rural banks and "
+            "their offices, and rural bank credit, by province."
         ),
-        tags=("banking", "deposits", "credit", "npl", "msme", "finance", "provinces", "ojk"),
+        tags=(
+            "banking",
+            "deposits",
+            "credit",
+            "npl",
+            "msme",
+            "rural-banks",
+            "finance",
+            "provinces",
+            "ojk",
+        ),
+    ),
+    DatasetMeta(
+        slug="ojk-fintech-figures",
+        title="Fintech lending by province (OJK)",
+        source="ojk-fintech-p2p",
+        description=(
+            "The province tables of OJK's monthly fintech lending (LPBBTI) "
+            "statistics: lender and borrower accounts, funds provided and loans "
+            "disbursed, outstanding loans and TWP 90, and the same accounts, "
+            "transactions and amounts accumulated since each platform was "
+            "founded. Amounts in billions of Rupiah; TWP 90 as the fraction of "
+            "outstanding loans more than ninety days late."
+        ),
+        tags=("fintech", "p2p-lending", "credit", "finance", "provinces", "ojk"),
+    ),
+    DatasetMeta(
+        slug="kpk-penindakan-figures",
+        title="Corruption enforcement caseload (KPK)",
+        source="kpk-penindakan",
+        description=(
+            "Every case the anti-corruption commission has taken on each year "
+            "since 2004: cases at each stage from inquiry to execution, and by "
+            "agency, offence, region and the court that made the verdict final; "
+            "defendants by the post they held and by sex. The current year is "
+            "year to date, as of the quarter each figure's release names."
+        ),
+        tags=("corruption", "law-enforcement", "governance", "kpk"),
     ),
     DatasetMeta(
         slug="ojk-commercial-bank-deposits",

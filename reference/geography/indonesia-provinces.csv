@@ -39,7 +39,7 @@
 # provinces the careful way was getting the worse answer for it.
 geo_id,name,geo_type,parent_geo_id,bps_code,valid_from,valid_to,aliases
 IDN,Indonesia,country,,,,,Nasional|National|Nasional (18 Kota)|Gabungan 18 Kota|Indonesia
-ID-11,Aceh,province,IDN,11,,,NAD|Nanggroe Aceh Darussalam|DI Aceh|Provinsi Aceh|11.00
+ID-11,Aceh,province,IDN,11,,,NAD|Nanggroe Aceh Darussalam|Nangroe Aceh Darussalam|Provinsi Nangroe Aceh Darussalam|DI Aceh|Provinsi Aceh|11.00
 ID-12,Sumatera Utara,province,IDN,12,,,Sumut|North Sumatra|Sumatra Utara|Provinsi Sumatera Utara|12.00
 ID-13,Sumatera Barat,province,IDN,13,,,Sumbar|West Sumatra|Sumatra Barat|Provinsi Sumatera Barat|13.00
 ID-14,Riau,province,IDN,14,,,Provinsi Riau|14.00
@@ -47,7 +47,7 @@ ID-15,Jambi,province,IDN,15,,,Provinsi Jambi|15.00
 ID-16,Sumatera Selatan,province,IDN,16,,,Sumsel|South Sumatra|Sumatra Selatan|Provinsi Sumatera Selatan|16.00
 ID-17,Bengkulu,province,IDN,17,,,Provinsi Bengkulu|17.00
 ID-18,Lampung,province,IDN,18,,,Provinsi Lampung|18.00
-ID-19,Kepulauan Bangka Belitung,province,IDN,19,2000-11-21,,Babel|Bangka Belitung|Kep. Bangka Belitung|Provinsi Kepulauan Bangka Belitung|19.00
+ID-19,Kepulauan Bangka Belitung,province,IDN,19,2000-11-21,,Babel|Bangka Belitung|Kep. Bangka Belitung|Provinsi Kepulauan Bangka Belitung|Kepualauan Bangka Belitung|Provinsi Kepualauan Bangka Belitung|19.00
 ID-21,Kepulauan Riau,province,IDN,21,2002-09-24,,"Kepri|Riau Islands|Kep. Riau|Kep, Riau|Provinsi Kepulauan Riau|21.00"
 ID-31,DKI Jakarta,province,IDN,31,,,Jakarta|DKI|Daerah Khusus Ibukota Jakarta|Jakarta Raya|Provinsi DKI Jakarta|31.00
 ID-32,Jawa Barat,province,IDN,32,,,Jabar|West Java|Provinsi Jawa Barat|32.00

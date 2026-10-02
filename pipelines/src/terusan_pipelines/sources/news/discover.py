@@ -28,7 +28,7 @@ import time
 from collections.abc import Iterable
 from datetime import date, datetime
 from email.utils import parsedate_to_datetime
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 from xml.etree import ElementTree
 
 import httpx
@@ -77,6 +77,30 @@ CONTROL_TOLERANCE = 2
 #: index can list hundreds of monthly files and following them all would walk
 #: the outlet's entire history on every run.
 MAX_CHILD_SITEMAPS = 4
+
+#: Second-level labels under a country code that are registries rather than
+#: sites: `radarlombok.co.id` is one site, `co.id` is everyone's. Indonesia's
+#: are listed because that is where the outlets are; the rest is a rough cut of
+#: the common ones, which is all a same-site check on a sitemap needs.
+_SECOND_LEVEL = frozenset(
+    {
+        "ac",
+        "biz",
+        "co",
+        "com",
+        "desa",
+        "edu",
+        "go",
+        "gov",
+        "mil",
+        "my",
+        "net",
+        "or",
+        "org",
+        "sch",
+        "web",
+    }
+)
 
 #: Candidates one outlet may contribute to a run.
 #:
@@ -212,6 +236,35 @@ def _get(url: str, fetcher, render=None, *, speculative: bool = False) -> str:
     return ""
 
 
+def _site(host: str) -> str:
+    """The registrable part of a host name, near enough.
+
+    `aceh.tribunnews.com` and `www.tribunnews.com` are both `tribunnews.com`,
+    and `www.radarlombok.co.id` is `radarlombok.co.id`. Without a public
+    suffix list this guesses from the shape of the name, which is right for
+    every outlet in the list and errs towards refusing for anything odder.
+    """
+    labels = host.lower().rstrip(".").split(".")
+    keep = 3 if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in _SECOND_LEVEL else 2
+    return ".".join(labels[-keep:])
+
+
+def _same_site(url: str, host: str) -> bool:
+    """Whether a URL an outlet's sitemap named is on that outlet's own site.
+
+    A sitemap index is content the outlet serves, and nothing stops it naming
+    a child sitemap anywhere at all. Article links were already held to the
+    outlet's host by `search.is_article`; child sitemaps were followed blind,
+    and they are fetched — with the browser behind them on a 403 — so they are
+    held to the outlet's site too. Site rather than host because a regional
+    paper's index often lists children on the parent network's domain.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return False
+    return _site(parsed.hostname) == _site(host)
+
+
 def search_works(outlet: Outlet, fetcher, render=None) -> bool:
     """Whether this outlet's search box reads its query.
 
@@ -276,7 +329,11 @@ def by_listing(outlet: Outlet, fetcher, since: date, render=None) -> list[Hit]:
         # they changed most recently, and prefer the ones that call themselves
         # news: an outlet's `sitemap_news.xml` is the recent end of its
         # archive, which is the only part a daily crawl wants.
-        children = [(when, url) for url, when in entries if url.endswith((".xml", ".xml.gz"))]
+        children = [
+            (when, url)
+            for url, when in entries
+            if url.endswith((".xml", ".xml.gz")) and _same_site(url, outlet.host)
+        ]
         children.sort(
             key=lambda pair: (
                 "news" not in pair[1].lower(),

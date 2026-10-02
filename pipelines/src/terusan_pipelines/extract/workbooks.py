@@ -20,6 +20,7 @@ import zipfile
 from collections.abc import Iterator
 from typing import Any
 
+from .archives import read_member
 from .base import ExtractionError, Extractor, Landed
 
 WORKBOOK_SUFFIXES = {".xlsx", ".xlsm"}
@@ -127,7 +128,7 @@ class ZippedWorkbookExtractor(Extractor):
                 raise ExtractionError(str(landed.path), "archive holds no workbook")
 
             for member in members:
-                workbook = _load(archive.read(member))
+                workbook = _load(read_member(archive, member, str(landed.path)))
                 try:
                     for row in _sheet_rows(workbook, landed.dataset or landed.path.stem):
                         # Which file inside the archive, since the name carries

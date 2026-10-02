@@ -170,6 +170,17 @@ def due(expression: str, now: datetime, window: timedelta = DEFAULT_WINDOW) -> b
     comparisons against a handful of integer sets — cheaper than parsing the
     expression was.
     """
+    return last_firing(expression, now, window) is not None
+
+
+def last_firing(expression: str, now: datetime, window: timedelta) -> datetime | None:
+    """The latest firing in the window ending at `now`, or None if there was none.
+
+    What catching up asks: not only "did it fire this hour" but "when did it
+    last fire", so a firing whose run failed, or that fell while the machine
+    slept, can be compared with the last run that succeeded. A twelve-hour
+    window is 720 minutes walked, still nothing beside one HTTP request.
+    """
     if window < timedelta(0):
         raise ValueError("window cannot be negative")
 
@@ -181,7 +192,7 @@ def due(expression: str, now: datetime, window: timedelta = DEFAULT_WINDOW) -> b
 
     while moment > earliest:
         if cron.matches(moment):
-            return True
+            return moment
         moment -= timedelta(minutes=1)
 
-    return False
+    return None

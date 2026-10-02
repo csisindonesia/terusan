@@ -35,8 +35,10 @@ from .fred import FredExtractor, FredSeriesPageExtractor
 from .gdelt import GdeltExtractor
 from .hdx_mobility import MovementDistributionExtractor
 from .kemkes_workforce import KemkesWorkforceExtractor
+from .kpk_penindakan import KpkPenindakanExtractor
 from .menpan import MenpanHolidaysExtractor
 from .news import NewsArticleExtractor, NewsScreenshotExtractor, NewsTallyExtractor
+from .ojk_fintech import OjkFintechExtractor
 from .ojk_sjk import OjkSjkExtractor
 from .ojk_spi import OjkSpiExtractor
 from .pihps import PihpsPricesExtractor
@@ -139,9 +141,14 @@ DEFAULT_EXTRACTORS: tuple[Extractor, ...] = (
     # Before the generic workbook readers, which land the SPI's cells but not
     # the province series in them.
     OjkSpiExtractor(),
+    # The same for OJK's fintech lending workbook and its province tables.
+    OjkFintechExtractor(),
     # And SATUSEHAT's workforce register is a DataTables envelope; its pages
     # are HTML the generic reader would take as prose, headers and all.
     KemkesWorkforceExtractor(),
+    # Before the HTML reader, which would land KPK's seven statistics tables
+    # as one blob of prose with the years run together.
+    KpkPenindakanExtractor(),
     # Before the archive reader, which claims every `.zip` and finds no
     # workbook in this one — and before the generic CSV reader, which would
     # land every country UCDP reports on as rows of seventy unnamed numbers.

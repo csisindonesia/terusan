@@ -16,7 +16,9 @@ from .fred import FredExtractor, FredSeriesPageExtractor
 from .gdelt import GdeltExtractor
 from .hdx_mobility import MovementDistributionExtractor
 from .kemkes_workforce import KemkesWorkforceExtractor
+from .kpk_penindakan import KpkPenindakanExtractor
 from .menpan import MenpanHolidaysExtractor
+from .ojk_fintech import OjkFintechExtractor
 from .ojk_sjk import OjkSjkExtractor
 from .ojk_spi import OjkSpiExtractor
 from .pihps import PihpsPricesExtractor
@@ -58,6 +60,8 @@ __all__ = [
     "BnpbDatastoreExtractor",
     "OjkSjkExtractor",
     "OjkSpiExtractor",
+    "OjkFintechExtractor",
+    "KpkPenindakanExtractor",
     "KemkesWorkforceExtractor",
     "ConsumerSurveyExtractor",
     "CsvExtractor",

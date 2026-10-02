@@ -1140,3 +1140,51 @@ def test_pruning_deletes_the_series_bronze_no_longer_names(resolver):
 def test_pruning_against_an_empty_bronze_is_refused(resolver):
     with pytest.raises(ValueError, match="extract before pruning"):
         SilverRunner(resolver).prune("bps", "indicator")
+
+
+def test_the_values_of_a_column_are_listed_in_the_scan(resolver, geography):
+    """What lets normalize-each read a source a slice at a time."""
+    _land_and_extract(resolver, b"kode;bulan;nilai\nA;2026-01;1\nB;2026-01;2\nA;2026-02;3\n")
+    runner = SilverRunner(resolver, geography=geography)
+
+    assert runner.bronze_values("kode", dataset="inflation") == ["A", "B"]
+    assert runner.bronze_values("kode", dataset="inflation", include={"kode": ("B",)}) == ["B"]
+    assert runner.bronze_values("absent", dataset="inflation") == []
+
+
+def test_normalize_each_reads_a_slice_at_a_time_and_loses_nothing(resolver, tmp_path, monkeypatch):
+    """PIHPS, read whole, was killed for memory on the NAS. A batch of one
+    indicator per read must still produce every series and every figure."""
+    from typer.testing import CliRunner
+
+    from terusan_pipelines.cli.main import app
+
+    _land_and_extract(
+        resolver,
+        b"kode;bulan;nilai\nA;2026-01;1\nA;2026-02;2\nB;2026-01;3\nC;2026-01;4\nC;2026-02;5\n",
+    )
+    monkeypatch.setenv("STORAGE_PROFILE", "local")
+    monkeypatch.setenv("STORAGE_BACKEND", "local")
+    monkeypatch.setenv("STORAGE_ROOT", str(tmp_path / "data"))
+    monkeypatch.setenv("SCRATCH_DIR", str(tmp_path / "cache"))
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "silver", "normalize-each",
+            "--by", "kode",
+            "--dataset", "inflation",
+            "--source", "bps",
+            "--period-column", "bulan",
+            "--value-column", "nilai",
+            "--batch", "1",
+        ],
+    )  # fmt: skip
+
+    assert result.exit_code == 0, result.output
+    with Warehouse(resolver) as warehouse:
+        warehouse.view("observations", Layer.SILVER, "observations")
+        rows = warehouse.query(
+            "SELECT count(DISTINCT indicator_id), count(*) FROM observations"
+        ).fetchone()
+    assert rows == (3, 5)
