@@ -1,6 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
-import { IconArrowLeft, IconCopy, IconExternalLink } from "@tabler/icons-react";
+import {
+  IconArrowLeft,
+  IconCopy,
+  IconExternalLink,
+  IconFileSpreadsheet,
+} from "@tabler/icons-react";
 import { z } from "zod";
 
 import type { ColumnDef } from "@tanstack/react-table";
@@ -21,7 +26,7 @@ import { BELOW_STICKY_HEADER, StickyHeader } from "~/components/sticky-header";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
-import { api, type Indicator } from "~/lib/api";
+import { api, odataFeedUrl, type Indicator } from "~/lib/api";
 import { describeSchedule } from "~/lib/cron";
 import { formatCount, formatDate, formatRelative } from "~/lib/format";
 import { hasIntradayRange, ohlcSet, toCandles } from "~/lib/candles";
@@ -274,6 +279,20 @@ function DatasetDetail() {
                       label: "Copy dataset id",
                       icon: IconCopy,
                       onSelect: () => void copyToClipboard(datasetId),
+                    },
+                    {
+                      // Excel's "From OData Feed" takes this address; /help#excel
+                      // says how to sign in to it.
+                      label: "Copy Excel (OData) feed URL",
+                      icon: IconFileSpreadsheet,
+                      onSelect: meta?.odata_set
+                        ? () => void copyToClipboard(odataFeedUrl(meta.odata_set))
+                        : undefined,
+                      hint: meta
+                        ? meta.odata_set
+                          ? undefined
+                          : "This API has no OData feed"
+                        : "Still loading",
                     },
                     {
                       label: "Copy ingest command",

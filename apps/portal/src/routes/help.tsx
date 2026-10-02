@@ -29,6 +29,7 @@ const SECTIONS = [
   { id: "vocabulary", label: "Vocabulary" },
   { id: "downloads", label: "Downloads" },
   { id: "api", label: "API" },
+  { id: "excel", label: "Excel and Power BI" },
   { id: "questions", label: "Questions" },
 ];
 
@@ -280,6 +281,38 @@ function Help() {
           <p>
             Each indicator page carries an API tab with the exact request for that
             series, parameters already filled in.
+          </p>
+        </Section>
+
+        <Separator />
+
+        <Section id="excel" title="Excel and Power BI">
+          <p>
+            Every dataset is also an OData feed, which Excel and Power BI can connect to
+            and refresh rather than import once. In Excel, choose{" "}
+            <strong>Data → Get Data → From Other Sources → From OData Feed</strong> and
+            give it the feed&apos;s address:
+          </p>
+          <pre className="overflow-x-auto rounded-lg border bg-muted/50 p-3 font-mono text-xs">
+            {`${apiBaseUrl}/v1/odata`}
+          </pre>
+          <p>
+            When Excel asks how to sign in, choose <strong>Basic</strong>, put anything
+            in the user name, and paste an API token from your{" "}
+            <Link to="/profile" className="underline underline-offset-4">
+              profile page
+            </Link>{" "}
+            as the password. The navigator then lists every dataset by name;{" "}
+            <Code>Datasets</Code> is the catalogue, with each one&apos;s title and the
+            address of its own feed. A dataset page&apos;s actions menu copies that
+            address directly.
+          </p>
+          <p>
+            Filter in the Power Query editor before loading: a filter on a place, a
+            commodity or a year is sent to the warehouse, so only the rows you keep are
+            downloaded. The largest datasets hold millions of rows, more than one Excel
+            sheet can. A missing figure arrives empty, with its <Code>Status</Code>{" "}
+            column saying why — never as a zero.
           </p>
         </Section>
 

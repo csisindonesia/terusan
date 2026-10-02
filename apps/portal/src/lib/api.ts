@@ -396,7 +396,21 @@ export type Dataset = {
   period_start: string;
   period_end: string;
   last_updated?: string;
+  /**
+   * Its entity set in the OData feed (`/v1/odata/<name>`), which is what
+   * Excel's "From OData Feed" connects to. Absent from an API older than the
+   * feed.
+   */
+  odata_set?: string;
 };
+
+/** The address of a dataset's OData feed, for Excel and Power BI. */
+export function odataFeedUrl(set?: string): string {
+  return new URL(
+    set ? `/v1/odata/${encodeURIComponent(set)}` : "/v1/odata",
+    BASE_URL,
+  ).toString();
+}
 
 /** One physical table in the lake — an operational view, not a research one. */
 export type LakeTable = {

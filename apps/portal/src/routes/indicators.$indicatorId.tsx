@@ -89,6 +89,7 @@ import { describeSchedule } from "~/lib/cron";
 import { useIngestion, type Ingestion } from "~/lib/ingestion";
 import { downloadCsv, toCsv } from "~/lib/csv";
 import { datasetLabel, indicatorLabel, titleFromId } from "~/lib/labels";
+import { odataDropped, odataSeriesUrl, powerQuery } from "~/lib/odata";
 import {
   formatCompact,
   formatCount,
@@ -1928,6 +1929,7 @@ function IndicatorDetail() {
             dimension={dimension}
             hiddenCount={hidden.length}
             filters={hasMemberChips ? memberChips : null}
+            odataSet={dataset?.odata_set}
           />
         </TabsContent>
 
@@ -2097,8 +2099,14 @@ function Stat({
  * parses JSON numbers into floats would quietly round a figure like Indonesia's
  * 2025 APBD revenue — 1,571,092,130,385,400 rupiah — before the reader ever
  * saw it.
+ *
+ * Excel is the exception, and the one most readers here open: it reads the
+ * OData feed (lib/odata.ts) rather than this JSON, gets `Value` as a decimal
+ * it can chart, and is told plainly that its own numbers stop at fifteen
+ * digits. It replaced a DuckDB snippet, which few of this warehouse's readers
+ * had installed.
  */
-type Language = "curl" | "python" | "r" | "javascript" | "duckdb";
+type Language = "curl" | "python" | "r" | "javascript" | "excel";
 
 /** Shown only before the series has loaded, so the shape is never blank. */
 const PLACEHOLDER_ROW = {
@@ -2196,24 +2204,69 @@ const LANGUAGES: {
       ].join("\n"),
   },
   {
-    id: "duckdb",
-    label: "DuckDB",
-    code: (url) =>
-      [
-        "-- Straight from the API, no download step.",
-        "INSTALL json; LOAD json;",
-        "",
-        "SELECT",
-        "  t.row.period       AS period,",
-        "  CAST(t.row.value AS DECIMAL(38, 9)) AS value,",
-        "  t.row.unit         AS unit",
-        `FROM read_json('${url}')`,
-        "CROSS JOIN UNNEST(data) AS t(row)",
-        "ORDER BY period;",
-      ].join("\n"),
-    note: "DECIMAL rather than DOUBLE, so the figures survive the cast. This is also how the warehouse itself stores them.",
+    id: "excel",
+    label: "Excel",
+    // Rendered by ExcelSnippets, which needs the dataset's feed; this is
+    // what shows while the dataset list is still loading.
+    code: () => "",
   },
 ];
+
+/**
+ * The request as Excel takes it: the feed's address for the "From OData Feed"
+ * dialog, and the same thing as a Power Query query for a reader who would
+ * rather paste one.
+ */
+function ExcelSnippets({ set, query }: { set?: string; query: ApiQuery }) {
+  if (!set) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        This series&rsquo; dataset is not known yet, or this API has no OData feed.
+      </p>
+    );
+  }
+  // The search box has no column to compare against, so a copied feed would
+  // return more rows than the table showed. Said rather than discovered.
+  const dropped = odataDropped(query);
+  return (
+    <div className="space-y-3">
+      <Snippet label="OData feed" value={odataSeriesUrl(set, query)} />
+      <ol className="list-decimal space-y-1 pl-5 text-xs text-muted-foreground">
+        <li>
+          In Excel:{" "}
+          <strong>Data → Get Data → From Other Sources → From OData Feed</strong>, and
+          paste the address above.
+        </li>
+        <li>
+          Sign in with <strong>Basic</strong>: any user name, and an API token from your{" "}
+          <Link to="/profile" className="underline underline-offset-4">
+            profile page
+          </Link>{" "}
+          as the password.
+        </li>
+        <li>
+          Or paste the query below into{" "}
+          <strong>Get Data → From Other Sources → Blank Query → Advanced Editor</strong>
+          . Both refresh from the warehouse with <strong>Data → Refresh All</strong>.
+        </li>
+      </ol>
+      <Snippet label="Power Query (M)" value={powerQuery(set, query)} />
+      {dropped.length ? (
+        <p className="text-xs text-muted-foreground">
+          The feed does not carry{" "}
+          {dropped.map((key) => (key === "q" ? "the search" : key)).join(", ")}, so it
+          returns rows the table above does not show.
+        </p>
+      ) : null}
+      <p className="text-xs text-muted-foreground">
+        Excel holds a number to fifteen significant digits. An index or a price is
+        exact; a rupiah total in the quadrillions loses its last digits, as it does in
+        every spreadsheet. A missing figure arrives empty, with <code>Status</code>{" "}
+        saying why.
+      </p>
+    </div>
+  );
+}
 
 /**
  * How to fetch this indicator without the portal.
@@ -2231,9 +2284,12 @@ function ApiTab({
   dimension,
   hiddenCount,
   filters,
+  odataSet,
 }: {
   indicatorId: string;
   query: ApiQuery;
+  /** The dataset's table in the OData feed, for the Excel snippet. */
+  odataSet?: string;
   /** A real row from this series — see the note where it is rendered. */
   sample?: Observation;
   dimension: Dimension;
@@ -2297,10 +2353,21 @@ function ApiTab({
               </TabsList>
               {LANGUAGES.map((entry) => (
                 <TabsContent key={entry.id} value={entry.id} className="pt-2">
-                  <Snippet label={entry.label} value={entry.code(url, indicatorId)} />
-                  {entry.note ? (
-                    <p className="pt-2 text-xs text-muted-foreground">{entry.note}</p>
-                  ) : null}
+                  {entry.id === "excel" ? (
+                    <ExcelSnippets set={odataSet} query={query} />
+                  ) : (
+                    <>
+                      <Snippet
+                        label={entry.label}
+                        value={entry.code(url, indicatorId)}
+                      />
+                      {entry.note ? (
+                        <p className="pt-2 text-xs text-muted-foreground">
+                          {entry.note}
+                        </p>
+                      ) : null}
+                    </>
+                  )}
                 </TabsContent>
               ))}
             </Tabs>
