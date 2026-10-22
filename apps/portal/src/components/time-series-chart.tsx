@@ -2,9 +2,14 @@ import { useId, useState } from "react";
 
 import { formatCompact, formatDecimal } from "~/lib/format";
 import {
+  CONTEXT_COLOR,
+  FOCUS_COLOR,
+  FOCUS_DARK_SLOT,
+  FOCUS_LIGHT_SLOTS,
   MAX_SERIES,
   SERIES_DARK_SLOTS,
   SERIES_LIGHT_SLOTS,
+  isIndonesia,
   seriesColor,
 } from "~/lib/viz";
 
@@ -37,6 +42,12 @@ export type Series = {
   points: Point[];
   /** Muted from the legend. Still listed, so it can be brought back. */
   hidden?: boolean;
+  /**
+   * The line the chart is about — Indonesia, among other places. Where any
+   * line is focused and any is not, the focused ones are drawn in red and the
+   * rest in grey. Left unset, a line named for Indonesia is focused.
+   */
+  focus?: boolean;
 };
 
 const DEFAULT_WIDTH = 960;
@@ -46,6 +57,62 @@ const HEIGHT = 300;
 // the last point sat within a few pixels of it, which reads as the series being
 // cut off rather than ending.
 const PADDING = { top: 16, right: 36, bottom: 28, left: 84 };
+
+// The column the end labels sit in, right of the plot. The guide line runs out
+// of the plot by `LEADER_RUN` and then bends to its label, so lines ending at
+// the same height fan out to labels stacked apart rather than overprinting.
+const LABEL_COLUMN = 132;
+const LEADER_RUN = 10;
+const LABEL_GAP = 22;
+// One line of name and one of value, as the label is printed.
+const LABEL_HEIGHT = 26;
+const LABEL_CHARS = 18;
+
+/** A name cut to the label column, with the cut shown. */
+function clip(name: string): string {
+  return name.length > LABEL_CHARS
+    ? `${name.slice(0, LABEL_CHARS - 1).trimEnd()}…`
+    : name;
+}
+
+/**
+ * Where each end label goes: as near its line's last figure as it can be
+ * without overlapping the one above, and pushed back up as a block if the
+ * stack runs off the bottom of the plot.
+ */
+function stackLabels(wanted: number[], top: number, bottom: number): number[] {
+  const order = wanted.map((y, index) => ({ y, index })).sort((a, b) => a.y - b.y);
+  const placed: number[] = [];
+  for (const [rank, item] of order.entries()) {
+    const floor = rank === 0 ? top : placed[rank - 1]! + LABEL_HEIGHT;
+    placed.push(Math.max(item.y, floor));
+  }
+  const overflow = (placed[placed.length - 1] ?? 0) - bottom;
+  if (overflow > 0) {
+    for (let rank = placed.length - 1; rank >= 0; rank--) {
+      const ceiling =
+        rank === placed.length - 1 ? bottom : placed[rank + 1]! - LABEL_HEIGHT;
+      placed[rank] = Math.max(top, Math.min(placed[rank]!, ceiling));
+    }
+  }
+  const result: number[] = new Array(wanted.length);
+  order.forEach((item, rank) => {
+    result[item.index] = placed[rank]!;
+  });
+  return result;
+}
+
+/**
+ * How each listed line is coloured. Decided over every listed line, hidden or
+ * not, so muting one never turns the chart's focus on or off underneath the
+ * reader.
+ */
+function paletteFor(listed: Series[]): (slot: number) => string {
+  const focused = listed.map((entry) => entry.focus ?? isIndonesia(entry.name));
+  const contrasted = focused.some(Boolean) && focused.some((f) => !f);
+  return (slot) =>
+    contrasted ? (focused[slot] ? FOCUS_COLOR : CONTEXT_COLOR) : seriesColor(slot);
+}
 
 /**
  * Which periods get a label along the bottom.
@@ -115,13 +182,19 @@ export function TimeSeriesChart({
     .map((entry, slot) => ({ ...entry, slot }))
     .filter((entry) => !entry.hidden);
 
+  const colorOf = paletteFor(listed);
+  const isFocus = (slot: number) => colorOf(slot) === FOCUS_COLOR;
+  // Every line named at its end where there is more than one: the eye stays
+  // on the chart instead of travelling to a key and back.
+  const labelled = shown.length > 1;
+
   if (listed.length > 0 && shown.length === 0) {
     return (
       <div className="space-y-2">
         <p className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
           Every series is hidden. Click one below to bring it back.
         </p>
-        <Legend listed={listed} onToggle={onToggle} />
+        <Legend listed={listed} onToggle={onToggle} colorOf={colorOf} />
       </div>
     );
   }
@@ -157,14 +230,15 @@ export function TimeSeriesChart({
   const low = min >= 0 ? Math.max(0, padded) : padded;
   const high = max + span * 0.08;
 
-  const plotWidth = WIDTH - PADDING.left - PADDING.right;
-  const plotHeight = HEIGHT - PADDING.top - PADDING.bottom;
+  const pad = labelled ? { ...PADDING, right: LABEL_COLUMN + LEADER_RUN + 8 } : PADDING;
+  const plotWidth = WIDTH - pad.left - pad.right;
+  const plotHeight = HEIGHT - pad.top - pad.bottom;
 
   const x = (index: number) =>
-    PADDING.left +
+    pad.left +
     (axis.length === 1 ? plotWidth / 2 : (index / (axis.length - 1)) * plotWidth);
   const y = (value: number) =>
-    PADDING.top + plotHeight - ((value - low) / (high - low)) * plotHeight;
+    pad.top + plotHeight - ((value - low) / (high - low)) * plotHeight;
 
   // Breaks at gaps rather than joining across them: a line drawn through a
   // missing year asserts a value nobody recorded.
@@ -187,8 +261,8 @@ export function TimeSeriesChart({
     run.map((p, i) => `${i === 0 ? "M" : "L"} ${x(p.index)} ${y(p.value)}`).join(" ");
 
   const areaPath = (run: { index: number; value: number }[]) =>
-    `${path(run)} L ${x(run[run.length - 1]!.index)} ${PADDING.top + plotHeight} ` +
-    `L ${x(run[0]!.index)} ${PADDING.top + plotHeight} Z`;
+    `${path(run)} L ${x(run[run.length - 1]!.index)} ${pad.top + plotHeight} ` +
+    `L ${x(run[0]!.index)} ${pad.top + plotHeight} Z`;
 
   // Four gridlines is enough to read a value off; more is noise.
   const ticks = [0, 1, 2, 3, 4].map((step) => low + ((high - low) * step) / 4);
@@ -207,10 +281,11 @@ export function TimeSeriesChart({
 
   return (
     <figure
-      className={`viz-root space-y-2 ${SERIES_DARK_SLOTS}`}
+      className={`viz-root space-y-2 ${SERIES_DARK_SLOTS} ${FOCUS_DARK_SLOT}`}
       style={
         {
           ...SERIES_LIGHT_SLOTS,
+          ...FOCUS_LIGHT_SLOTS,
           "--viz-grid": "color-mix(in oklab, currentColor 12%, transparent)",
         } as React.CSSProperties
       }
@@ -229,12 +304,7 @@ export function TimeSeriesChart({
         >
           <defs>
             <clipPath id={clipId}>
-              <rect
-                x={PADDING.left}
-                y={PADDING.top}
-                width={plotWidth}
-                height={plotHeight}
-              />
+              <rect x={pad.left} y={pad.top} width={plotWidth} height={plotHeight} />
             </clipPath>
           </defs>
 
@@ -242,8 +312,8 @@ export function TimeSeriesChart({
           {ticks.map((value) => (
             <g key={value}>
               <line
-                x1={PADDING.left}
-                x2={WIDTH - PADDING.right}
+                x1={pad.left}
+                x2={WIDTH - pad.right}
                 y1={y(value)}
                 y2={y(value)}
                 stroke="var(--viz-grid)"
@@ -251,7 +321,7 @@ export function TimeSeriesChart({
                 strokeDasharray={dashed ? "4 4" : undefined}
               />
               <text
-                x={PADDING.left - 10}
+                x={pad.left - 10}
                 y={y(value)}
                 textAnchor="end"
                 dominantBaseline="middle"
@@ -264,47 +334,49 @@ export function TimeSeriesChart({
           ))}
 
           <g clipPath={`url(#${clipId})`}>
-            {shown.map((entry) => (
-              <g key={`series-${entry.name}`}>
-                {/* The wash belongs to a single series. Eight overlaid washes
+            {[...shown]
+              .sort((a, b) => Number(isFocus(a.slot)) - Number(isFocus(b.slot)))
+              .map((entry) => (
+                <g key={`series-${entry.name}`}>
+                  {/* The wash belongs to a single series. Eight overlaid washes
                     stack into a muddy block that hides the lines it is meant
                     to support. */}
-                {shown.length === 1
-                  ? runsOf(entry.points).map((run, runIndex) => (
-                      <path
-                        key={`area-${runIndex}`}
-                        d={areaPath(run)}
-                        fill={seriesColor(entry.slot)}
-                        fillOpacity={0.1}
-                      />
-                    ))
-                  : null}
-                {runsOf(entry.points).map((run, runIndex) => (
-                  <path
-                    key={`line-${runIndex}`}
-                    d={path(run)}
-                    fill="none"
-                    stroke={seriesColor(entry.slot)}
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                ))}
-                {markers && entry.points.length <= 120
-                  ? entry.points.map((point, index) =>
-                      point.value === null ? null : (
-                        <circle
-                          key={`dot-${index}`}
-                          cx={x(index)}
-                          cy={y(point.value)}
-                          r={2.5}
-                          fill={seriesColor(entry.slot)}
+                  {shown.length === 1
+                    ? runsOf(entry.points).map((run, runIndex) => (
+                        <path
+                          key={`area-${runIndex}`}
+                          d={areaPath(run)}
+                          fill={colorOf(entry.slot)}
+                          fillOpacity={0.1}
                         />
-                      ),
-                    )
-                  : null}
-              </g>
-            ))}
+                      ))
+                    : null}
+                  {runsOf(entry.points).map((run, runIndex) => (
+                    <path
+                      key={`line-${runIndex}`}
+                      d={path(run)}
+                      fill="none"
+                      stroke={colorOf(entry.slot)}
+                      strokeWidth={isFocus(entry.slot) ? 2.75 : 2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  ))}
+                  {markers && entry.points.length <= 120
+                    ? entry.points.map((point, index) =>
+                        point.value === null ? null : (
+                          <circle
+                            key={`dot-${index}`}
+                            cx={x(index)}
+                            cy={y(point.value)}
+                            r={2.5}
+                            fill={colorOf(entry.slot)}
+                          />
+                        ),
+                      )
+                    : null}
+                </g>
+              ))}
           </g>
 
           {/* Period labels: first, last, and evenly spaced between — one per
@@ -336,13 +408,13 @@ export function TimeSeriesChart({
                     key: `${mark.series}-${mark.index}`,
                     x: x(mark.index),
                     y: y(point.value),
-                    color: seriesColor(mark.series),
+                    color: colorOf(mark.series),
                     label: mark.label,
                   },
                 ];
               })}
               width={WIDTH}
-              top={PADDING.top}
+              top={pad.top}
             />
           ) : null}
 
@@ -359,7 +431,7 @@ export function TimeSeriesChart({
                     cx={x(index)}
                     cy={y(point.value)}
                     r={4}
-                    fill={seriesColor(only.slot)}
+                    fill={colorOf(only.slot)}
                     stroke="var(--color-card, #fff)"
                     strokeWidth={2}
                   />
@@ -367,13 +439,37 @@ export function TimeSeriesChart({
               })
             : null}
 
+          {labelled ? (
+            <EndLabels
+              lines={shown.flatMap((entry) => {
+                const index = entry.points.findLastIndex((p) => p.value !== null);
+                const point = entry.points[index];
+                if (!point || point.value === null) return [];
+                return [
+                  {
+                    key: entry.name,
+                    name: entry.name,
+                    value: point.value,
+                    x: x(index),
+                    y: y(point.value),
+                    color: colorOf(entry.slot),
+                    focus: isFocus(entry.slot),
+                  },
+                ];
+              })}
+              plotRight={WIDTH - pad.right}
+              top={pad.top}
+              bottom={pad.top + plotHeight}
+            />
+          ) : null}
+
           {hover !== null ? (
             <g>
               <line
                 x1={x(hover)}
                 x2={x(hover)}
-                y1={PADDING.top}
-                y2={PADDING.top + plotHeight}
+                y1={pad.top}
+                y2={pad.top + plotHeight}
                 stroke="var(--viz-grid)"
                 strokeWidth={1}
               />
@@ -386,7 +482,7 @@ export function TimeSeriesChart({
                     cx={x(hover)}
                     cy={y(point.value)}
                     r={5}
-                    fill={seriesColor(entry.slot)}
+                    fill={colorOf(entry.slot)}
                     stroke="var(--color-card, #fff)"
                     strokeWidth={2}
                   />
@@ -400,7 +496,7 @@ export function TimeSeriesChart({
             <rect
               key={`hit-${point.label}`}
               x={x(index) - plotWidth / axis.length / 2}
-              y={PADDING.top}
+              y={pad.top}
               width={plotWidth / axis.length}
               height={plotHeight}
               fill="transparent"
@@ -429,7 +525,7 @@ export function TimeSeriesChart({
                     <span
                       aria-hidden
                       className="size-2 shrink-0 rounded-full"
-                      style={{ background: seriesColor(entry.slot) }}
+                      style={{ background: colorOf(entry.slot) }}
                     />
                   ) : null}
                   {shown.length > 1 ? (
@@ -447,7 +543,11 @@ export function TimeSeriesChart({
         ) : null}
       </div>
 
-      {listed.length > 1 ? <Legend listed={listed} onToggle={onToggle} /> : null}
+      {/* Named at their ends already, so the key stays only where it is also
+          the control that mutes a line and brings it back. */}
+      {listed.length > 1 && (onToggle || !labelled) ? (
+        <Legend listed={listed} onToggle={onToggle} colorOf={colorOf} />
+      ) : null}
 
       {caption ? (
         <figcaption className="text-xs text-muted-foreground">{caption}</figcaption>
@@ -470,9 +570,11 @@ export function TimeSeriesChart({
 function Legend({
   listed,
   onToggle,
+  colorOf,
 }: {
   listed: Series[];
   onToggle?: (name: string) => void;
+  colorOf: (slot: number) => string;
 }) {
   return (
     <ul className="flex flex-wrap gap-x-4 gap-y-1">
@@ -483,7 +585,7 @@ function Legend({
               aria-hidden
               className="h-0.5 w-4 shrink-0 rounded-full"
               style={{
-                background: seriesColor(slot),
+                background: colorOf(slot),
                 // Muted rather than recoloured: the colour is the series'
                 // identity and stays attached to it.
                 opacity: entry.hidden ? 0.3 : 1,
@@ -516,6 +618,96 @@ function Legend({
         );
       })}
     </ul>
+  );
+}
+
+/**
+ * Each line's name and latest figure, at its end.
+ *
+ * Stacked as a title over a value, in the line's colour, in a column right of
+ * the plot — and tied to the line's last point by a guide that runs out of the
+ * plot and bends to the label. The bend is what lets lines finishing at the
+ * same height keep labels that do not overprint: the stack spreads them apart,
+ * and each guide still says which is whose.
+ */
+function EndLabels({
+  lines,
+  plotRight,
+  top,
+  bottom,
+}: {
+  lines: {
+    key: string;
+    name: string;
+    value: number;
+    x: number;
+    y: number;
+    color: string;
+    focus: boolean;
+  }[];
+  plotRight: number;
+  top: number;
+  bottom: number;
+}) {
+  // Centred on the line where there is room: the label's middle, not its top,
+  // is what lines up with the figure.
+  const tops = stackLabels(
+    lines.map((line) => line.y - LABEL_HEIGHT / 2),
+    top - 4,
+    bottom - LABEL_HEIGHT + 6,
+  );
+  const elbow = plotRight + LEADER_RUN;
+  const textX = elbow + LABEL_GAP;
+  return (
+    <g>
+      {lines.map((line, index) => {
+        const labelTop = tops[index]!;
+        const anchorY = labelTop + LABEL_HEIGHT / 2 - 3;
+        // The grey that recedes as a line is too faint to read as type, so a
+        // context label is set in the page's muted ink instead.
+        const ink =
+          line.color === CONTEXT_COLOR ? "var(--muted-foreground)" : line.color;
+        return (
+          <g key={line.key}>
+            <title>{`${line.name}: ${formatDecimal(String(line.value))}`}</title>
+            <path
+              d={`M ${line.x} ${line.y} L ${elbow} ${line.y} L ${textX - 5} ${anchorY}`}
+              fill="none"
+              stroke={line.color}
+              strokeWidth={1}
+              strokeOpacity={line.focus ? 0.9 : 0.6}
+            />
+            <circle
+              cx={line.x}
+              cy={line.y}
+              r={line.focus ? 4.5 : 3.5}
+              fill={line.color}
+              stroke="var(--card, #fff)"
+              strokeWidth={1.5}
+            />
+            <text
+              x={textX}
+              y={labelTop + 10}
+              fontSize={11}
+              fontWeight={line.focus ? 700 : 600}
+              fill={ink}
+            >
+              {clip(line.name)}
+            </text>
+            <text
+              x={textX}
+              y={labelTop + 23}
+              fontSize={11}
+              fontWeight={line.focus ? 700 : 600}
+              fill={ink}
+              className="tabular-nums"
+            >
+              {formatCompact(String(line.value))}
+            </text>
+          </g>
+        );
+      })}
+    </g>
   );
 }
 

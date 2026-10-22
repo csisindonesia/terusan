@@ -22,12 +22,16 @@ export function FilterChip({
   label,
   value,
   onClear,
+  align = "start",
   children,
 }: {
   label: string;
   /** Present when the filter is set; its absence is what makes a chip quiet. */
   value?: string;
   onClear?: () => void;
+  /** Which edge of the chip the list opens from: `end` for a chip at the right
+   * of a row, so the list stays over the card rather than running off it. */
+  align?: "start" | "end";
   /** The control shown when the chip is opened. */
   children: React.ReactNode;
 }) {
@@ -53,7 +57,7 @@ export function FilterChip({
             </button>
           }
         />
-        <PopoverContent align="start" className="w-64 p-2">
+        <PopoverContent align={align} className="w-64 p-2">
           {children}
         </PopoverContent>
       </Popover>

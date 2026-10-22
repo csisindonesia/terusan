@@ -889,13 +889,14 @@ function IndicatorDetail() {
   // alike: they read the same URL parameters.
   const hasMemberChips =
     Boolean(axis && axisOptions.length > 1) || secondaryOptions.length > 1;
-  const memberChips = (
+  const memberChipsAt = (align: "start" | "end") => (
     <>
       {/* Beside Status rather than above the page: narrowing to
       one commodity is the same kind of act as narrowing to
       one status, and the page shows everything until asked. */}
       {axis && axisOptions.length > 1 ? (
         <FilterChip
+          align={align}
           label={dimensionLabel(axis)}
           value={summariseChip(chosenSeries)}
           onClear={() =>
@@ -948,6 +949,7 @@ function IndicatorDetail() {
       control instead. */}
       {secondaryOptions.length > 1 ? (
         <FilterChip
+          align={align}
           label={dimensionLabel(secondaryParam)}
           value={summariseChip(chosenSecondary)}
           onClear={() =>
@@ -991,6 +993,7 @@ function IndicatorDetail() {
       ) : null}
     </>
   );
+  const memberChips = memberChipsAt("start");
 
   if (indicator.isError) {
     return (
@@ -1544,6 +1547,10 @@ function IndicatorDetail() {
                   }
                   linkBack={false}
                   plain
+                  // The same place and commodity filters as the Data tab, at
+                  // the chart's right edge: which countries are drawn is the
+                  // question a reader has while looking at the lines.
+                  filter={hasMemberChips ? memberChipsAt("end") : undefined}
                   // Only where the series is published by province: a map of
                   // two shaded provinces and thirty-six hatched ones says less
                   // than the line does.

@@ -125,5 +125,28 @@ export const SOLID_DARK_SLOTS = SERIES_SOLID_DARK.map(
   (hex, index) => `dark:[--solid-${index + 1}:${hex}]`,
 ).join(" ");
 
+/**
+ * Indonesia against the rest.
+ *
+ * Where a chart compares Indonesia with other places, the question is almost
+ * always "how does Indonesia sit among them", not "which neighbour is which".
+ * So Indonesia takes the red — the palette's last slot, validated against both
+ * surfaces — and every other place recedes to one grey: the eye goes to the one
+ * line that is the subject, and the rest are context, named at their ends for
+ * anyone who wants them.
+ */
+export const FOCUS_COLOR = "var(--viz-focus)";
+export const CONTEXT_COLOR = "var(--viz-context)";
+export const FOCUS_LIGHT_SLOTS = {
+  "--viz-focus": SERIES_COLORS[7],
+  "--viz-context": "color-mix(in oklab, currentColor 32%, transparent)",
+} as React.CSSProperties;
+export const FOCUS_DARK_SLOT = `dark:[--viz-focus:${SERIES_COLORS_DARK[7]}]`;
+
+/** Whether a line's name says it is Indonesia's. */
+export function isIndonesia(name: string): boolean {
+  return /(^|[^\p{L}])(indonesia|idn)([^\p{L}]|$)/iu.test(name);
+}
+
 /** Gridlines and tracks: one step off the surface, never a darker ink. */
 export const GRID = "color-mix(in oklab, currentColor 12%, transparent)";

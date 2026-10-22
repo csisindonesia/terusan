@@ -14,6 +14,7 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { Button } from "~/components/ui/button";
 import { ChartCard } from "~/components/chart-card";
 import { ColumnChart } from "~/components/column-chart";
+import { ChoiceList, FilterChip } from "~/components/filter-chip";
 import {
   Annotations,
   TimeSeriesChart,
@@ -48,6 +49,7 @@ export function AssistantChart({
   linkBack = true,
   plain = false,
   map,
+  filter,
 }: {
   chart: ChartSpec;
   className?: string;
@@ -57,6 +59,13 @@ export function AssistantChart({
   hidden?: string[];
   /** Given when the legend is a control rather than a key. */
   onToggle?: (name: string) => void;
+  /**
+   * A filter for the right end of the view switcher, where the caller has a
+   * better one than the lines on screen — the series page offers every place
+   * the indicator is published for, not only the eight drawn. Without one, a
+   * chart of several lines offers its own: which of them are drawn.
+   */
+  filter?: React.ReactNode;
   /** Off on the series' own page, where "learn more" would link to itself. */
   linkBack?: boolean;
   /** The page's heading type, with the span beneath: see `ChartCard`. */
@@ -110,7 +119,32 @@ export function AssistantChart({
     return () => window.clearInterval(timer);
   }, [playing, last]);
 
-  const shown = useMemo(() => sliceChart(chart, range), [chart, range]);
+  // Lines muted from the chart's own series filter. The caller's `hidden`
+  // wins where it passes `onToggle`, because then the muting is in its URL.
+  const [muted, setMuted] = useState<string[]>([]);
+  useEffect(() => setMuted([]), [chart]);
+  const owned = onToggle === undefined;
+  const effectiveHidden = owned ? [...hidden, ...muted] : hidden;
+  const toggleLine = owned
+    ? (name: string) =>
+        setMuted((now) =>
+          now.includes(name) ? now.filter((n) => n !== name) : [...now, name],
+        )
+    : onToggle;
+
+  const sliced = useMemo(() => sliceChart(chart, range), [chart, range]);
+  // The table follows the filter too, where the filter is the chart's own: a
+  // line taken off the chart and left in the table reads as a contradiction.
+  const shown = useMemo(
+    () =>
+      owned && muted.length
+        ? {
+            ...sliced,
+            series: sliced.series.filter((s) => !muted.includes(lineName(sliced, s))),
+          }
+        : sliced,
+    [sliced, owned, muted],
+  );
   const units = new Set(shown.series.map((s) => s.unit ?? ""));
   const sharedUnit = units.size === 1 ? shown.series[0]?.unit : undefined;
   const from = shown.periods[0];
@@ -162,35 +196,54 @@ export function AssistantChart({
         <StoryFigures chart={chart} story={chart.story} />
       ) : null}
 
-      <div data-export-skip="true" className="inline-flex rounded-lg border p-0.5">
-        {(map
-          ? ([
-              ["map", "Map", IconMap],
-              ["chart", chartLabel, ChartIcon],
-              ["table", "Table", IconTable],
-            ] as const)
-          : ([
-              ["table", "Table", IconTable],
-              ["chart", chartLabel, ChartIcon],
-            ] as const)
-        ).map(([value, label, Icon]) => (
-          <button
-            key={value}
-            type="button"
-            onClick={() => {
-              setChosen(true);
-              setView(value);
-            }}
-            aria-pressed={current === value}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md px-3 py-1 text-sm text-muted-foreground transition-colors hover:text-foreground",
-              current === value && "bg-muted font-medium text-foreground",
-            )}
-          >
-            <Icon className="size-4" />
-            {label}
-          </button>
-        ))}
+      <div
+        data-export-skip="true"
+        className="flex flex-wrap items-center justify-between gap-2"
+      >
+        <div className="inline-flex rounded-lg border p-0.5">
+          {(map
+            ? ([
+                ["map", "Map", IconMap],
+                ["chart", chartLabel, ChartIcon],
+                ["table", "Table", IconTable],
+              ] as const)
+            : ([
+                ["table", "Table", IconTable],
+                ["chart", chartLabel, ChartIcon],
+              ] as const)
+          ).map(([value, label, Icon]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => {
+                setChosen(true);
+                setView(value);
+              }}
+              aria-pressed={current === value}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-3 py-1 text-sm text-muted-foreground transition-colors hover:text-foreground",
+                current === value && "bg-muted font-medium text-foreground",
+              )}
+            >
+              <Icon className="size-4" />
+              {label}
+            </button>
+          ))}
+        </div>
+        {filter ?? (
+          <SeriesFilter
+            names={
+              chart.kind === "scatter"
+                ? []
+                : chart.series.map((s) => lineName(chart, s))
+            }
+            hidden={effectiveHidden}
+            onToggle={toggleLine}
+            // Cleared in one step only where the chart holds the muting; a
+            // caller's URL is cleared by the caller's own controls.
+            onReset={owned ? () => setMuted([]) : undefined}
+          />
+        )}
       </div>
 
       {onMap ? (
@@ -200,7 +253,7 @@ export function AssistantChart({
           <ChartBody
             chart={shown}
             unit={sharedUnit}
-            hidden={hidden}
+            hidden={owned ? hidden : effectiveHidden}
             onToggle={onToggle}
           />
           {/* The time series names its own lines. */}
@@ -267,6 +320,46 @@ export function AssistantChart({
         </div>
       ) : null}
     </ChartCard>
+  );
+}
+
+/**
+ * Which of the chart's lines are drawn, as a list of ticks.
+ *
+ * Ticked means drawn. Nothing is unticked until the reader says so: a chart
+ * opens showing everything it was given. Offered only where there is more
+ * than one line to choose between.
+ */
+function SeriesFilter({
+  names,
+  hidden,
+  onToggle,
+  onReset,
+}: {
+  names: string[];
+  hidden: string[];
+  onToggle?: (name: string) => void;
+  onReset?: () => void;
+}) {
+  const unique = [...new Set(names)];
+  if (unique.length < 2 || !onToggle) return null;
+  const drawn = unique.filter((name) => !hidden.includes(name));
+  return (
+    <FilterChip
+      label="Series"
+      align="end"
+      value={
+        drawn.length < unique.length ? `${drawn.length} of ${unique.length}` : undefined
+      }
+      onClear={onReset}
+    >
+      <ChoiceList
+        options={unique.map((name) => ({ value: name, label: name }))}
+        selected={drawn}
+        onToggle={onToggle}
+        searchPlaceholder="Search series"
+      />
+    </FilterChip>
   );
 }
 
@@ -512,8 +605,13 @@ function toSeries(
   chart: ChartSpec,
   values = chart.series.map((s) => s.values),
 ): Series[] {
+  // Indonesia's line is named without its place (see `seriesName`), so it is
+  // marked as the focus by its member where the others are other places.
+  const elsewhere = chart.series.some((s) => s.member && s.member !== "Indonesia");
   return chart.series.map((series, index) => ({
     name: lineName(chart, series),
+    focus:
+      elsewhere && chart.kind !== "event" ? series.member === "Indonesia" : undefined,
     points: chart.periods.map((label, at) => ({
       label,
       value: values[index]![at] ?? null,
