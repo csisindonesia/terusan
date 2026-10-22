@@ -69,6 +69,11 @@ app.add_typer(catalog_app, name="catalog")
 app.add_typer(silver_app, name="silver")
 app.add_typer(news_app, name="news")
 app.add_typer(articles_app, name="articles")
+observatory_app = typer.Typer(
+    help="Build and query the Government Content Restriction Observatory.",
+    no_args_is_help=True,
+)
+app.add_typer(observatory_app, name="observatory")
 
 
 def _resolver() -> StorageResolver:
@@ -1903,4 +1908,115 @@ def articles_build(
     target = project_root() / "apps" / "portal" / "src" / "articles" / f"{slug}.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(figures, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    typer.echo(f"wrote {target}")
+
+
+# -- observatory ---------------------------------------------------------------
+
+
+def _echo_rows(rows: list[dict]) -> None:
+    typer.echo(json.dumps(rows, indent=1, default=str, ensure_ascii=False))
+
+
+@observatory_app.command("build")
+def observatory_build(
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Build but do not write.")] = False,
+) -> None:
+    """Rebuild the observatory's Silver tables from RAW and Bronze.
+
+    Run after `sources run` and `warehouse extract` for the transparency
+    sources. A full rebuild: the same Bronze gives the same record hashes, so
+    running it twice publishes nothing twice.
+    """
+    from terusan_pipelines.observatory.pipeline import ObservatoryBuilder
+
+    result = ObservatoryBuilder(_resolver()).build(write=not dry_run)
+    typer.echo(json.dumps(result.as_dict(), indent=2))
+
+
+@observatory_app.command("coverage")
+def observatory_coverage(
+    country: Annotated[str, typer.Option("--country", help="ISO 3166-1 alpha-2.")] = "ID",
+) -> None:
+    """Which provider reports which metric for which period."""
+    from terusan_pipelines.observatory import analytics
+
+    with Warehouse(_resolver()) as w:
+        _echo_rows(analytics.coverage(w, country))
+
+
+@observatory_app.command("series")
+def observatory_series(
+    metric: Annotated[str, typer.Option("--metric")] = "requests_received",
+    country: Annotated[str, typer.Option("--country")] = "ID",
+) -> None:
+    """A metric over time, per provider, as each provider published it."""
+    from terusan_pipelines.observatory import analytics
+
+    with Warehouse(_resolver()) as w:
+        _echo_rows(analytics.headline_series(w, country, metric))
+
+
+@observatory_app.command("compare")
+def observatory_compare(
+    provider: Annotated[str, typer.Option("--provider")],
+    metric: Annotated[str, typer.Option("--metric")] = "requests_received",
+    countries: Annotated[
+        str, typer.Option("--countries", help="Comma-separated ISO alpha-2 codes.")
+    ] = "ID,MY,TH,VN,PH,SG",
+    scope: Annotated[str | None, typer.Option("--scope")] = None,
+    requester: Annotated[str | None, typer.Option("--requester")] = None,
+) -> None:
+    """Indonesia beside its neighbours, on one provider's one definition."""
+    from terusan_pipelines.observatory import analytics
+
+    with Warehouse(_resolver()) as w:
+        try:
+            rows = analytics.compare_countries(
+                w,
+                provider=provider,
+                metric=metric,
+                countries=[c.strip().upper() for c in countries.split(",") if c.strip()],
+                scope=scope,
+                requester_type=requester,
+            )
+        except analytics.IncomparableSelection as exc:
+            typer.echo(f"refused: {exc}", err=True)
+            raise typer.Exit(2) from exc
+        _echo_rows(rows)
+
+
+@observatory_app.command("rates")
+def observatory_rates(country: Annotated[str, typer.Option("--country")] = "ID") -> None:
+    """Restriction rates, where a provider's definitions allow one, else N/A."""
+    from terusan_pipelines.observatory import analytics
+
+    with Warehouse(_resolver()) as w:
+        _echo_rows(analytics.restriction_rates(w, country))
+
+
+@observatory_app.command("side-by-side")
+def observatory_side_by_side(country: Annotated[str, typer.Option("--country")] = "ID") -> None:
+    """Komdigi's figures beside the platforms', by year. Never subtracted."""
+    from terusan_pipelines.observatory import analytics
+
+    with Warehouse(_resolver()) as w:
+        _echo_rows(analytics.side_by_side(w, country))
+
+
+@observatory_app.command("export")
+def observatory_export(
+    fmt: Annotated[str, typer.Option("--format", help="csv or parquet.")] = "csv",
+) -> None:
+    """Write a research export: the tables, with the data dictionary beside them.
+
+    Into `exports/observatory/<date>/`. Every observation row carries its
+    source report id, and the reports file carries the RAW object and hash.
+    """
+    from terusan_pipelines.observatory.export import export
+
+    if fmt not in {"csv", "parquet"}:
+        typer.echo("--format must be csv or parquet", err=True)
+        raise typer.Exit(2)
+    target = export(_resolver(), fmt)
     typer.echo(f"wrote {target}")

@@ -171,6 +171,7 @@ SUBTREES
   # twice over the same seven.
   yahoo_normalized=0
   sina_normalized=0
+  transparency_normalized=0
 
   for source in "${sources[@]}"; do
     # Same reasoning as the extract loop: a mapping that breaks on one source
@@ -304,6 +305,15 @@ SUBTREES
       kemendag-sp2kp-national)
         echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: $source ==="
         normalize ./scripts/normalize-sp2kp-national.sh
+        ;;
+      google-government-removals | tiktok-government-removals | komdigi-content-handling)
+        # One script for all three, which also rebuilds the observatory's own
+        # tables — so the run that fetched two of them normalizes once.
+        if [[ $transparency_normalized -eq 0 ]]; then
+          echo "=== $(date '+%Y-%m-%d %H:%M:%S') normalize: content restriction observatory ==="
+          normalize ./scripts/normalize-transparency.sh
+          transparency_normalized=1
+        fi
         ;;
       # Sources with no mapping fall through deliberately. JDIHN's legal
       # documents and Geofabrik's extract are not series: they land, they

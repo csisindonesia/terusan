@@ -69,7 +69,15 @@ _MARKERS: dict[str, ValueStatus] = {
     "c": ValueStatus.SUPPRESSED,
     "rahasia": ValueStatus.SUPPRESSED,
     "confidential": ValueStatus.SUPPRESSED,
+    # Google's transparency report writes `?` where it does not know a figure.
+    "?": ValueStatus.MISSING,
 }
+
+#: `<10`: a figure that exists and is withheld because it is small. Google's
+#: transparency report writes its low counts this way, as health statistics
+#: write `<5`. Reading it as nine, or as zero, would be a fabrication; reading
+#: it as unparseable would say the cell is broken when it is deliberate.
+_BELOW_THRESHOLD = re.compile(r"<\s*\d+(?:[.,]\d+)?")
 
 #: Trailing marks that qualify a figure without changing it. `r` is revised,
 #: `p`/`*` provisional — common in BPS releases.
@@ -122,6 +130,8 @@ def parse_value(raw: str, number_format: NumberFormat = NumberFormat.AUTO) -> Pa
 
     if lowered in _MARKERS:
         return ParsedValue(None, _MARKERS[lowered], raw)
+    if _BELOW_THRESHOLD.fullmatch(text):
+        return ParsedValue(None, ValueStatus.SUPPRESSED, raw)
 
     # Units come off first so the steps below see a bare number: `(2,5)%` has
     # to lose its percent before the brackets read as an accounting negative.

@@ -53,6 +53,11 @@ from .trading_economics import (
     TradingEconomicsExtractor,
     TradingEconomicsMarketExtractor,
 )
+from .transparency import (
+    GoogleRemovalsExtractor,
+    KomdigiContentExtractor,
+    TikTokRemovalsExtractor,
+)
 from .ucdp import UcdpOrganizedViolenceExtractor
 from .vews import VewsCollectiveViolenceExtractor
 from .westmetall import WestmetallLmeExtractor
@@ -149,6 +154,13 @@ DEFAULT_EXTRACTORS: tuple[Extractor, ...] = (
     # Before the HTML reader, which would land KPK's seven statistics tables
     # as one blob of prose with the years run together.
     KpkPenindakanExtractor(),
+    # Before the archive, CSV and workbook readers: Google's zip holds CSVs
+    # in two formats, TikTok's CSV is one long table of measures, and
+    # Komdigi's workbooks state their year only in the title — none of which
+    # the generic readers can carry onto a row.
+    GoogleRemovalsExtractor(),
+    TikTokRemovalsExtractor(),
+    KomdigiContentExtractor(),
     # Before the archive reader, which claims every `.zip` and finds no
     # workbook in this one — and before the generic CSV reader, which would
     # land every country UCDP reports on as rows of seventy unnamed numbers.

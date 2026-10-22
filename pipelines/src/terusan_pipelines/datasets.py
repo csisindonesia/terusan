@@ -500,6 +500,62 @@ DATASETS: tuple[DatasetMeta, ...] = (
         ),
         tags=("conflict", "violence", "security", "casualties", "peace", "international"),
     ),
+    # -- Government content restriction observatory -----------------------
+    #
+    # The as-published country figures only. The breakdowns, the requester
+    # and scope of each figure, and what may be compared with what are in the
+    # observatory's own tables (docs/observatory/data_dictionary.md).
+    DatasetMeta(
+        slug="government-removal-requests",
+        title="TikTok government removal requests",
+        source="tiktok-government-removals",
+        description=(
+            "Government requests to TikTok to remove content, per country and half-year "
+            "from 2022: requests received, content and accounts specified, and how many "
+            "were actioned under local law, actioned under community guidelines, or not "
+            "actioned, with TikTok's removal rate. A request is not an item, and an "
+            "actioned item may have been removed or only restricted in the country."
+        ),
+        tags=("content-moderation", "censorship", "platforms", "transparency", "international"),
+    ),
+    DatasetMeta(
+        slug="government-removals-totals",
+        title="Google government requests to remove content, 2009–2019",
+        source="google-government-removals",
+        description=(
+            "Government requests to Google to remove content, per country and half-year, "
+            "split into court orders and executive or police requests, with the items "
+            "named and Google's compliance percentage — the country totals Google "
+            "published through the first half of 2019, before it moved to a breakdown "
+            "by requester, product and reason."
+        ),
+        tags=("content-moderation", "censorship", "platforms", "transparency", "international"),
+    ),
+    DatasetMeta(
+        slug="government-removals-breakdown",
+        title="Google government requests to remove content, by requester, product and reason",
+        source="google-government-removals",
+        description=(
+            "Government requests to Google to remove content from 2019, per country and "
+            "half-year, one figure for each requester category, product and reason: "
+            "requests, items named, items removed for legal or policy reasons, and items "
+            "not actioned. As Google publishes them, with no country total — a request "
+            "naming two products appears under both, so the rows do not add up to one."
+        ),
+        tags=("content-moderation", "censorship", "platforms", "transparency", "international"),
+    ),
+    DatasetMeta(
+        slug="content-handling",
+        title="Komdigi negative content handled, by platform",
+        source="komdigi-content-handling",
+        description=(
+            "Items of negative internet content Komdigi's Directorate General of Digital "
+            "Space Supervision reports handling on each social media platform, per year. "
+            "Komdigi does not define a handled item; the figures are its own and are not "
+            "the same count as the platforms' government requests."
+        ),
+        tags=("content-moderation", "censorship", "komdigi", "platforms", "digital"),
+    ),
     # -- VEWS, the incidents and the series counted off them ---------------
     #
     # Two collections out of one set of exports, because they are two grains:
